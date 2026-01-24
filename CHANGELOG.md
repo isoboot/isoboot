@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0] - 2026-01-24
+
+### Added
+- `isoboot-controller` gRPC server for Kubernetes API access
+- Controller manages Deploy lifecycle (Pending → InProgress → Completed)
+- gRPC service for HTTP pod to query deploys and templates
+
+### Changed
+- Split architecture: controller has k8s access, HTTP server does not
+- HTTP server connects to controller via gRPC instead of direct k8s API
+- Lazy gRPC connection allows HTTP to start before controller is ready
+
+### Tested With
+- Debian 13 (trixie) netboot - boots to installer screen
+- QEMU VM with UEFI PXE boot
+- Machine/Deploy CRDs with controller reconciliation
+
 ## [0.2.0] - 2026-01-24
 
 ### Added
