@@ -199,9 +199,17 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
+// normalizeMAC converts a MAC address to a canonical format (lowercase, no separators)
+func normalizeMAC(mac string) string {
+	mac = strings.ToLower(mac)
+	mac = strings.ReplaceAll(mac, ":", "")
+	mac = strings.ReplaceAll(mac, "-", "")
+	return mac
+}
+
 // FindDeployByMAC finds a Deploy that references a Machine with the given MAC address
 func (c *Client) FindDeployByMAC(ctx context.Context, mac string) (*Deploy, error) {
-	mac = strings.ToLower(mac)
+	normalizedMAC := normalizeMAC(mac)
 
 	// List all machines to find one with this MAC
 	machines, err := c.ListMachines(ctx)
@@ -212,7 +220,7 @@ func (c *Client) FindDeployByMAC(ctx context.Context, mac string) (*Deploy, erro
 	var matchingMachine *Machine
 	for _, m := range machines {
 		for _, addr := range m.MACAddresses {
-			if strings.ToLower(addr) == mac {
+			if normalizeMAC(addr) == normalizedMAC {
 				matchingMachine = m
 				break
 			}
