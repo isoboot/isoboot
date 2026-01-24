@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/isoboot/isoboot/internal/config"
+	"github.com/isoboot/isoboot/internal/controller"
 	"github.com/isoboot/isoboot/internal/handlers"
 	"github.com/isoboot/isoboot/internal/k8s"
 )
@@ -80,6 +81,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create Kubernetes client: %v", err)
 	}
+
+	// Start controller for Deploy lifecycle management
+	ctrl := controller.New(k8sClient)
+	ctrl.Start()
+	defer ctrl.Stop()
 
 	// Set up HTTP handlers
 	mux := http.NewServeMux()
