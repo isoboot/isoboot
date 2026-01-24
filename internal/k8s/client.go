@@ -30,8 +30,8 @@ var (
 
 // Machine represents a Machine CRD
 type Machine struct {
-	Name         string
-	MACAddresses []string
+	Name string
+	MAC  string
 }
 
 // Deploy represents a Deploy CRD
@@ -122,21 +122,14 @@ func parseMachine(obj *unstructured.Unstructured) (*Machine, error) {
 		return nil, fmt.Errorf("invalid machine spec")
 	}
 
-	macAddrsRaw, ok := spec["macAddresses"].([]interface{})
+	mac, ok := spec["mac"].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid macAddresses")
-	}
-
-	var macAddrs []string
-	for _, m := range macAddrsRaw {
-		if s, ok := m.(string); ok {
-			macAddrs = append(macAddrs, strings.ToLower(s))
-		}
+		return nil, fmt.Errorf("invalid mac")
 	}
 
 	return &Machine{
-		Name:         obj.GetName(),
-		MACAddresses: macAddrs,
+		Name: obj.GetName(),
+		MAC:  strings.ToLower(mac),
 	}, nil
 }
 
@@ -219,13 +212,8 @@ func (c *Client) FindDeployByMAC(ctx context.Context, mac string) (*Deploy, erro
 
 	var matchingMachine *Machine
 	for _, m := range machines {
-		for _, addr := range m.MACAddresses {
-			if normalizeMAC(addr) == normalizedMAC {
-				matchingMachine = m
-				break
-			}
-		}
-		if matchingMachine != nil {
+		if normalizeMAC(m.MAC) == normalizedMAC {
+			matchingMachine = m
 			break
 		}
 	}

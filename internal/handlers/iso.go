@@ -29,19 +29,21 @@ func NewISOHandler(basePath string, configWatcher *config.ConfigWatcher) *ISOHan
 }
 
 // ServeISOContent serves files from ISO images
-// Path format: /iso/content/{target}/{filepath}
+// Path format: /iso/content/{target}/{isoFilename}/{filepath}
+// Example: /iso/content/debian-13/mini.iso/linux
 // Special handling for initrd.gz - merges with firmware if present
 func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
-	// Parse path: /iso/content/debian-13/linux
+	// Parse path: /iso/content/debian-13/mini.iso/linux
 	path := strings.TrimPrefix(r.URL.Path, "/iso/content/")
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) < 2 {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+	parts := strings.SplitN(path, "/", 3)
+	if len(parts) < 3 {
+		http.Error(w, "invalid path: expected /iso/content/{target}/{isoFilename}/{filepath}", http.StatusBadRequest)
 		return
 	}
 
 	target := parts[0]
-	filePath := parts[1]
+	isoFilename := parts[1]
+	filePath := parts[2]
 
 	// Get target config
 	targetConfig, ok := h.configWatcher.GetTarget(target)
@@ -51,7 +53,7 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure ISO is downloaded (blocks if download in progress)
-	isoPath := config.ISOPath(h.basePath, target)
+	isoPath := config.ISOPathWithFilename(h.basePath, target, isoFilename)
 	if err := h.downloader.EnsureFile(isoPath, targetConfig.ISO); err != nil {
 		http.Error(w, fmt.Sprintf("failed to get ISO: %v", err), http.StatusInternalServerError)
 		return
@@ -59,7 +61,7 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this is initrd.gz and we have firmware
 	if filePath == "initrd.gz" {
-		h.serveInitrdWithFirmware(w, r, target, targetConfig)
+		h.serveInitrdWithFirmware(w, r, target, isoFilename, targetConfig)
 		return
 	}
 
@@ -107,8 +109,8 @@ func (h *ISOHandler) serveFileFromISO(w http.ResponseWriter, isoPath, filePath s
 // serveInitrdWithFirmware serves initrd.gz, merging with firmware if present
 // Per https://wiki.debian.org/DebianInstaller/NetbootFirmware:
 // cat initrd.gz firmware.cpio.gz > combined.gz
-func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Request, target string, targetConfig config.TargetConfig) {
-	isoPath := config.ISOPath(h.basePath, target)
+func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Request, target, isoFilename string, targetConfig config.TargetConfig) {
+	isoPath := config.ISOPathWithFilename(h.basePath, target, isoFilename)
 	firmwarePath := config.FirmwarePath(h.basePath, target)
 
 	// Check if firmware is configured and download if needed
