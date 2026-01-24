@@ -9,15 +9,15 @@ import (
 	"github.com/isoboot/isoboot/internal/controllerclient"
 )
 
-type DynamicHandler struct {
+type AnswerHandler struct {
 	host       string
 	port       string
 	proxyPort  string
 	ctrlClient *controllerclient.Client
 }
 
-func NewDynamicHandler(host, port, proxyPort string, ctrlClient *controllerclient.Client) *DynamicHandler {
-	return &DynamicHandler{
+func NewAnswerHandler(host, port, proxyPort string, ctrlClient *controllerclient.Client) *AnswerHandler {
+	return &AnswerHandler{
 		host:       host,
 		port:       port,
 		proxyPort:  proxyPort,
@@ -25,17 +25,37 @@ func NewDynamicHandler(host, port, proxyPort string, ctrlClient *controllerclien
 	}
 }
 
-// ServePreseed serves preseed configuration files
-// Path format: /dynamic/{hostname}/{target}/preseed.cfg
-// Returns 200 with Content-Length: 0 (no content yet)
-func (h *DynamicHandler) ServePreseed(w http.ResponseWriter, r *http.Request) {
+// ServeAnswer serves response template files (preseed/kickstart/autoinstall)
+// Path format: /answer/{hostname}/{filename}
+func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
+	// Parse path: /answer/{hostname}/{filename}
+	path := strings.TrimPrefix(r.URL.Path, "/answer/")
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) < 2 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	hostname := parts[0]
+	filename := parts[1]
+	ctx := r.Context()
+
+	// Get rendered template from controller
+	content, err := h.ctrlClient.GetRenderedTemplate(ctx, hostname, filename)
+	if err != nil {
+		log.Printf("Error getting rendered template for %s/%s: %v", hostname, filename, err)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Content-Length", "0")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(content))
 }
 
 // CompleteDeployment marks a deployment as completed
-func (h *DynamicHandler) CompleteDeployment(w http.ResponseWriter, r *http.Request) {
+func (h *AnswerHandler) CompleteDeployment(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -65,8 +85,8 @@ func (h *DynamicHandler) CompleteDeployment(w http.ResponseWriter, r *http.Reque
 	w.Write(body)
 }
 
-// RegisterRoutes registers dynamic content routes
-func (h *DynamicHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/dynamic/", h.ServePreseed)
+// RegisterRoutes registers answer file routes
+func (h *AnswerHandler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/answer/", h.ServeAnswer)
 	mux.HandleFunc("/api/deploy/", h.CompleteDeployment)
 }

@@ -36,6 +36,11 @@ var (
 		Version:  "v1alpha1",
 		Resource: "boottargets",
 	}
+	responseTemplateGVR = schema.GroupVersionResource{
+		Group:    "isoboot.io",
+		Version:  "v1alpha1",
+		Resource: "responsetemplates",
+	}
 )
 
 // Machine represents a Machine CRD
@@ -52,8 +57,11 @@ type Deploy struct {
 }
 
 type DeploySpec struct {
-	MachineRef string
-	Target     string
+	MachineRef          string
+	Target              string
+	ResponseTemplateRef string
+	ConfigMaps          []string
+	Secrets             []string
 }
 
 type DeployStatus struct {
@@ -74,6 +82,12 @@ type BootTarget struct {
 	Name         string
 	DiskImageRef string
 	Template     string
+}
+
+// ResponseTemplate represents a ResponseTemplate CRD
+type ResponseTemplate struct {
+	Name  string
+	Files map[string]string
 }
 
 // Client provides access to Kubernetes resources
@@ -203,6 +217,33 @@ func parseBootTarget(obj *unstructured.Unstructured) (*BootTarget, error) {
 	}, nil
 }
 
+// GetResponseTemplate retrieves a ResponseTemplate by name
+func (c *Client) GetResponseTemplate(ctx context.Context, name string) (*ResponseTemplate, error) {
+	obj, err := c.dynamicClient.Resource(responseTemplateGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return parseResponseTemplate(obj)
+}
+
+func parseResponseTemplate(obj *unstructured.Unstructured) (*ResponseTemplate, error) {
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid responsetemplate spec")
+	}
+
+	return &ResponseTemplate{
+		Name:  obj.GetName(),
+		Files: getStringMap(spec, "files"),
+	}, nil
+}
+
+// GetSecret retrieves a Secret by name
+func (c *Client) GetSecret(ctx context.Context, name string) (*corev1.Secret, error) {
+	return c.clientset.CoreV1().Secrets(c.namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
 // GetDeploy retrieves a Deploy by name
 func (c *Client) GetDeploy(ctx context.Context, name string) (*Deploy, error) {
 	obj, err := c.dynamicClient.Resource(deployGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
@@ -240,8 +281,11 @@ func parseDeploy(obj *unstructured.Unstructured) (*Deploy, error) {
 	deploy := &Deploy{
 		Name: obj.GetName(),
 		Spec: DeploySpec{
-			MachineRef: getString(spec, "machineRef"),
-			Target:     getString(spec, "target"),
+			MachineRef:          getString(spec, "machineRef"),
+			Target:              getString(spec, "target"),
+			ResponseTemplateRef: getString(spec, "responseTemplateRef"),
+			ConfigMaps:          getStringSlice(spec, "configMaps"),
+			Secrets:             getStringSlice(spec, "secrets"),
 		},
 	}
 
@@ -260,6 +304,34 @@ func getString(m map[string]interface{}, key string) string {
 		return v
 	}
 	return ""
+}
+
+func getStringSlice(m map[string]interface{}, key string) []string {
+	v, ok := m[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(v))
+	for _, item := range v {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+func getStringMap(m map[string]interface{}, key string) map[string]string {
+	v, ok := m[key].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	result := make(map[string]string, len(v))
+	for k, val := range v {
+		if s, ok := val.(string); ok {
+			result[k] = s
+		}
+	}
+	return result
 }
 
 // normalizeMAC converts a MAC address to canonical format (lowercase, dash-separated)

@@ -95,9 +95,9 @@ func main() {
 	isoHandler := handlers.NewISOHandler(isoPath, configWatcher)
 	isoHandler.RegisterRoutes(mux)
 
-	// Dynamic content handlers
-	dynamicHandler := handlers.NewDynamicHandler(host, port, proxyPort, ctrlClient)
-	dynamicHandler.RegisterRoutes(mux)
+	// Answer file handlers
+	answerHandler := handlers.NewAnswerHandler(host, port, proxyPort, ctrlClient)
+	answerHandler.RegisterRoutes(mux)
 
 	// Start server
 	addr := fmt.Sprintf(":%s", port)
