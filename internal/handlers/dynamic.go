@@ -1,27 +1,27 @@
 package handlers
 
 import (
-	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
-	"github.com/isoboot/isoboot/internal/k8s"
+	"github.com/isoboot/isoboot/internal/controllerclient"
 )
 
 type DynamicHandler struct {
-	host      string
-	port      string
-	proxyPort string
-	k8sClient *k8s.Client
+	host       string
+	port       string
+	proxyPort  string
+	ctrlClient *controllerclient.Client
 }
 
-func NewDynamicHandler(host, port, proxyPort string, k8sClient *k8s.Client) *DynamicHandler {
+func NewDynamicHandler(host, port, proxyPort string, ctrlClient *controllerclient.Client) *DynamicHandler {
 	return &DynamicHandler{
-		host:      host,
-		port:      port,
-		proxyPort: proxyPort,
-		k8sClient: k8sClient,
+		host:       host,
+		port:       port,
+		proxyPort:  proxyPort,
+		ctrlClient: ctrlClient,
 	}
 }
 
@@ -50,16 +50,12 @@ func (h *DynamicHandler) CompleteDeployment(w http.ResponseWriter, r *http.Reque
 	}
 
 	mac := strings.ToLower(parts[0])
+	ctx := r.Context()
 
-	// Find in-progress deploy for this MAC (only complete deploys that are in progress)
-	deploy, err := h.k8sClient.FindDeployByMAC(context.Background(), mac, "InProgress")
-	if err != nil || deploy == nil {
+	// Mark deploy as completed via controller
+	if err := h.ctrlClient.MarkBootCompleted(ctx, mac); err != nil {
+		log.Printf("Error completing deploy for %s: %v", mac, err)
 		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	if err := h.k8sClient.UpdateDeployStatus(context.Background(), deploy.Name, "Completed", "Installation completed"); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 

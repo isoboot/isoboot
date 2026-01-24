@@ -4,26 +4,27 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"text/template"
 
-	"github.com/isoboot/isoboot/internal/k8s"
+	"github.com/isoboot/isoboot/internal/controllerclient"
 )
 
 type BootHandler struct {
-	host      string
-	port      string
-	k8sClient *k8s.Client
-	configMap string
+	host       string
+	port       string
+	ctrlClient *controllerclient.Client
+	configMap  string
 }
 
-func NewBootHandler(host, port string, k8sClient *k8s.Client, configMap string) *BootHandler {
+func NewBootHandler(host, port string, ctrlClient *controllerclient.Client, configMap string) *BootHandler {
 	return &BootHandler{
-		host:      host,
-		port:      port,
-		k8sClient: k8sClient,
-		configMap: configMap,
+		host:       host,
+		port:       port,
+		ctrlClient: ctrlClient,
+		configMap:  configMap,
 	}
 }
 
@@ -34,23 +35,19 @@ type TemplateData struct {
 	MAC  string
 }
 
-func (h *BootHandler) loadTemplate(name string) (*template.Template, error) {
-	cm, err := h.k8sClient.GetConfigMap(context.Background(), h.configMap)
+func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.Template, error) {
+	content, err := h.ctrlClient.GetTemplate(ctx, name, h.configMap)
 	if err != nil {
-		return nil, fmt.Errorf("get configmap: %w", err)
+		return nil, err
 	}
-
-	content, ok := cm.Data[name]
-	if !ok {
-		return nil, fmt.Errorf("template not found in configmap: %s", name)
-	}
-
 	return template.New(name).Parse(content)
 }
 
 // ServeBootIPXE serves the initial boot.ipxe script
 func (h *BootHandler) ServeBootIPXE(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := h.loadTemplate("boot.ipxe")
+	ctx := r.Context()
+
+	tmpl, err := h.loadTemplate(ctx, "boot.ipxe")
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -78,6 +75,8 @@ func (h *BootHandler) ServeBootIPXE(w http.ResponseWriter, r *http.Request) {
 // ServeConditionalBoot checks Deploy CRDs and returns appropriate boot script
 // Returns 404 with Content-Length if no deploy found (iPXE falls back to local boot)
 func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	mac := r.URL.Query().Get("mac")
 	if mac == "" {
 		w.Header().Set("Content-Length", "0")
@@ -88,15 +87,16 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	// MAC must be dash-separated (xx-xx-xx-xx-xx-xx from iPXE)
 	mac = strings.ToLower(mac)
 
-	// Find pending deploy for this MAC
-	deploy, err := h.k8sClient.FindDeployByMAC(context.Background(), mac, "Pending")
+	// Find pending deploy for this MAC via controller
+	bootInfo, err := h.ctrlClient.GetPendingBoot(ctx, mac)
 	if err != nil {
+		log.Printf("Error getting boot info for %s: %v", mac, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	if deploy == nil {
+	if bootInfo == nil {
 		// No pending deploy found - return 404 so iPXE falls back to local boot
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusNotFound)
@@ -104,9 +104,10 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Load target template (e.g., debian-13.ipxe)
-	templateName := deploy.Spec.Target + ".ipxe"
-	tmpl, err := h.loadTemplate(templateName)
+	templateName := bootInfo.Target + ".ipxe"
+	tmpl, err := h.loadTemplate(ctx, templateName)
 	if err != nil {
+		log.Printf("Error loading template %s: %v", templateName, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -130,10 +131,9 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	w.Write(buf.Bytes())
 
-	// Update deploy status to InProgress
-	if err := h.k8sClient.UpdateDeployStatus(context.Background(), deploy.Name, "InProgress", "Boot script served"); err != nil {
-		// Log but don't fail the request
-		fmt.Printf("Warning: failed to update deploy status: %v\n", err)
+	// Mark deploy as started via controller
+	if err := h.ctrlClient.MarkBootStarted(ctx, mac); err != nil {
+		log.Printf("Warning: failed to mark boot started for %s: %v", mac, err)
 	}
 }
 
