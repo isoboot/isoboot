@@ -203,7 +203,8 @@ func normalizeMAC(mac string) string {
 
 // FindDeployByMAC finds a Deploy that references a Machine with the given MAC address
 // MAC must be dash-separated (e.g., aa-bb-cc-dd-ee-ff)
-func (c *Client) FindDeployByMAC(ctx context.Context, mac string) (*Deploy, error) {
+// phase filters by status phase (empty string matches any phase)
+func (c *Client) FindDeployByMAC(ctx context.Context, mac string, phase string) (*Deploy, error) {
 	normalizedMAC := normalizeMAC(mac)
 	if normalizedMAC == "" {
 		return nil, nil // Invalid MAC format (contains colons)
@@ -229,7 +230,7 @@ func (c *Client) FindDeployByMAC(ctx context.Context, mac string) (*Deploy, erro
 		return nil, nil // No machine with this MAC
 	}
 
-	// Find pending deploy referencing this machine
+	// Find deploy referencing this machine with matching phase
 	deploys, err := c.ListDeploys(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list deploys: %w", err)
@@ -237,11 +238,22 @@ func (c *Client) FindDeployByMAC(ctx context.Context, mac string) (*Deploy, erro
 
 	for _, d := range deploys {
 		if d.Spec.MachineRef == machineName {
+			// Filter by phase if specified
+			if phase != "" {
+				// Empty status.phase is treated as "Pending"
+				deployPhase := d.Status.Phase
+				if deployPhase == "" {
+					deployPhase = "Pending"
+				}
+				if deployPhase != phase {
+					continue
+				}
+			}
 			return d, nil
 		}
 	}
 
-	return nil, nil // No deploy for this machine
+	return nil, nil // No matching deploy for this machine
 }
 
 // UpdateDeployStatus updates the status of a Deploy

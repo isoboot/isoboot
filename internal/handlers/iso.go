@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/isoboot/isoboot/internal/config"
@@ -49,6 +50,14 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	targetConfig, ok := h.configWatcher.GetTarget(target)
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown target: %s", target), http.StatusNotFound)
+		return
+	}
+
+	// Validate ISO filename matches config to prevent disk exhaustion
+	// (attacker could request arbitrary filenames to fill disk)
+	expectedFilename := filepath.Base(targetConfig.ISO)
+	if isoFilename != expectedFilename {
+		http.Error(w, fmt.Sprintf("invalid ISO filename: expected %s", expectedFilename), http.StatusBadRequest)
 		return
 	}
 

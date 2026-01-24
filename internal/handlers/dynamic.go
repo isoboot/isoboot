@@ -51,7 +51,8 @@ func (h *DynamicHandler) CompleteDeployment(w http.ResponseWriter, r *http.Reque
 
 	mac := strings.ToLower(parts[0])
 
-	deploy, err := h.k8sClient.FindDeployByMAC(context.Background(), mac)
+	// Find in-progress deploy for this MAC (only complete deploys that are in progress)
+	deploy, err := h.k8sClient.FindDeployByMAC(context.Background(), mac, "InProgress")
 	if err != nil || deploy == nil {
 		w.WriteHeader(http.StatusNotFound)
 		return

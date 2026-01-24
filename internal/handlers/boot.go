@@ -88,8 +88,8 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	// MAC must be dash-separated (xx-xx-xx-xx-xx-xx from iPXE)
 	mac = strings.ToLower(mac)
 
-	// Find deploy for this MAC
-	deploy, err := h.k8sClient.FindDeployByMAC(context.Background(), mac)
+	// Find pending deploy for this MAC
+	deploy, err := h.k8sClient.FindDeployByMAC(context.Background(), mac, "Pending")
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -97,15 +97,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	}
 
 	if deploy == nil {
-		// No deploy found - return 404 so iPXE falls back to local boot
-		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	// Check if deploy is pending
-	if deploy.Status.Phase != "" && deploy.Status.Phase != "Pending" {
-		// Already processed - return 404
+		// No pending deploy found - return 404 so iPXE falls back to local boot
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusNotFound)
 		return
