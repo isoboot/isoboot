@@ -23,8 +23,10 @@ type ControllerServiceClient interface {
 	MarkBootStarted(ctx context.Context, in *MarkBootStartedRequest, opts ...grpc.CallOption) (*MarkBootStartedResponse, error)
 	// MarkBootCompleted marks a deploy as Completed
 	MarkBootCompleted(ctx context.Context, in *MarkBootCompletedRequest, opts ...grpc.CallOption) (*MarkBootCompletedResponse, error)
-	// GetTemplate retrieves a boot template
+	// GetTemplate retrieves a boot template from ConfigMap
 	GetTemplate(ctx context.Context, in *GetTemplateRequest, opts ...grpc.CallOption) (*GetTemplateResponse, error)
+	// GetBootTarget retrieves a BootTarget by name
+	GetBootTarget(ctx context.Context, in *GetBootTargetRequest, opts ...grpc.CallOption) (*GetBootTargetResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -71,6 +73,15 @@ func (c *controllerServiceClient) GetTemplate(ctx context.Context, in *GetTempla
 	return out, nil
 }
 
+func (c *controllerServiceClient) GetBootTarget(ctx context.Context, in *GetBootTargetRequest, opts ...grpc.CallOption) (*GetBootTargetResponse, error) {
+	out := new(GetBootTargetResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetBootTarget", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControllerServiceServer is the server API for ControllerService service.
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility
@@ -81,8 +92,10 @@ type ControllerServiceServer interface {
 	MarkBootStarted(context.Context, *MarkBootStartedRequest) (*MarkBootStartedResponse, error)
 	// MarkBootCompleted marks a deploy as Completed
 	MarkBootCompleted(context.Context, *MarkBootCompletedRequest) (*MarkBootCompletedResponse, error)
-	// GetTemplate retrieves a boot template
+	// GetTemplate retrieves a boot template from ConfigMap
 	GetTemplate(context.Context, *GetTemplateRequest) (*GetTemplateResponse, error)
+	// GetBootTarget retrieves a BootTarget by name
+	GetBootTarget(context.Context, *GetBootTargetRequest) (*GetBootTargetResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -101,6 +114,9 @@ func (UnimplementedControllerServiceServer) MarkBootCompleted(context.Context, *
 }
 func (UnimplementedControllerServiceServer) GetTemplate(context.Context, *GetTemplateRequest) (*GetTemplateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTemplate not implemented")
+}
+func (UnimplementedControllerServiceServer) GetBootTarget(context.Context, *GetBootTargetRequest) (*GetBootTargetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBootTarget not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 
@@ -187,6 +203,24 @@ func _ControllerService_GetTemplate_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControllerService_GetBootTarget_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBootTargetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).GetBootTarget(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetBootTarget",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).GetBootTarget(ctx, req.(*GetBootTargetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _ControllerService_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "isoboot.controller.v1.ControllerService",
 	HandlerType: (*ControllerServiceServer)(nil),
@@ -206,6 +240,10 @@ var _ControllerService_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTemplate",
 			Handler:    _ControllerService_GetTemplate_Handler,
+		},
+		{
+			MethodName: "GetBootTarget",
+			Handler:    _ControllerService_GetBootTarget_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

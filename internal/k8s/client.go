@@ -26,6 +26,16 @@ var (
 		Version:  "v1alpha1",
 		Resource: "deploys",
 	}
+	diskImageGVR = schema.GroupVersionResource{
+		Group:    "isoboot.io",
+		Version:  "v1alpha1",
+		Resource: "diskimages",
+	}
+	bootTargetGVR = schema.GroupVersionResource{
+		Group:    "isoboot.io",
+		Version:  "v1alpha1",
+		Resource: "boottargets",
+	}
 )
 
 // Machine represents a Machine CRD
@@ -50,6 +60,20 @@ type DeployStatus struct {
 	Phase       string
 	Message     string
 	LastUpdated time.Time
+}
+
+// DiskImage represents a DiskImage CRD
+type DiskImage struct {
+	Name     string
+	ISO      string
+	Firmware string
+}
+
+// BootTarget represents a BootTarget CRD
+type BootTarget struct {
+	Name         string
+	DiskImageRef string
+	Template     string
 }
 
 // Client provides access to Kubernetes resources
@@ -130,6 +154,52 @@ func parseMachine(obj *unstructured.Unstructured) (*Machine, error) {
 	return &Machine{
 		Name: obj.GetName(),
 		MAC:  strings.ToLower(mac),
+	}, nil
+}
+
+// GetDiskImage retrieves a DiskImage by name
+func (c *Client) GetDiskImage(ctx context.Context, name string) (*DiskImage, error) {
+	obj, err := c.dynamicClient.Resource(diskImageGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return parseDiskImage(obj)
+}
+
+func parseDiskImage(obj *unstructured.Unstructured) (*DiskImage, error) {
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid diskimage spec")
+	}
+
+	return &DiskImage{
+		Name:     obj.GetName(),
+		ISO:      getString(spec, "iso"),
+		Firmware: getString(spec, "firmware"),
+	}, nil
+}
+
+// GetBootTarget retrieves a BootTarget by name
+func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTarget, error) {
+	obj, err := c.dynamicClient.Resource(bootTargetGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return parseBootTarget(obj)
+}
+
+func parseBootTarget(obj *unstructured.Unstructured) (*BootTarget, error) {
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid boottarget spec")
+	}
+
+	return &BootTarget{
+		Name:         obj.GetName(),
+		DiskImageRef: getString(spec, "diskImageRef"),
+		Template:     getString(spec, "template"),
 	}, nil
 }
 
@@ -254,6 +324,35 @@ func (c *Client) FindDeployByMAC(ctx context.Context, mac string, phase string) 
 	}
 
 	return nil, nil // No matching deploy for this machine
+}
+
+// FindDeployByHostname finds a Deploy that references the given hostname (machine name)
+// phase filters by status phase (empty string matches any phase)
+func (c *Client) FindDeployByHostname(ctx context.Context, hostname string, phase string) (*Deploy, error) {
+	// Find deploy referencing this machine (hostname = machine name) with matching phase
+	deploys, err := c.ListDeploys(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list deploys: %w", err)
+	}
+
+	for _, d := range deploys {
+		if d.Spec.MachineRef == hostname {
+			// Filter by phase if specified
+			if phase != "" {
+				// Empty status.phase is treated as "Pending"
+				deployPhase := d.Status.Phase
+				if deployPhase == "" {
+					deployPhase = "Pending"
+				}
+				if deployPhase != phase {
+					continue
+				}
+			}
+			return d, nil
+		}
+	}
+
+	return nil, nil // No matching deploy for this hostname
 }
 
 // UpdateDeployStatus updates the status of a Deploy

@@ -30,9 +30,10 @@ func NewBootHandler(host, port string, ctrlClient *controllerclient.Client, conf
 
 // TemplateData is passed to boot templates
 type TemplateData struct {
-	Host string
-	Port string
-	MAC  string
+	Host     string
+	Port     string
+	Hostname string
+	Target   string
 }
 
 func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.Template, error) {
@@ -103,20 +104,28 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Load target template (e.g., debian-13.ipxe)
-	templateName := bootInfo.Target + ".ipxe"
-	tmpl, err := h.loadTemplate(ctx, templateName)
+	// Load target template from BootTarget CRD
+	bootTarget, err := h.ctrlClient.GetBootTarget(ctx, bootInfo.Target)
 	if err != nil {
-		log.Printf("Error loading template %s: %v", templateName, err)
+		log.Printf("Error loading BootTarget %s: %v", bootInfo.Target, err)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	tmpl, err := template.New(bootInfo.Target).Parse(bootTarget.Template)
+	if err != nil {
+		log.Printf("Error parsing template for %s: %v", bootInfo.Target, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	data := TemplateData{
-		Host: h.host,
-		Port: h.port,
-		MAC:  mac, // Keep dash format for URLs
+		Host:     h.host,
+		Port:     h.port,
+		Hostname: bootInfo.MachineName,
+		Target:   bootInfo.Target,
 	}
 
 	var buf bytes.Buffer

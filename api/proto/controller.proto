@@ -15,8 +15,11 @@ service ControllerService {
   // MarkBootCompleted marks a deploy as Completed
   rpc MarkBootCompleted(MarkBootCompletedRequest) returns (MarkBootCompletedResponse);
 
-  // GetTemplate retrieves a boot template
+  // GetTemplate retrieves a boot template from ConfigMap
   rpc GetTemplate(GetTemplateRequest) returns (GetTemplateResponse);
+
+  // GetBootTarget retrieves a BootTarget by name
+  rpc GetBootTarget(GetBootTargetRequest) returns (GetBootTargetResponse);
 }
 
 message GetPendingBootRequest {
@@ -40,7 +43,7 @@ message MarkBootStartedResponse {
 }
 
 message MarkBootCompletedRequest {
-  string mac = 1;
+  string hostname = 1;
 }
 
 message MarkBootCompletedResponse {
@@ -56,4 +59,14 @@ message GetTemplateRequest {
 message GetTemplateResponse {
   bool found = 1;
   string content = 2;
+}
+
+message GetBootTargetRequest {
+  string name = 1;
+}
+
+message GetBootTargetResponse {
+  bool found = 1;
+  string disk_image_ref = 2;
+  string template = 3;
 }
