@@ -64,13 +64,13 @@ func (s *GRPCServer) MarkBootStarted(ctx context.Context, req *pb.MarkBootStarte
 	return &pb.MarkBootStartedResponse{Success: true}, nil
 }
 
-// MarkBootCompleted marks a deploy as Completed
+// MarkBootCompleted marks a deploy as Completed (by hostname)
 func (s *GRPCServer) MarkBootCompleted(ctx context.Context, req *pb.MarkBootCompletedRequest) (*pb.MarkBootCompletedResponse, error) {
-	mac := strings.ToLower(req.Mac)
+	hostname := req.Hostname
 
-	deploy, err := s.ctrl.k8sClient.FindDeployByMAC(ctx, mac, "InProgress")
+	deploy, err := s.ctrl.k8sClient.FindDeployByHostname(ctx, hostname, "InProgress")
 	if err != nil {
-		log.Printf("gRPC: error finding deploy for %s: %v", mac, err)
+		log.Printf("gRPC: error finding deploy for %s: %v", hostname, err)
 		return &pb.MarkBootCompletedResponse{Success: false, Error: err.Error()}, nil
 	}
 
@@ -103,5 +103,20 @@ func (s *GRPCServer) GetTemplate(ctx context.Context, req *pb.GetTemplateRequest
 	return &pb.GetTemplateResponse{
 		Found:   true,
 		Content: content,
+	}, nil
+}
+
+// GetBootTarget retrieves a BootTarget by name
+func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetRequest) (*pb.GetBootTargetResponse, error) {
+	bt, err := s.ctrl.k8sClient.GetBootTarget(ctx, req.Name)
+	if err != nil {
+		log.Printf("gRPC: error getting boottarget %s: %v", req.Name, err)
+		return &pb.GetBootTargetResponse{Found: false}, nil
+	}
+
+	return &pb.GetBootTargetResponse{
+		Found:        true,
+		DiskImageRef: bt.DiskImageRef,
+		Template:     bt.Template,
 	}, nil
 }

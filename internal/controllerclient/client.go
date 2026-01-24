@@ -76,9 +76,9 @@ func (c *Client) MarkBootStarted(ctx context.Context, mac string) error {
 	return nil
 }
 
-// MarkBootCompleted marks a deploy as Completed
-func (c *Client) MarkBootCompleted(ctx context.Context, mac string) error {
-	resp, err := c.client.MarkBootCompleted(ctx, &pb.MarkBootCompletedRequest{Mac: mac})
+// MarkBootCompleted marks a deploy as Completed (by hostname)
+func (c *Client) MarkBootCompleted(ctx context.Context, hostname string) error {
+	resp, err := c.client.MarkBootCompleted(ctx, &pb.MarkBootCompletedRequest{Hostname: hostname})
 	if err != nil {
 		return fmt.Errorf("grpc call: %w", err)
 	}
@@ -90,7 +90,7 @@ func (c *Client) MarkBootCompleted(ctx context.Context, mac string) error {
 	return nil
 }
 
-// GetTemplate retrieves a template from the controller
+// GetTemplate retrieves a template from the controller (ConfigMap)
 func (c *Client) GetTemplate(ctx context.Context, name, configMap string) (string, error) {
 	resp, err := c.client.GetTemplate(ctx, &pb.GetTemplateRequest{
 		Name:      name,
@@ -105,4 +105,27 @@ func (c *Client) GetTemplate(ctx context.Context, name, configMap string) (strin
 	}
 
 	return resp.Content, nil
+}
+
+// BootTargetInfo returned by GetBootTarget
+type BootTargetInfo struct {
+	DiskImageRef string
+	Template     string
+}
+
+// GetBootTarget retrieves a BootTarget by name
+func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInfo, error) {
+	resp, err := c.client.GetBootTarget(ctx, &pb.GetBootTargetRequest{Name: name})
+	if err != nil {
+		return nil, fmt.Errorf("grpc call: %w", err)
+	}
+
+	if !resp.Found {
+		return nil, fmt.Errorf("boottarget not found: %s", name)
+	}
+
+	return &BootTargetInfo{
+		DiskImageRef: resp.DiskImageRef,
+		Template:     resp.Template,
+	}, nil
 }

@@ -26,7 +26,7 @@ func NewDynamicHandler(host, port, proxyPort string, ctrlClient *controllerclien
 }
 
 // ServePreseed serves preseed configuration files
-// Path format: /dynamic/{mac}/{target}/preseed.cfg
+// Path format: /dynamic/{hostname}/{target}/preseed.cfg
 // Returns 200 with Content-Length: 0 (no content yet)
 func (h *DynamicHandler) ServePreseed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
@@ -41,7 +41,7 @@ func (h *DynamicHandler) CompleteDeployment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Parse path: /api/deploy/{mac}/complete
+	// Parse path: /api/deploy/{hostname}/complete
 	path := strings.TrimPrefix(r.URL.Path, "/api/deploy/")
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 || parts[1] != "complete" {
@@ -49,12 +49,12 @@ func (h *DynamicHandler) CompleteDeployment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	mac := strings.ToLower(parts[0])
+	hostname := parts[0]
 	ctx := r.Context()
 
-	// Mark deploy as completed via controller
-	if err := h.ctrlClient.MarkBootCompleted(ctx, mac); err != nil {
-		log.Printf("Error completing deploy for %s: %v", mac, err)
+	// Mark deploy as completed via controller (using hostname)
+	if err := h.ctrlClient.MarkBootCompleted(ctx, hostname); err != nil {
+		log.Printf("Error completing deploy for %s: %v", hostname, err)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
