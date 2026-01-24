@@ -216,18 +216,20 @@ func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Requ
 }
 
 // ListISOContents lists files in an ISO directory (for debugging)
+// Path format: /iso/list/{target}/{isoFilename}/{dirPath}
 func (h *ISOHandler) ListISOContents(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/iso/list/")
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) < 1 {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+	parts := strings.SplitN(path, "/", 3)
+	if len(parts) < 2 {
+		http.Error(w, "invalid path: expected /iso/list/{target}/{isoFilename}/{dirPath}", http.StatusBadRequest)
 		return
 	}
 
 	target := parts[0]
+	isoFilename := parts[1]
 	dirPath := ""
-	if len(parts) > 1 {
-		dirPath = parts[1]
+	if len(parts) > 2 {
+		dirPath = parts[2]
 	}
 
 	// Get target config
@@ -238,7 +240,7 @@ func (h *ISOHandler) ListISOContents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure ISO is downloaded
-	isoPath := config.ISOPath(h.basePath, target)
+	isoPath := config.ISOPathWithFilename(h.basePath, target, isoFilename)
 	if err := h.downloader.EnsureFile(isoPath, targetConfig.ISO); err != nil {
 		http.Error(w, fmt.Sprintf("failed to get ISO: %v", err), http.StatusInternalServerError)
 		return

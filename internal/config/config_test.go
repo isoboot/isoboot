@@ -134,8 +134,8 @@ func TestGetTarget(t *testing.T) {
 	}
 }
 
-func TestISOPath(t *testing.T) {
-	path := ISOPath("/opt/isoboot/iso", "debian-13")
+func TestISOPathWithFilename(t *testing.T) {
+	path := ISOPathWithFilename("/opt/isoboot/iso", "debian-13", "mini.iso")
 	expected := "/opt/isoboot/iso/debian-13/mini.iso"
 	if path != expected {
 		t.Errorf("Expected %s, got %s", expected, path)

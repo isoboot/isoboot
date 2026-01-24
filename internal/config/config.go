@@ -119,11 +119,6 @@ func (cw *ConfigWatcher) GetTarget(name string) (TargetConfig, bool) {
 	return t, ok
 }
 
-// ISOPath returns the path to the ISO file for a target (legacy, uses mini.iso)
-func ISOPath(basePath, target string) string {
-	return filepath.Join(basePath, target, "mini.iso")
-}
-
 // ISOPathWithFilename returns the path to the ISO file with explicit filename
 func ISOPathWithFilename(basePath, target, filename string) string {
 	return filepath.Join(basePath, target, filename)
