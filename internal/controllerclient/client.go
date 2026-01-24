@@ -3,7 +3,6 @@ package controllerclient
 import (
 	"context"
 	"fmt"
-	"time"
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
 	"google.golang.org/grpc"
@@ -23,17 +22,15 @@ type Client struct {
 	client pb.ControllerServiceClient
 }
 
-// New creates a new controller client
+// New creates a new controller client.
+// Connection is established lazily on first RPC call, allowing the HTTP server
+// to start before the controller is ready.
 func New(controllerAddr string) (*Client, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, controllerAddr,
+	conn, err := grpc.NewClient(controllerAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("connect to controller: %w", err)
+		return nil, fmt.Errorf("create grpc client: %w", err)
 	}
 
 	return &Client{
