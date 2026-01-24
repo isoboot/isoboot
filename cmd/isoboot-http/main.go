@@ -6,11 +6,33 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/isoboot/isoboot/internal/config"
 	"github.com/isoboot/isoboot/internal/handlers"
 	"github.com/isoboot/isoboot/internal/k8s"
 )
+
+// responseWriter wraps http.ResponseWriter to capture status code
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+// loggingMiddleware logs requests with status code
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rw, r)
+		log.Printf("%s %s %d %s", r.Method, r.URL.Path, rw.status, time.Since(start))
+	})
+}
 
 func main() {
 	var (
@@ -64,8 +86,9 @@ func main() {
 
 	// Health check
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "2")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "OK")
+		w.Write([]byte("OK"))
 	})
 
 	// Boot handlers
@@ -87,7 +110,7 @@ func main() {
 	log.Printf("Namespace: %s", namespace)
 	log.Printf("Templates ConfigMap: %s", templatesConfigMap)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, loggingMiddleware(mux)); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

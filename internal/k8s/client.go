@@ -192,44 +192,51 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// normalizeMAC converts a MAC address to a canonical format (lowercase, no separators)
+// normalizeMAC converts a MAC address to canonical format (lowercase, dash-separated)
+// Returns empty string if MAC contains colons (invalid format)
 func normalizeMAC(mac string) string {
-	mac = strings.ToLower(mac)
-	mac = strings.ReplaceAll(mac, ":", "")
-	mac = strings.ReplaceAll(mac, "-", "")
-	return mac
+	if strings.Contains(mac, ":") {
+		return "" // reject colon format
+	}
+	return strings.ToLower(mac)
 }
 
 // FindDeployByMAC finds a Deploy that references a Machine with the given MAC address
+// MAC must be dash-separated (e.g., aa-bb-cc-dd-ee-ff)
 func (c *Client) FindDeployByMAC(ctx context.Context, mac string) (*Deploy, error) {
 	normalizedMAC := normalizeMAC(mac)
+	if normalizedMAC == "" {
+		return nil, nil // Invalid MAC format (contains colons)
+	}
 
-	// List all machines to find one with this MAC
+	// Build map of machine name -> MAC for O(n) lookup
 	machines, err := c.ListMachines(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list machines: %w", err)
 	}
 
-	var matchingMachine *Machine
+	macToMachine := make(map[string]string) // MAC -> machine name
 	for _, m := range machines {
-		if normalizeMAC(m.MAC) == normalizedMAC {
-			matchingMachine = m
-			break
+		machineMAC := normalizeMAC(m.MAC)
+		if machineMAC != "" {
+			macToMachine[machineMAC] = m.Name
 		}
 	}
 
-	if matchingMachine == nil {
+	// Find machine name for this MAC
+	machineName, ok := macToMachine[normalizedMAC]
+	if !ok {
 		return nil, nil // No machine with this MAC
 	}
 
-	// Find deploy referencing this machine
+	// Find pending deploy referencing this machine
 	deploys, err := c.ListDeploys(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list deploys: %w", err)
 	}
 
 	for _, d := range deploys {
-		if d.Spec.MachineRef == matchingMachine.Name {
+		if d.Spec.MachineRef == machineName {
 			return d, nil
 		}
 	}

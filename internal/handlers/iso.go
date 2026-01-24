@@ -215,62 +215,7 @@ func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Requ
 	}
 }
 
-// ListISOContents lists files in an ISO directory (for debugging)
-// Path format: /iso/list/{target}/{isoFilename}/{dirPath}
-func (h *ISOHandler) ListISOContents(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/iso/list/")
-	parts := strings.SplitN(path, "/", 3)
-	if len(parts) < 2 {
-		http.Error(w, "invalid path: expected /iso/list/{target}/{isoFilename}/{dirPath}", http.StatusBadRequest)
-		return
-	}
-
-	target := parts[0]
-	isoFilename := parts[1]
-	dirPath := ""
-	if len(parts) > 2 {
-		dirPath = parts[2]
-	}
-
-	// Get target config
-	targetConfig, ok := h.configWatcher.GetTarget(target)
-	if !ok {
-		http.Error(w, fmt.Sprintf("unknown target: %s", target), http.StatusNotFound)
-		return
-	}
-
-	// Ensure ISO is downloaded
-	isoPath := config.ISOPathWithFilename(h.basePath, target, isoFilename)
-	if err := h.downloader.EnsureFile(isoPath, targetConfig.ISO); err != nil {
-		http.Error(w, fmt.Sprintf("failed to get ISO: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	isoFile, err := iso.OpenISO9660(isoPath)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to open ISO: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer isoFile.Close()
-
-	files, err := isoFile.ListDirectory(dirPath)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to list directory: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain")
-	for _, f := range files {
-		typeChar := "-"
-		if f.IsDir {
-			typeChar = "d"
-		}
-		fmt.Fprintf(w, "%s %10d %s\n", typeChar, f.Size, f.Name)
-	}
-}
-
 // RegisterRoutes registers ISO-related routes
 func (h *ISOHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/iso/content/", h.ServeISOContent)
-	mux.HandleFunc("/iso/list/", h.ListISOContents)
 }

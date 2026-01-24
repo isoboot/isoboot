@@ -12,11 +12,10 @@ import (
 )
 
 type BootHandler struct {
-	host       string
-	port       string
-	k8sClient  *k8s.Client
-	configMap  string
-	templates  map[string]*template.Template
+	host      string
+	port      string
+	k8sClient *k8s.Client
+	configMap string
 }
 
 func NewBootHandler(host, port string, k8sClient *k8s.Client, configMap string) *BootHandler {
@@ -25,7 +24,6 @@ func NewBootHandler(host, port string, k8sClient *k8s.Client, configMap string) 
 		port:      port,
 		k8sClient: k8sClient,
 		configMap: configMap,
-		templates: make(map[string]*template.Template),
 	}
 }
 
@@ -87,15 +85,11 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// MAC comes in as xx-xx-xx-xx-xx-xx (hexhyp format from iPXE)
-	// Normalize to lowercase
+	// MAC must be dash-separated (xx-xx-xx-xx-xx-xx from iPXE)
 	mac = strings.ToLower(mac)
 
-	// Convert dash format to colon format for matching
-	macColon := strings.ReplaceAll(mac, "-", ":")
-
 	// Find deploy for this MAC
-	deploy, err := h.k8sClient.FindDeployByMAC(context.Background(), macColon)
+	deploy, err := h.k8sClient.FindDeployByMAC(context.Background(), mac)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)

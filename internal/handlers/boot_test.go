@@ -9,51 +9,13 @@ import (
 	"text/template"
 )
 
-// MockBootHandler creates a handler with preloaded templates for testing
-func newTestBootHandler(templates map[string]string) *BootHandler {
-	h := &BootHandler{
-		host:      "192.168.1.1",
-		port:      "8080",
-		k8sClient: nil,
-		configMap: "test-templates",
-		templates: make(map[string]*template.Template),
-	}
-
-	// Pre-parse templates
-	for name, content := range templates {
-		tmpl, _ := template.New(name).Parse(content)
-		h.templates[name] = tmpl
-	}
-
-	return h
-}
-
-// Override loadTemplate to use cached templates for testing
-func (h *BootHandler) loadTemplateForTest(name string) (*template.Template, error) {
-	if tmpl, ok := h.templates[name]; ok {
-		return tmpl, nil
-	}
-	return nil, nil
-}
-
 func TestServeBootIPXE_ContentLength(t *testing.T) {
-	templates := map[string]string{
-		"boot.ipxe": "#!ipxe\nchain http://{{ .Host }}:{{ .Port }}/boot\n",
-	}
-	h := newTestBootHandler(templates)
+	tmpl, _ := template.New("boot.ipxe").Parse("#!ipxe\nchain http://{{ .Host }}:{{ .Port }}/boot\n")
 
-	// Create a test handler that uses preloaded template
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		tmpl := h.templates["boot.ipxe"]
-		if tmpl == nil {
-			w.Header().Set("Content-Length", "0")
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
 		data := TemplateData{
-			Host: h.host,
-			Port: h.port,
+			Host: "192.168.1.1",
+			Port: "8080",
 		}
 
 		var buf bytes.Buffer
@@ -93,7 +55,6 @@ func TestServeBootIPXE_ContentLength(t *testing.T) {
 }
 
 func TestServeConditionalBoot_NoMAC(t *testing.T) {
-	// Test the MAC validation directly
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		mac := r.URL.Query().Get("mac")
 		if mac == "" {
@@ -118,9 +79,7 @@ func TestServeConditionalBoot_NoMAC(t *testing.T) {
 }
 
 func TestServeConditionalBoot_NoDeploy(t *testing.T) {
-	// When no deploy is found, should return 404 with Content-Length
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		// Simulate no deploy found
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusNotFound)
 	}

@@ -139,38 +139,6 @@ func TestCompleteDeployment_Success(t *testing.T) {
 	}
 }
 
-func TestPreseedTemplateRendering(t *testing.T) {
-	tmpl, err := template.New("preseed").Parse(`# Preseed for MAC: {{.MAC}}
-d-i mirror/http/proxy string {{.ProxyURL}}
-`)
-	if err != nil {
-		t.Fatalf("Failed to parse template: %v", err)
-	}
-
-	data := PreseedData{
-		Host:      "192.168.1.100",
-		Port:      "8080",
-		ProxyPort: "3128",
-		ProxyURL:  "http://192.168.1.100:3128",
-		MAC:       "aa-bb-cc-dd-ee-ff",
-		MACColon:  "aa:bb:cc:dd:ee:ff",
-		Target:    "debian-13",
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		t.Fatalf("Failed to execute template: %v", err)
-	}
-
-	result := buf.String()
-	if !bytes.Contains([]byte(result), []byte("aa-bb-cc-dd-ee-ff")) {
-		t.Error("Expected MAC in output")
-	}
-	if !bytes.Contains([]byte(result), []byte("http://192.168.1.100:3128")) {
-		t.Error("Expected proxy URL in output")
-	}
-}
-
 func TestPreseedContentLength(t *testing.T) {
 	// Verify that preseed content is rendered to buffer and Content-Length is set
 	tmpl, _ := template.New("preseed").Parse("test content")

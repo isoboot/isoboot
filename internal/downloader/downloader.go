@@ -166,9 +166,13 @@ func (d *Downloader) waitForDownload(destPath, lockPath string) error {
 			return nil
 		}
 
-		// Check if lock is gone (download failed)
+		// Check if lock still exists
 		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
-			// Lock gone but file not there - download failed
+			// Lock gone - check file one more time (race condition fix)
+			if _, err := os.Stat(destPath); err == nil {
+				return nil
+			}
+			// Lock gone and file not there - download failed
 			return fmt.Errorf("download failed")
 		}
 
