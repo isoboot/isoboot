@@ -30,9 +30,9 @@ func NewBootHandler(host, port string, ctrlClient *controllerclient.Client, conf
 
 // TemplateData is passed to boot templates
 type TemplateData struct {
-	Host string
-	Port string
-	MAC  string
+	Host     string
+	Port     string
+	Hostname string
 }
 
 func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.Template, error) {
@@ -114,9 +114,9 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	}
 
 	data := TemplateData{
-		Host: h.host,
-		Port: h.port,
-		MAC:  mac, // Keep dash format for URLs
+		Host:     h.host,
+		Port:     h.port,
+		Hostname: bootInfo.MachineName,
 	}
 
 	var buf bytes.Buffer
@@ -131,7 +131,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	w.Write(buf.Bytes())
 
-	// Mark deploy as started via controller
+	// Mark deploy as started via controller (using MAC)
 	if err := h.ctrlClient.MarkBootStarted(ctx, mac); err != nil {
 		log.Printf("Warning: failed to mark boot started for %s: %v", mac, err)
 	}

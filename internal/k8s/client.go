@@ -256,6 +256,35 @@ func (c *Client) FindDeployByMAC(ctx context.Context, mac string, phase string) 
 	return nil, nil // No matching deploy for this machine
 }
 
+// FindDeployByHostname finds a Deploy that references a Machine with the given hostname
+// phase filters by status phase (empty string matches any phase)
+func (c *Client) FindDeployByHostname(ctx context.Context, hostname string, phase string) (*Deploy, error) {
+	// Find deploy referencing this hostname (machine name) with matching phase
+	deploys, err := c.ListDeploys(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list deploys: %w", err)
+	}
+
+	for _, d := range deploys {
+		if d.Spec.MachineRef == hostname {
+			// Filter by phase if specified
+			if phase != "" {
+				// Empty status.phase is treated as "Pending"
+				deployPhase := d.Status.Phase
+				if deployPhase == "" {
+					deployPhase = "Pending"
+				}
+				if deployPhase != phase {
+					continue
+				}
+			}
+			return d, nil
+		}
+	}
+
+	return nil, nil // No matching deploy for this hostname
+}
+
 // UpdateDeployStatus updates the status of a Deploy
 func (c *Client) UpdateDeployStatus(ctx context.Context, name, phase, message string) error {
 	obj, err := c.dynamicClient.Resource(deployGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})

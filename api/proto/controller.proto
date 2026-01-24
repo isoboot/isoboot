@@ -40,7 +40,7 @@ message MarkBootStartedResponse {
 }
 
 message MarkBootCompletedRequest {
-  string mac = 1;
+  string hostname = 1;
 }
 
 message MarkBootCompletedResponse {

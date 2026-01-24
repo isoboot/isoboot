@@ -62,7 +62,7 @@ func (c *Client) GetPendingBoot(ctx context.Context, mac string) (*BootInfo, err
 	}, nil
 }
 
-// MarkBootStarted marks a deploy as InProgress
+// MarkBootStarted marks a deploy as InProgress (by MAC)
 func (c *Client) MarkBootStarted(ctx context.Context, mac string) error {
 	resp, err := c.client.MarkBootStarted(ctx, &pb.MarkBootStartedRequest{Mac: mac})
 	if err != nil {
@@ -76,9 +76,9 @@ func (c *Client) MarkBootStarted(ctx context.Context, mac string) error {
 	return nil
 }
 
-// MarkBootCompleted marks a deploy as Completed
-func (c *Client) MarkBootCompleted(ctx context.Context, mac string) error {
-	resp, err := c.client.MarkBootCompleted(ctx, &pb.MarkBootCompletedRequest{Mac: mac})
+// MarkBootCompleted marks a deploy as Completed (by hostname)
+func (c *Client) MarkBootCompleted(ctx context.Context, hostname string) error {
+	resp, err := c.client.MarkBootCompleted(ctx, &pb.MarkBootCompletedRequest{Hostname: hostname})
 	if err != nil {
 		return fmt.Errorf("grpc call: %w", err)
 	}

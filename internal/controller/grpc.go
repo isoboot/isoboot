@@ -41,7 +41,7 @@ func (s *GRPCServer) GetPendingBoot(ctx context.Context, req *pb.GetPendingBootR
 	}, nil
 }
 
-// MarkBootStarted marks a deploy as InProgress
+// MarkBootStarted marks a deploy as InProgress (by MAC)
 func (s *GRPCServer) MarkBootStarted(ctx context.Context, req *pb.MarkBootStartedRequest) (*pb.MarkBootStartedResponse, error) {
 	mac := strings.ToLower(req.Mac)
 
@@ -64,13 +64,13 @@ func (s *GRPCServer) MarkBootStarted(ctx context.Context, req *pb.MarkBootStarte
 	return &pb.MarkBootStartedResponse{Success: true}, nil
 }
 
-// MarkBootCompleted marks a deploy as Completed
+// MarkBootCompleted marks a deploy as Completed (by hostname)
 func (s *GRPCServer) MarkBootCompleted(ctx context.Context, req *pb.MarkBootCompletedRequest) (*pb.MarkBootCompletedResponse, error) {
-	mac := strings.ToLower(req.Mac)
+	hostname := req.Hostname
 
-	deploy, err := s.ctrl.k8sClient.FindDeployByMAC(ctx, mac, "InProgress")
+	deploy, err := s.ctrl.k8sClient.FindDeployByHostname(ctx, hostname, "InProgress")
 	if err != nil {
-		log.Printf("gRPC: error finding deploy for %s: %v", mac, err)
+		log.Printf("gRPC: error finding deploy for %s: %v", hostname, err)
 		return &pb.MarkBootCompletedResponse{Success: false, Error: err.Error()}, nil
 	}
 
