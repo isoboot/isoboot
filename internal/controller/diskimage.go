@@ -21,10 +21,7 @@ import (
 	"github.com/isoboot/isoboot/internal/k8s"
 )
 
-const (
-	downloadTimeout = 30 * time.Minute
-	chunkSize       = 1024 * 1024 // 1MB
-)
+const downloadTimeout = 30 * time.Minute
 
 // reconcileDiskImages reconciles all DiskImage resources
 func (c *Controller) reconcileDiskImages(ctx context.Context) {
@@ -110,7 +107,7 @@ func (c *Controller) downloadDiskImage(di *k8s.DiskImage) {
 
 	// Download ISO
 	isoPath := filepath.Join(c.isoBasePath, di.Name, filepath.Base(di.ISO))
-	isoResult, err := c.downloadAndVerify(ctx, di.Name, di.ISO, isoPath, status, true)
+	isoResult, err := c.downloadAndVerify(di.ISO, isoPath)
 	if err != nil {
 		status.Phase = "Failed"
 		status.Message = fmt.Sprintf("ISO download failed: %v", err)
@@ -137,7 +134,7 @@ func (c *Controller) downloadDiskImage(di *k8s.DiskImage) {
 		c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status)
 
 		fwPath := filepath.Join(c.isoBasePath, di.Name, "firmware", filepath.Base(di.Firmware))
-		fwResult, err := c.downloadAndVerify(ctx, di.Name, di.Firmware, fwPath, status, false)
+		fwResult, err := c.downloadAndVerify(di.Firmware, fwPath)
 		if err != nil {
 			status.Phase = "Failed"
 			status.Message = fmt.Sprintf("Firmware download failed: %v", err)
@@ -159,7 +156,7 @@ func (c *Controller) downloadDiskImage(di *k8s.DiskImage) {
 }
 
 // downloadAndVerify downloads a file and verifies checksums
-func (c *Controller) downloadAndVerify(ctx context.Context, diskImageName, fileURL, destPath string, status *k8s.DiskImageStatus, isISO bool) (*k8s.DiskImageVerification, error) {
+func (c *Controller) downloadAndVerify(fileURL, destPath string) (*k8s.DiskImageVerification, error) {
 	result := &k8s.DiskImageVerification{
 		FileSizeMatch: "processing",
 		DigestSha512:  "pending",
