@@ -43,7 +43,10 @@ api/
 ### Template Rendering
 Templates use Go `text/template` with `missingkey=error`:
 ```go
-tmpl, _ := template.New("").Option("missingkey=error").Parse(content)
+tmpl, err := template.New("").Option("missingkey=error").Parse(content)
+if err != nil {
+    return err
+}
 ```
 
 Available variables:
