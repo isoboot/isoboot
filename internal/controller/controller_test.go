@@ -2,7 +2,7 @@ package controller
 
 import (
 	"context"
-	"errors"
+	"strings"
 	"testing"
 
 	"github.com/isoboot/isoboot/internal/k8s"
@@ -79,29 +79,12 @@ func TestCheckDiskImageStatus(t *testing.T) {
 			if ready != tt.expectReady {
 				t.Errorf("expected ready=%v, got ready=%v", tt.expectReady, ready)
 			}
-			if tt.expectMsgPart != "" && !contains(msg, tt.expectMsgPart) {
+			if tt.expectMsgPart != "" && !strings.Contains(msg, tt.expectMsgPart) {
 				t.Errorf("expected message to contain %q, got %q", tt.expectMsgPart, msg)
 			}
 		})
 	}
 }
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && searchSubstring(s, substr)))
-}
-
-func searchSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
-// Ensure errors package is used (for future mock tests)
-var _ = errors.New
 
 func TestRenderTemplate_BasicVariables(t *testing.T) {
 	ctrl := &Controller{

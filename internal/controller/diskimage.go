@@ -73,12 +73,19 @@ func (c *Controller) reconcileDiskImage(ctx context.Context, di *k8s.DiskImage) 
 	// If Pending or Downloading, ensure download is running
 	// (Downloading phase may be stale if controller restarted mid-download)
 	if di.Status.Phase == "Pending" || di.Status.Phase == "Downloading" {
+		// Check if download is already in progress (prevent concurrent downloads)
+		if _, alreadyRunning := c.activeDownloads.LoadOrStore(di.Name, true); alreadyRunning {
+			return
+		}
 		go c.downloadDiskImage(ctx, di)
 	}
 }
 
 // downloadDiskImage downloads and verifies a DiskImage
 func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskImage) {
+	// Clean up activeDownloads tracking when done
+	defer c.activeDownloads.Delete(di.Name)
+
 	// Create a context with timeout for download operations (HTTP requests)
 	downloadCtx, cancel := context.WithTimeout(parentCtx, downloadTimeout)
 	defer cancel()
@@ -118,7 +125,9 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 		status.Phase = "Failed"
 		status.Message = fmt.Sprintf("ISO download failed: %v", err)
 		status.ISO = isoResult
-		c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status)
+		if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
+			log.Printf("Controller: failed to update DiskImage %s to Failed: %v", di.Name, updateErr)
+		}
 		return
 	}
 	status.ISO = isoResult
@@ -137,7 +146,9 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 			DigestSha256:  "pending",
 			DigestMd5:     "pending",
 		}
-		c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status)
+		if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
+			log.Printf("Controller: failed to update DiskImage %s firmware progress: %v", di.Name, updateErr)
+		}
 
 		fwPath := filepath.Join(c.isoBasePath, di.Name, "firmware", filepath.Base(di.Firmware))
 		fwResult, err := c.downloadAndVerify(downloadCtx, di.Firmware, fwPath)
@@ -145,7 +156,9 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 			status.Phase = "Failed"
 			status.Message = fmt.Sprintf("Firmware download failed: %v", err)
 			status.Firmware = fwResult
-			c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status)
+			if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
+				log.Printf("Controller: failed to update DiskImage %s to Failed: %v", di.Name, updateErr)
+			}
 			return
 		}
 		status.Firmware = fwResult

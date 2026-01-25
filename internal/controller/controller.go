@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"text/template"
 	"time"
 
@@ -18,11 +19,12 @@ const (
 
 // Controller watches Deploy CRDs and manages their lifecycle
 type Controller struct {
-	k8sClient   *k8s.Client
-	stopCh      chan struct{}
-	host        string
-	port        string
-	isoBasePath string
+	k8sClient          *k8s.Client
+	stopCh             chan struct{}
+	host               string
+	port               string
+	isoBasePath        string
+	activeDownloads    sync.Map // tracks in-progress DiskImage downloads by name
 }
 
 // New creates a new controller
