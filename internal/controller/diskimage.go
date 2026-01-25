@@ -72,13 +72,15 @@ func (c *Controller) reconcileDiskImage(ctx context.Context, di *k8s.DiskImage) 
 
 	// If Pending, start download
 	if di.Status.Phase == "Pending" {
-		go c.downloadDiskImage(di)
+		go c.downloadDiskImage(ctx, di)
 	}
 }
 
 // downloadDiskImage downloads and verifies a DiskImage
-func (c *Controller) downloadDiskImage(di *k8s.DiskImage) {
-	ctx := context.Background()
+func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskImage) {
+	// Create a context with timeout for the entire download operation
+	ctx, cancel := context.WithTimeout(parentCtx, downloadTimeout)
+	defer cancel()
 
 	// Update status to Downloading
 	status := &k8s.DiskImageStatus{
@@ -337,7 +339,7 @@ func (c *Controller) discoverChecksums(fileURL string) map[string]map[string]str
 			}
 
 			// Parse checksum file
-			parsed := parseChecksumFile(resp.Body, cf.hashType)
+			parsed := parseChecksumFile(resp.Body)
 			resp.Body.Close()
 
 			if len(parsed) > 0 {
@@ -355,7 +357,7 @@ func (c *Controller) discoverChecksums(fileURL string) map[string]map[string]str
 }
 
 // parseChecksumFile parses a checksum file (SHA256SUMS format)
-func parseChecksumFile(r io.Reader, hashType string) map[string]string {
+func parseChecksumFile(r io.Reader) map[string]string {
 	result := make(map[string]string)
 	scanner := bufio.NewScanner(r)
 

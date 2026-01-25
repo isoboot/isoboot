@@ -16,14 +16,12 @@ func TestParseChecksumFile(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		hashType string
 		expected map[string]string
 	}{
 		{
 			name: "standard format with two spaces",
 			input: `abc123  file1.iso
 def456  file2.iso`,
-			hashType: "sha256",
 			expected: map[string]string{
 				"file1.iso": "abc123",
 				"file2.iso": "def456",
@@ -33,7 +31,6 @@ def456  file2.iso`,
 			name: "binary mode with asterisk",
 			input: `abc123 *file1.iso
 def456 *file2.iso`,
-			hashType: "sha256",
 			expected: map[string]string{
 				"file1.iso": "abc123",
 				"file2.iso": "def456",
@@ -43,7 +40,6 @@ def456 *file2.iso`,
 			name: "with path prefix",
 			input: `abc123  ./subdir/file1.iso
 def456  subdir/file2.iso`,
-			hashType: "sha256",
 			expected: map[string]string{
 				"subdir/file1.iso": "abc123",
 				"file1.iso":        "abc123",
@@ -58,7 +54,6 @@ abc123  file1.iso
 
 def456  file2.iso
 # Another comment`,
-			hashType: "sha256",
 			expected: map[string]string{
 				"file1.iso": "abc123",
 				"file2.iso": "def456",
@@ -67,14 +62,13 @@ def456  file2.iso
 		{
 			name:     "empty file",
 			input:    "",
-			hashType: "sha256",
 			expected: map[string]string{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := parseChecksumFile(strings.NewReader(tt.input), tt.hashType)
+			result := parseChecksumFile(strings.NewReader(tt.input))
 
 			for key, expectedValue := range tt.expected {
 				if got, ok := result[key]; !ok {
