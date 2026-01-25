@@ -1,8 +1,11 @@
 package controller
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"log"
+	"text/template"
 	"time"
 
 	"github.com/isoboot/isoboot/internal/k8s"
@@ -17,6 +20,8 @@ const (
 type Controller struct {
 	k8sClient *k8s.Client
 	stopCh    chan struct{}
+	host      string
+	port      string
 }
 
 // New creates a new controller
@@ -25,6 +30,12 @@ func New(k8sClient *k8s.Client) *Controller {
 		k8sClient: k8sClient,
 		stopCh:    make(chan struct{}),
 	}
+}
+
+// SetHostPort sets the host and port for template rendering
+func (c *Controller) SetHostPort(host, port string) {
+	c.host = host
+	c.port = port
 }
 
 // Start begins the controller reconciliation loop
@@ -71,6 +82,26 @@ func (c *Controller) reconcile() {
 }
 
 func (c *Controller) reconcileDeploy(ctx context.Context, deploy *k8s.Deploy) {
+	// Validate references before any status changes
+	if err := c.validateDeployRefs(ctx, deploy); err != nil {
+		if deploy.Status.Phase != "ConfigError" || deploy.Status.Message != err.Error() {
+			log.Printf("Controller: config error for %s: %v", deploy.Name, err)
+			if updateErr := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "ConfigError", err.Error()); updateErr != nil {
+				log.Printf("Controller: failed to set ConfigError for %s: %v", deploy.Name, updateErr)
+			}
+		}
+		return
+	}
+
+	// If previously in ConfigError but now valid, reset to Pending
+	if deploy.Status.Phase == "ConfigError" {
+		log.Printf("Controller: %s references now valid, resetting to Pending", deploy.Name)
+		if err := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "Pending", "References validated"); err != nil {
+			log.Printf("Controller: failed to reset %s to Pending: %v", deploy.Name, err)
+		}
+		return
+	}
+
 	// Initialize empty status to Pending
 	if deploy.Status.Phase == "" {
 		log.Printf("Controller: initializing %s status to Pending", deploy.Name)
@@ -90,4 +121,87 @@ func (c *Controller) reconcileDeploy(ctx context.Context, deploy *k8s.Deploy) {
 			}
 		}
 	}
+}
+
+// validateDeployRefs checks that all referenced resources exist
+func (c *Controller) validateDeployRefs(ctx context.Context, deploy *k8s.Deploy) error {
+	// Validate machineRef
+	if _, err := c.k8sClient.GetMachine(ctx, deploy.Spec.MachineRef); err != nil {
+		return fmt.Errorf("Machine '%s' not found", deploy.Spec.MachineRef)
+	}
+
+	// Validate target (BootTarget)
+	if _, err := c.k8sClient.GetBootTarget(ctx, deploy.Spec.Target); err != nil {
+		return fmt.Errorf("BootTarget '%s' not found", deploy.Spec.Target)
+	}
+
+	// Validate responseTemplateRef
+	if deploy.Spec.ResponseTemplateRef != "" {
+		if _, err := c.k8sClient.GetResponseTemplate(ctx, deploy.Spec.ResponseTemplateRef); err != nil {
+			return fmt.Errorf("ResponseTemplate '%s' not found", deploy.Spec.ResponseTemplateRef)
+		}
+	}
+
+	// Validate configMaps
+	for _, cm := range deploy.Spec.ConfigMaps {
+		if _, err := c.k8sClient.GetConfigMap(ctx, cm); err != nil {
+			return fmt.Errorf("ConfigMap '%s' not found", cm)
+		}
+	}
+
+	// Validate secrets
+	for _, secret := range deploy.Spec.Secrets {
+		if _, err := c.k8sClient.GetSecret(ctx, secret); err != nil {
+			return fmt.Errorf("Secret '%s' not found", secret)
+		}
+	}
+
+	return nil
+}
+
+// RenderTemplate renders a template with merged values from ConfigMaps and Secrets
+func (c *Controller) RenderTemplate(ctx context.Context, deploy *k8s.Deploy, templateContent string) (string, error) {
+	// Build template data by merging ConfigMaps, then Secrets
+	data := make(map[string]interface{})
+
+	// Merge ConfigMaps in order
+	for _, cmName := range deploy.Spec.ConfigMaps {
+		cm, err := c.k8sClient.GetConfigMap(ctx, cmName)
+		if err != nil {
+			return "", fmt.Errorf("ConfigMap '%s' not found", cmName)
+		}
+		for k, v := range cm.Data {
+			data[k] = v
+		}
+	}
+
+	// Merge Secrets in order (override ConfigMaps)
+	for _, secretName := range deploy.Spec.Secrets {
+		secret, err := c.k8sClient.GetSecret(ctx, secretName)
+		if err != nil {
+			return "", fmt.Errorf("Secret '%s' not found", secretName)
+		}
+		for k, v := range secret.Data {
+			data[k] = string(v)
+		}
+	}
+
+	// Add system variables
+	data["Host"] = c.host
+	data["Port"] = c.port
+	data["Hostname"] = deploy.Spec.MachineRef
+	data["Target"] = deploy.Spec.Target
+
+	// Parse and execute template
+	tmpl, err := template.New("response").Option("missingkey=error").Parse(templateContent)
+	if err != nil {
+		return "", fmt.Errorf("parse template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("execute template: %w", err)
+	}
+
+	return buf.String(), nil
 }

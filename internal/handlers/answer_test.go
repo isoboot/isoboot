@@ -9,12 +9,12 @@ import (
 	"text/template"
 )
 
-func TestServePreseed_InvalidPath_Short(t *testing.T) {
+func TestServeAnswer_InvalidPath_Short(t *testing.T) {
 	// Test path validation logic directly
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		// Simulate the path check from ServePreseed
-		parts := []string{} // Invalid - less than 3 parts
-		if len(parts) < 3 {
+		// Simulate the path check from ServeAnswer
+		parts := []string{} // Invalid - less than 2 parts
+		if len(parts) < 2 {
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusOK)
@@ -22,7 +22,7 @@ func TestServePreseed_InvalidPath_Short(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequest("GET", "/dynamic/invalid", nil)
+	req := httptest.NewRequest("GET", "/answer/invalid", nil)
 	w := httptest.NewRecorder()
 
 	handler(w, req)
@@ -36,7 +36,7 @@ func TestServePreseed_InvalidPath_Short(t *testing.T) {
 	}
 }
 
-func TestServePreseed_NoDeployResponse(t *testing.T) {
+func TestServeAnswer_NoDeployResponse(t *testing.T) {
 	// Test the response format when no deploy is found
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		// Simulate no deploy found
@@ -45,7 +45,7 @@ func TestServePreseed_NoDeployResponse(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}
 
-	req := httptest.NewRequest("GET", "/dynamic/aa-bb-cc-dd-ee-ff/debian-13/preseed.cfg", nil)
+	req := httptest.NewRequest("GET", "/answer/vm125/preseed.cfg", nil)
 	w := httptest.NewRecorder()
 
 	handler(w, req)
@@ -73,7 +73,7 @@ func TestCompleteDeployment_WrongMethod(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequest("GET", "/api/deploy/aa-bb-cc-dd-ee-ff/complete", nil)
+	req := httptest.NewRequest("GET", "/api/deploy/vm125/complete", nil)
 	w := httptest.NewRecorder()
 
 	handler(w, req)
@@ -121,7 +121,7 @@ func TestCompleteDeployment_Success(t *testing.T) {
 		w.Write(body)
 	}
 
-	req := httptest.NewRequest("POST", "/api/deploy/aa-bb-cc-dd-ee-ff/complete", nil)
+	req := httptest.NewRequest("POST", "/api/deploy/vm125/complete", nil)
 	w := httptest.NewRecorder()
 
 	handler(w, req)
@@ -139,9 +139,9 @@ func TestCompleteDeployment_Success(t *testing.T) {
 	}
 }
 
-func TestPreseedContentLength(t *testing.T) {
-	// Verify that preseed content is rendered to buffer and Content-Length is set
-	tmpl, _ := template.New("preseed").Parse("test content")
+func TestAnswerContentLength(t *testing.T) {
+	// Verify that answer content is rendered to buffer and Content-Length is set
+	tmpl, _ := template.New("answer").Parse("test content")
 
 	var buf bytes.Buffer
 	tmpl.Execute(&buf, nil)

@@ -120,3 +120,55 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 		Template:     bt.Template,
 	}, nil
 }
+
+// GetResponseTemplate retrieves a ResponseTemplate by name
+func (s *GRPCServer) GetResponseTemplate(ctx context.Context, req *pb.GetResponseTemplateRequest) (*pb.GetResponseTemplateResponse, error) {
+	rt, err := s.ctrl.k8sClient.GetResponseTemplate(ctx, req.Name)
+	if err != nil {
+		log.Printf("gRPC: error getting responsetemplate %s: %v", req.Name, err)
+		return &pb.GetResponseTemplateResponse{Found: false}, nil
+	}
+
+	return &pb.GetResponseTemplateResponse{
+		Found: true,
+		Files: rt.Files,
+	}, nil
+}
+
+// GetRenderedTemplate renders a template file for a deploy
+func (s *GRPCServer) GetRenderedTemplate(ctx context.Context, req *pb.GetRenderedTemplateRequest) (*pb.GetRenderedTemplateResponse, error) {
+	// Find the deploy by hostname (InProgress deploys)
+	deploy, err := s.ctrl.k8sClient.FindDeployByHostname(ctx, req.Hostname, "InProgress")
+	if err != nil {
+		log.Printf("gRPC: error finding deploy for %s: %v", req.Hostname, err)
+		return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
+	}
+	if deploy == nil {
+		return &pb.GetRenderedTemplateResponse{Found: false, Error: "no in-progress deploy for hostname"}, nil
+	}
+
+	// Get the response template
+	rt, err := s.ctrl.k8sClient.GetResponseTemplate(ctx, deploy.Spec.ResponseTemplateRef)
+	if err != nil {
+		log.Printf("gRPC: error getting responsetemplate %s: %v", deploy.Spec.ResponseTemplateRef, err)
+		return &pb.GetRenderedTemplateResponse{Found: false, Error: "response template not found"}, nil
+	}
+
+	// Get the template content
+	templateContent, ok := rt.Files[req.Filename]
+	if !ok {
+		return &pb.GetRenderedTemplateResponse{Found: false, Error: "file not found in template"}, nil
+	}
+
+	// Render the template
+	rendered, err := s.ctrl.RenderTemplate(ctx, deploy, templateContent)
+	if err != nil {
+		log.Printf("gRPC: error rendering template for %s: %v", req.Hostname, err)
+		return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
+	}
+
+	return &pb.GetRenderedTemplateResponse{
+		Found:   true,
+		Content: rendered,
+	}, nil
+}

@@ -20,6 +20,12 @@ service ControllerService {
 
   // GetBootTarget retrieves a BootTarget by name
   rpc GetBootTarget(GetBootTargetRequest) returns (GetBootTargetResponse);
+
+  // GetResponseTemplate retrieves a ResponseTemplate by name
+  rpc GetResponseTemplate(GetResponseTemplateRequest) returns (GetResponseTemplateResponse);
+
+  // GetRenderedTemplate renders a template file for a deploy
+  rpc GetRenderedTemplate(GetRenderedTemplateRequest) returns (GetRenderedTemplateResponse);
 }
 
 message GetPendingBootRequest {
@@ -69,4 +75,24 @@ message GetBootTargetResponse {
   bool found = 1;
   string disk_image_ref = 2;
   string template = 3;
+}
+
+message GetResponseTemplateRequest {
+  string name = 1;
+}
+
+message GetResponseTemplateResponse {
+  bool found = 1;
+  map<string, string> files = 2;
+}
+
+message GetRenderedTemplateRequest {
+  string hostname = 1;
+  string filename = 2;
+}
+
+message GetRenderedTemplateResponse {
+  bool found = 1;
+  string content = 2;
+  string error = 3;
 }

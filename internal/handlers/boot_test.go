@@ -99,15 +99,15 @@ func TestServeConditionalBoot_NoDeploy(t *testing.T) {
 }
 
 func TestTemplateRendering(t *testing.T) {
-	tmpl, err := template.New("test").Parse("#!ipxe\nkernel http://{{ .Host }}:{{ .Port }}/iso/{{ .MAC }}/linux\n")
+	tmpl, err := template.New("test").Parse("#!ipxe\nkernel http://{{ .Host }}:{{ .Port }}/iso/{{ .Hostname }}/linux\n")
 	if err != nil {
 		t.Fatalf("Failed to parse template: %v", err)
 	}
 
 	data := TemplateData{
-		Host: "192.168.1.100",
-		Port: "8080",
-		MAC:  "aa-bb-cc-dd-ee-ff",
+		Host:     "192.168.1.100",
+		Port:     "8080",
+		Hostname: "vm125",
 	}
 
 	var buf bytes.Buffer
@@ -122,7 +122,7 @@ func TestTemplateRendering(t *testing.T) {
 	if !bytes.Contains([]byte(result), []byte("8080")) {
 		t.Error("Expected port in output")
 	}
-	if !bytes.Contains([]byte(result), []byte("aa-bb-cc-dd-ee-ff")) {
-		t.Error("Expected MAC in output")
+	if !bytes.Contains([]byte(result), []byte("vm125")) {
+		t.Error("Expected hostname in output")
 	}
 }
