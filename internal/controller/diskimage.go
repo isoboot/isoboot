@@ -180,6 +180,9 @@ func (c *Controller) downloadAndVerify(ctx context.Context, diskImageName, fileU
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("HEAD request: %w", err)
 	}
+	if headResp.Body != nil {
+		headResp.Body.Close()
+	}
 	expectedSize := headResp.ContentLength
 
 	// Try to find checksums
