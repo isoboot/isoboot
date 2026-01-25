@@ -137,14 +137,22 @@ func (s *GRPCServer) GetResponseTemplate(ctx context.Context, req *pb.GetRespons
 
 // GetRenderedTemplate renders a template file for a deploy
 func (s *GRPCServer) GetRenderedTemplate(ctx context.Context, req *pb.GetRenderedTemplateRequest) (*pb.GetRenderedTemplateResponse, error) {
-	// Find the deploy by hostname (InProgress deploys)
+	// Find the deploy by hostname (InProgress or Pending - race between boot start and answer retrieval)
 	deploy, err := s.ctrl.k8sClient.FindDeployByHostname(ctx, req.Hostname, "InProgress")
 	if err != nil {
 		log.Printf("gRPC: error finding deploy for %s: %v", req.Hostname, err)
 		return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
 	}
+	// If not InProgress, try Pending (installer may request before MarkBootStarted completes)
 	if deploy == nil {
-		return &pb.GetRenderedTemplateResponse{Found: false, Error: "no in-progress deploy for hostname"}, nil
+		deploy, err = s.ctrl.k8sClient.FindDeployByHostname(ctx, req.Hostname, "Pending")
+		if err != nil {
+			log.Printf("gRPC: error finding pending deploy for %s: %v", req.Hostname, err)
+			return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
+		}
+	}
+	if deploy == nil {
+		return &pb.GetRenderedTemplateResponse{Found: false, Error: "no active deploy for hostname"}, nil
 	}
 
 	// Get the response template

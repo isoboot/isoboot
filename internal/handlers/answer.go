@@ -44,7 +44,12 @@ func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
 	content, err := h.ctrlClient.GetRenderedTemplate(ctx, hostname, filename)
 	if err != nil {
 		log.Printf("Error getting rendered template for %s/%s: %v", hostname, filename, err)
-		w.WriteHeader(http.StatusNotFound)
+		// Distinguish between "not found" (404) and server/transport errors (502)
+		if strings.Contains(err.Error(), "grpc call:") {
+			w.WriteHeader(http.StatusBadGateway)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
 		return
 	}
 
