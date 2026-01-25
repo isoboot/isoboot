@@ -70,8 +70,9 @@ func (c *Controller) reconcileDiskImage(ctx context.Context, di *k8s.DiskImage) 
 		return
 	}
 
-	// If Pending, start download
-	if di.Status.Phase == "Pending" {
+	// If Pending or Downloading, ensure download is running
+	// (Downloading phase may be stale if controller restarted mid-download)
+	if di.Status.Phase == "Pending" || di.Status.Phase == "Downloading" {
 		go c.downloadDiskImage(ctx, di)
 	}
 }

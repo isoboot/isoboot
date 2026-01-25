@@ -159,7 +159,11 @@ func (c *Controller) checkDiskImageReady(ctx context.Context, deploy *k8s.Deploy
 		return false, fmt.Sprintf("DiskImage '%s' not found", bootTarget.DiskImageRef)
 	}
 
-	// Check DiskImage status
+	return checkDiskImageStatus(diskImage)
+}
+
+// checkDiskImageStatus checks the status of a DiskImage and returns whether it's ready
+func checkDiskImageStatus(diskImage *k8s.DiskImage) (bool, string) {
 	switch diskImage.Status.Phase {
 	case "Complete":
 		return true, ""
