@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"fmt"
@@ -347,7 +348,7 @@ func TestDownloadAndVerify(t *testing.T) {
 
 	t.Run("successful download with verification", func(t *testing.T) {
 		destPath := filepath.Join(tmpDir, "downloaded.iso")
-		result, err := ctrl.downloadAndVerify(server.URL+"/test.iso", destPath)
+		result, err := ctrl.downloadAndVerify(context.Background(), server.URL+"/test.iso", destPath)
 
 		if err != nil {
 			t.Fatalf("download failed: %v", err)
@@ -377,7 +378,7 @@ func TestDownloadAndVerify(t *testing.T) {
 			t.Fatalf("failed to create existing file: %v", err)
 		}
 
-		result, err := ctrl.downloadAndVerify(server.URL+"/test.iso", destPath)
+		result, err := ctrl.downloadAndVerify(context.Background(), server.URL+"/test.iso", destPath)
 
 		if err != nil {
 			t.Fatalf("verification failed: %v", err)
@@ -389,7 +390,7 @@ func TestDownloadAndVerify(t *testing.T) {
 
 	t.Run("handles HTTP 404", func(t *testing.T) {
 		destPath := filepath.Join(tmpDir, "notfound.iso")
-		result, err := ctrl.downloadAndVerify(server.URL+"/404.iso", destPath)
+		result, err := ctrl.downloadAndVerify(context.Background(), server.URL+"/404.iso", destPath)
 
 		if err == nil {
 			t.Error("expected error for 404")
@@ -401,7 +402,7 @@ func TestDownloadAndVerify(t *testing.T) {
 
 	t.Run("handles connection error", func(t *testing.T) {
 		destPath := filepath.Join(tmpDir, "connfail.iso")
-		result, err := ctrl.downloadAndVerify("http://localhost:99999/test.iso", destPath)
+		result, err := ctrl.downloadAndVerify(context.Background(), "http://localhost:99999/test.iso", destPath)
 
 		if err == nil {
 			t.Error("expected error for connection failure")

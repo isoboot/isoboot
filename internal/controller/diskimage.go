@@ -78,9 +78,12 @@ func (c *Controller) reconcileDiskImage(ctx context.Context, di *k8s.DiskImage) 
 
 // downloadDiskImage downloads and verifies a DiskImage
 func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskImage) {
-	// Create a context with timeout for the entire download operation
-	ctx, cancel := context.WithTimeout(parentCtx, downloadTimeout)
+	// Create a context with timeout for download operations (HTTP requests)
+	downloadCtx, cancel := context.WithTimeout(parentCtx, downloadTimeout)
 	defer cancel()
+
+	// Use background context for status updates so they succeed even if download times out
+	statusCtx := context.Background()
 
 	// Update status to Downloading
 	status := &k8s.DiskImageStatus{
@@ -102,19 +105,19 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 			DigestMd5:     "pending",
 		}
 	}
-	if err := c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status); err != nil {
+	if err := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); err != nil {
 		log.Printf("Controller: failed to update DiskImage %s to Downloading: %v", di.Name, err)
 		return
 	}
 
 	// Download ISO
 	isoPath := filepath.Join(c.isoBasePath, di.Name, filepath.Base(di.ISO))
-	isoResult, err := c.downloadAndVerify(di.ISO, isoPath)
+	isoResult, err := c.downloadAndVerify(downloadCtx, di.ISO, isoPath)
 	if err != nil {
 		status.Phase = "Failed"
 		status.Message = fmt.Sprintf("ISO download failed: %v", err)
 		status.ISO = isoResult
-		c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status)
+		c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status)
 		return
 	}
 	status.ISO = isoResult
@@ -133,15 +136,15 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 			DigestSha256:  "pending",
 			DigestMd5:     "pending",
 		}
-		c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status)
+		c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status)
 
 		fwPath := filepath.Join(c.isoBasePath, di.Name, "firmware", filepath.Base(di.Firmware))
-		fwResult, err := c.downloadAndVerify(di.Firmware, fwPath)
+		fwResult, err := c.downloadAndVerify(downloadCtx, di.Firmware, fwPath)
 		if err != nil {
 			status.Phase = "Failed"
 			status.Message = fmt.Sprintf("Firmware download failed: %v", err)
 			status.Firmware = fwResult
-			c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status)
+			c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status)
 			return
 		}
 		status.Firmware = fwResult
@@ -151,14 +154,14 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 	status.Phase = "Complete"
 	status.Progress = 100
 	status.Message = "Download and verification complete"
-	if err := c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status); err != nil {
+	if err := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); err != nil {
 		log.Printf("Controller: failed to update DiskImage %s to Complete: %v", di.Name, err)
 	}
 	log.Printf("Controller: DiskImage %s download complete", di.Name)
 }
 
 // downloadAndVerify downloads a file and verifies checksums
-func (c *Controller) downloadAndVerify(fileURL, destPath string) (*k8s.DiskImageVerification, error) {
+func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath string) (*k8s.DiskImageVerification, error) {
 	result := &k8s.DiskImageVerification{
 		FileSizeMatch: "processing",
 		DigestSha512:  "pending",
@@ -173,8 +176,13 @@ func (c *Controller) downloadAndVerify(fileURL, destPath string) (*k8s.DiskImage
 	}
 
 	// Get expected file size from HEAD request
-	client := &http.Client{Timeout: downloadTimeout}
-	headResp, err := client.Head(fileURL)
+	client := &http.Client{}
+	headReq, err := http.NewRequestWithContext(ctx, http.MethodHead, fileURL, nil)
+	if err != nil {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("create HEAD request: %w", err)
+	}
+	headResp, err := client.Do(headReq)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("HEAD request: %w", err)
@@ -195,7 +203,12 @@ func (c *Controller) downloadAndVerify(fileURL, destPath string) (*k8s.DiskImage
 
 	// Download file
 	log.Printf("Controller: downloading %s", fileURL)
-	resp, err := client.Get(fileURL)
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
+	if err != nil {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("create GET request: %w", err)
+	}
+	resp, err := client.Do(getReq)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("GET request: %w", err)
