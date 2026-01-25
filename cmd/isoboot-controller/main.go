@@ -19,17 +19,30 @@ func main() {
 		port        string
 		namespace   string
 		isoBasePath string
+		httpHost    string
+		httpPort    string
 	)
 
 	flag.StringVar(&port, "port", "8081", "gRPC server port")
 	flag.StringVar(&namespace, "namespace", "", "Kubernetes namespace")
 	flag.StringVar(&isoBasePath, "iso-path", "/opt/isoboot/iso", "Base path for ISO storage")
+	flag.StringVar(&httpHost, "http-host", "", "HTTP server host for template rendering")
+	flag.StringVar(&httpPort, "http-port", "8080", "HTTP server port for template rendering")
 	flag.Parse()
 
 	if namespace == "" {
 		namespace = os.Getenv("POD_NAMESPACE")
 		if namespace == "" {
 			log.Fatal("--namespace or POD_NAMESPACE is required")
+		}
+	}
+
+	if httpHost == "" {
+		httpHost = os.Getenv("HTTP_HOST")
+	}
+	if httpPort == "" || httpPort == "8080" {
+		if envPort := os.Getenv("HTTP_PORT"); envPort != "" {
+			httpPort = envPort
 		}
 	}
 
@@ -42,6 +55,7 @@ func main() {
 	// Create and start controller
 	ctrl := controller.New(k8sClient)
 	ctrl.SetISOBasePath(isoBasePath)
+	ctrl.SetHostPort(httpHost, httpPort)
 	ctrl.Start()
 	defer ctrl.Stop()
 

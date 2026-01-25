@@ -57,16 +57,19 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get DiskImage name for file paths (may differ from target name)
+	diskImageName := targetConfig.DiskImageName(target)
+
 	// Check if ISO exists (downloaded by controller)
-	isoPath := config.ISOPathWithFilename(h.basePath, target, isoFilename)
+	isoPath := config.ISOPathWithFilename(h.basePath, diskImageName, isoFilename)
 	if _, err := os.Stat(isoPath); os.IsNotExist(err) {
-		http.Error(w, fmt.Sprintf("ISO not ready: %s (DiskImage may still be downloading)", target), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("ISO not ready: %s (DiskImage may still be downloading)", diskImageName), http.StatusNotFound)
 		return
 	}
 
 	// Check if this is initrd.gz and we have firmware
 	if filePath == "initrd.gz" {
-		h.serveInitrdWithFirmware(w, r, target, isoFilename, targetConfig)
+		h.serveInitrdWithFirmware(w, r, diskImageName, isoFilename, targetConfig)
 		return
 	}
 
@@ -114,9 +117,9 @@ func (h *ISOHandler) serveFileFromISO(w http.ResponseWriter, isoPath, filePath s
 // serveInitrdWithFirmware serves initrd.gz, merging with firmware if present
 // Per https://wiki.debian.org/DebianInstaller/NetbootFirmware:
 // cat initrd.gz firmware.cpio.gz > combined.gz
-func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Request, target, isoFilename string, targetConfig config.TargetConfig) {
-	isoPath := config.ISOPathWithFilename(h.basePath, target, isoFilename)
-	firmwarePath := config.FirmwarePath(h.basePath, target)
+func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Request, diskImageName, isoFilename string, targetConfig config.TargetConfig) {
+	isoPath := config.ISOPathWithFilename(h.basePath, diskImageName, isoFilename)
+	firmwarePath := config.FirmwarePath(h.basePath, diskImageName)
 
 	// Check if firmware exists (downloaded by controller)
 	hasFirmware := false

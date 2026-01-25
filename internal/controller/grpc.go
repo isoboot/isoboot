@@ -78,12 +78,12 @@ func (s *GRPCServer) MarkBootCompleted(ctx context.Context, req *pb.MarkBootComp
 		return &pb.MarkBootCompletedResponse{Success: false, Error: "no in-progress deploy"}, nil
 	}
 
-	if err := s.ctrl.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "Completed", "Installation completed"); err != nil {
+	if err := s.ctrl.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "Complete", "Installation completed"); err != nil {
 		log.Printf("gRPC: error updating deploy %s: %v", deploy.Name, err)
 		return &pb.MarkBootCompletedResponse{Success: false, Error: err.Error()}, nil
 	}
 
-	log.Printf("gRPC: marked %s as Completed", deploy.Name)
+	log.Printf("gRPC: marked %s as Complete", deploy.Name)
 	return &pb.MarkBootCompletedResponse{Success: true}, nil
 }
 
