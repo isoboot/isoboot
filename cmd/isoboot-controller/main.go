@@ -30,6 +30,12 @@ func main() {
 	flag.StringVar(&httpPort, "http-port", "8080", "HTTP server port for template rendering")
 	flag.Parse()
 
+	// Track which flags were explicitly set
+	flagsSet := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) {
+		flagsSet[f.Name] = true
+	})
+
 	if namespace == "" {
 		namespace = os.Getenv("POD_NAMESPACE")
 		if namespace == "" {
@@ -37,10 +43,11 @@ func main() {
 		}
 	}
 
-	if httpHost == "" {
+	// Only use env vars as fallback when flags weren't explicitly set
+	if !flagsSet["http-host"] && httpHost == "" {
 		httpHost = os.Getenv("HTTP_HOST")
 	}
-	if httpPort == "" || httpPort == "8080" {
+	if !flagsSet["http-port"] {
 		if envPort := os.Getenv("HTTP_PORT"); envPort != "" {
 			httpPort = envPort
 		}
