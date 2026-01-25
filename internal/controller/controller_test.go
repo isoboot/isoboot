@@ -17,14 +17,14 @@ func TestRenderTemplate_BasicVariables(t *testing.T) {
 		Name: "test-deploy",
 		Spec: k8s.DeploySpec{
 			MachineRef: "vm125",
-			Target:     "debian-13",
+			BootTargetRef:     "debian-13",
 		},
 	}
 
 	templateContent := `Host: {{ .Host }}
 Port: {{ .Port }}
 Hostname: {{ .Hostname }}
-Target: {{ .Target }}`
+BootTargetRef: {{ .Target }}`
 
 	ctx := context.Background()
 	result, err := ctrl.RenderTemplate(ctx, deploy, templateContent)
@@ -35,7 +35,7 @@ Target: {{ .Target }}`
 	expected := `Host: 192.168.1.100
 Port: 8080
 Hostname: vm125
-Target: debian-13`
+BootTargetRef: debian-13`
 
 	if result != expected {
 		t.Errorf("Expected:\n%s\n\nGot:\n%s", expected, result)
@@ -52,7 +52,7 @@ func TestRenderTemplate_MissingKey(t *testing.T) {
 		Name: "test-deploy",
 		Spec: k8s.DeploySpec{
 			MachineRef: "vm125",
-			Target:     "debian-13",
+			BootTargetRef:     "debian-13",
 		},
 	}
 
@@ -76,7 +76,7 @@ func TestRenderTemplate_InvalidSyntax(t *testing.T) {
 		Name: "test-deploy",
 		Spec: k8s.DeploySpec{
 			MachineRef: "vm125",
-			Target:     "debian-13",
+			BootTargetRef:     "debian-13",
 		},
 	}
 
@@ -100,7 +100,7 @@ func TestRenderTemplate_PreseedExample(t *testing.T) {
 		Name: "test-deploy",
 		Spec: k8s.DeploySpec{
 			MachineRef: "vm125",
-			Target:     "debian-13",
+			BootTargetRef:     "debian-13",
 		},
 	}
 

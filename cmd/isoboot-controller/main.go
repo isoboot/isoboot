@@ -16,12 +16,14 @@ import (
 
 func main() {
 	var (
-		port      string
-		namespace string
+		port        string
+		namespace   string
+		isoBasePath string
 	)
 
 	flag.StringVar(&port, "port", "8081", "gRPC server port")
 	flag.StringVar(&namespace, "namespace", "", "Kubernetes namespace")
+	flag.StringVar(&isoBasePath, "iso-path", "/opt/isoboot/iso", "Base path for ISO storage")
 	flag.Parse()
 
 	if namespace == "" {
@@ -39,6 +41,7 @@ func main() {
 
 	// Create and start controller
 	ctrl := controller.New(k8sClient)
+	ctrl.SetISOBasePath(isoBasePath)
 	ctrl.Start()
 	defer ctrl.Stop()
 

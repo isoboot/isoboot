@@ -1,0 +1,351 @@
+package controller
+
+import (
+	"bufio"
+	"context"
+	"crypto/md5"
+	"crypto/sha256"
+	"crypto/sha512"
+	"fmt"
+	"hash"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/isoboot/isoboot/internal/k8s"
+)
+
+const (
+	downloadTimeout = 30 * time.Minute
+	chunkSize       = 1024 * 1024 // 1MB
+)
+
+// reconcileDiskImages reconciles all DiskImage resources
+func (c *Controller) reconcileDiskImages(ctx context.Context) {
+	diskImages, err := c.k8sClient.ListDiskImages(ctx)
+	if err != nil {
+		log.Printf("Controller: failed to list diskimages: %v", err)
+		return
+	}
+
+	for _, di := range diskImages {
+		c.reconcileDiskImage(ctx, di)
+	}
+}
+
+// reconcileDiskImage reconciles a single DiskImage
+func (c *Controller) reconcileDiskImage(ctx context.Context, di *k8s.DiskImage) {
+	// Initialize status if empty
+	if di.Status.Phase == "" {
+		log.Printf("Controller: initializing DiskImage %s status to Pending", di.Name)
+		status := &k8s.DiskImageStatus{
+			Phase:   "Pending",
+			Message: "Waiting for download",
+			ISO: &k8s.DiskImageVerification{
+				FileSizeMatch: "pending",
+				DigestSha512:  "pending",
+				DigestSha256:  "pending",
+				DigestMd5:     "pending",
+			},
+		}
+		if di.Firmware != "" {
+			status.Firmware = &k8s.DiskImageVerification{
+				FileSizeMatch: "pending",
+				DigestSha512:  "pending",
+				DigestSha256:  "pending",
+				DigestMd5:     "pending",
+			}
+		}
+		if err := c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status); err != nil {
+			log.Printf("Controller: failed to initialize DiskImage %s: %v", di.Name, err)
+		}
+		return
+	}
+
+	// If already Complete or Failed, nothing to do
+	if di.Status.Phase == "Complete" || di.Status.Phase == "Failed" {
+		return
+	}
+
+	// If Pending, start download
+	if di.Status.Phase == "Pending" {
+		go c.downloadDiskImage(di)
+	}
+}
+
+// downloadDiskImage downloads and verifies a DiskImage
+func (c *Controller) downloadDiskImage(di *k8s.DiskImage) {
+	ctx := context.Background()
+
+	// Update status to Downloading
+	status := &k8s.DiskImageStatus{
+		Phase:    "Downloading",
+		Progress: 0,
+		Message:  "Starting download",
+		ISO: &k8s.DiskImageVerification{
+			FileSizeMatch: "processing",
+			DigestSha512:  "pending",
+			DigestSha256:  "pending",
+			DigestMd5:     "pending",
+		},
+	}
+	if di.Firmware != "" {
+		status.Firmware = &k8s.DiskImageVerification{
+			FileSizeMatch: "pending",
+			DigestSha512:  "pending",
+			DigestSha256:  "pending",
+			DigestMd5:     "pending",
+		}
+	}
+	if err := c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status); err != nil {
+		log.Printf("Controller: failed to update DiskImage %s to Downloading: %v", di.Name, err)
+		return
+	}
+
+	// Download ISO
+	isoPath := filepath.Join(c.isoBasePath, di.Name, filepath.Base(di.ISO))
+	isoResult, err := c.downloadAndVerify(ctx, di.Name, di.ISO, isoPath, status, true)
+	if err != nil {
+		status.Phase = "Failed"
+		status.Message = fmt.Sprintf("ISO download failed: %v", err)
+		status.ISO = isoResult
+		c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status)
+		return
+	}
+	status.ISO = isoResult
+	if di.Firmware != "" {
+		status.Progress = 50
+	} else {
+		status.Progress = 100
+	}
+
+	// Download firmware if present
+	if di.Firmware != "" {
+		status.Message = "Downloading firmware"
+		status.Firmware = &k8s.DiskImageVerification{
+			FileSizeMatch: "processing",
+			DigestSha512:  "pending",
+			DigestSha256:  "pending",
+			DigestMd5:     "pending",
+		}
+		c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status)
+
+		fwPath := filepath.Join(c.isoBasePath, di.Name, "firmware", filepath.Base(di.Firmware))
+		fwResult, err := c.downloadAndVerify(ctx, di.Name, di.Firmware, fwPath, status, false)
+		if err != nil {
+			status.Phase = "Failed"
+			status.Message = fmt.Sprintf("Firmware download failed: %v", err)
+			status.Firmware = fwResult
+			c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status)
+			return
+		}
+		status.Firmware = fwResult
+	}
+
+	// Success
+	status.Phase = "Complete"
+	status.Progress = 100
+	status.Message = "Download and verification complete"
+	if err := c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status); err != nil {
+		log.Printf("Controller: failed to update DiskImage %s to Complete: %v", di.Name, err)
+	}
+	log.Printf("Controller: DiskImage %s download complete", di.Name)
+}
+
+// downloadAndVerify downloads a file and verifies checksums
+func (c *Controller) downloadAndVerify(ctx context.Context, diskImageName, fileURL, destPath string, status *k8s.DiskImageStatus, isISO bool) (*k8s.DiskImageVerification, error) {
+	result := &k8s.DiskImageVerification{
+		FileSizeMatch: "processing",
+		DigestSha512:  "pending",
+		DigestSha256:  "pending",
+		DigestMd5:     "pending",
+	}
+
+	// Create parent directory
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("create directory: %w", err)
+	}
+
+	// Get expected file size from HEAD request
+	client := &http.Client{Timeout: downloadTimeout}
+	headResp, err := client.Head(fileURL)
+	if err != nil {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("HEAD request: %w", err)
+	}
+	expectedSize := headResp.ContentLength
+
+	// Try to find checksums
+	checksums := c.discoverChecksums(fileURL)
+
+	// Download file
+	log.Printf("Controller: downloading %s", fileURL)
+	resp, err := client.Get(fileURL)
+	if err != nil {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("GET request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	// Create temp file
+	tmpPath := destPath + ".tmp"
+	tmpFile, err := os.Create(tmpPath)
+	if err != nil {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmpPath)
+
+	// Create hashers
+	sha512Hash := sha512.New()
+	sha256Hash := sha256.New()
+	md5Hash := md5.New()
+	multiWriter := io.MultiWriter(tmpFile, sha512Hash, sha256Hash, md5Hash)
+
+	// Download with progress
+	written, err := io.Copy(multiWriter, resp.Body)
+	tmpFile.Close()
+	if err != nil {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("download: %w", err)
+	}
+
+	// Verify file size
+	if expectedSize > 0 && written != expectedSize {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("size mismatch: expected %d, got %d", expectedSize, written)
+	}
+	result.FileSizeMatch = "verified"
+
+	// Verify checksums
+	result.DigestSha512 = verifyChecksum(checksums, "sha512", sha512Hash, filepath.Base(fileURL))
+	result.DigestSha256 = verifyChecksum(checksums, "sha256", sha256Hash, filepath.Base(fileURL))
+	result.DigestMd5 = verifyChecksum(checksums, "md5", md5Hash, filepath.Base(fileURL))
+
+	// Atomic rename
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		return result, fmt.Errorf("rename: %w", err)
+	}
+
+	log.Printf("Controller: downloaded %s (%d bytes)", filepath.Base(destPath), written)
+	return result, nil
+}
+
+// discoverChecksums looks for checksum files in parent directories
+func (c *Controller) discoverChecksums(fileURL string) map[string]map[string]string {
+	checksums := make(map[string]map[string]string) // type -> filename -> hash
+
+	u, err := url.Parse(fileURL)
+	if err != nil {
+		return checksums
+	}
+
+	// Try current directory, then 1 level up, then 2 levels up
+	dirs := []string{
+		path.Dir(u.Path),
+		path.Dir(path.Dir(u.Path)),
+		path.Dir(path.Dir(path.Dir(u.Path))),
+	}
+
+	checksumFiles := []struct {
+		name     string
+		hashType string
+	}{
+		{"SHA512SUMS", "sha512"},
+		{"SHA256SUMS", "sha256"},
+		{"MD5SUMS", "md5"},
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	for _, dir := range dirs {
+		for _, cf := range checksumFiles {
+			checksumURL := fmt.Sprintf("%s://%s%s/%s", u.Scheme, u.Host, dir, cf.name)
+			resp, err := client.Get(checksumURL)
+			if err != nil || resp.StatusCode != http.StatusOK {
+				if resp != nil {
+					resp.Body.Close()
+				}
+				continue
+			}
+
+			// Parse checksum file
+			parsed := parseChecksumFile(resp.Body, cf.hashType)
+			resp.Body.Close()
+
+			if len(parsed) > 0 {
+				if checksums[cf.hashType] == nil {
+					checksums[cf.hashType] = make(map[string]string)
+				}
+				for k, v := range parsed {
+					checksums[cf.hashType][k] = v
+				}
+			}
+		}
+	}
+
+	return checksums
+}
+
+// parseChecksumFile parses a checksum file (SHA256SUMS format)
+func parseChecksumFile(r io.Reader, hashType string) map[string]string {
+	result := make(map[string]string)
+	scanner := bufio.NewScanner(r)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Format: "hash  filename" or "hash *filename"
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			hash := parts[0]
+			filename := strings.TrimPrefix(parts[len(parts)-1], "*")
+			filename = strings.TrimPrefix(filename, "./")
+			result[filename] = hash
+			// Also store with path variations
+			result[filepath.Base(filename)] = hash
+		}
+	}
+
+	return result
+}
+
+// verifyChecksum verifies a hash against discovered checksums
+func verifyChecksum(checksums map[string]map[string]string, hashType string, h hash.Hash, filename string) string {
+	typeChecksums, ok := checksums[hashType]
+	if !ok {
+		return "not_found"
+	}
+
+	expected, ok := typeChecksums[filename]
+	if !ok {
+		// Try just the base filename
+		expected, ok = typeChecksums[filepath.Base(filename)]
+		if !ok {
+			return "not_found"
+		}
+	}
+
+	actual := fmt.Sprintf("%x", h.Sum(nil))
+	if strings.EqualFold(actual, expected) {
+		return "verified"
+	}
+
+	log.Printf("Controller: %s checksum mismatch for %s: expected %s, got %s", hashType, filename, expected, actual)
+	return "failed"
+}

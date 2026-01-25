@@ -237,7 +237,7 @@ func TestParseDeploy_WithNewFields(t *testing.T) {
 			"metadata": map[string]interface{}{"name": "test-deploy"},
 			"spec": map[string]interface{}{
 				"machineRef":          "vm125",
-				"target":              "debian-13",
+				"bootTargetRef":       "debian-13",
 				"responseTemplateRef": "debian-preseed",
 				"configMaps":          []interface{}{"common-config", "host-config"},
 				"secrets":             []interface{}{"user-passwords"},
@@ -260,8 +260,8 @@ func TestParseDeploy_WithNewFields(t *testing.T) {
 	if result.Spec.MachineRef != "vm125" {
 		t.Errorf("MachineRef = %q, want %q", result.Spec.MachineRef, "vm125")
 	}
-	if result.Spec.Target != "debian-13" {
-		t.Errorf("Target = %q, want %q", result.Spec.Target, "debian-13")
+	if result.Spec.BootTargetRef != "debian-13" {
+		t.Errorf("Target = %q, want %q", result.Spec.BootTargetRef, "debian-13")
 	}
 	if result.Spec.ResponseTemplateRef != "debian-preseed" {
 		t.Errorf("ResponseTemplateRef = %q, want %q", result.Spec.ResponseTemplateRef, "debian-preseed")

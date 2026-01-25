@@ -37,7 +37,7 @@ func (s *GRPCServer) GetPendingBoot(ctx context.Context, req *pb.GetPendingBootR
 		Found:       true,
 		MachineName: deploy.Spec.MachineRef,
 		DeployName:  deploy.Name,
-		Target:      deploy.Spec.Target,
+		Target:      deploy.Spec.BootTargetRef,
 	}, nil
 }
 
