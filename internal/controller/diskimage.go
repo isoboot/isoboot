@@ -185,6 +185,12 @@ func (c *Controller) downloadAndVerify(ctx context.Context, diskImageName, fileU
 	// Try to find checksums
 	checksums := c.discoverChecksums(fileURL)
 
+	// Check if file already exists and is valid
+	if existingResult := c.verifyExistingFile(destPath, expectedSize, checksums, filepath.Base(fileURL)); existingResult != nil {
+		log.Printf("Controller: existing file %s verified, skipping download", filepath.Base(destPath))
+		return existingResult, nil
+	}
+
 	// Download file
 	log.Printf("Controller: downloading %s", fileURL)
 	resp, err := client.Get(fileURL)
@@ -241,6 +247,55 @@ func (c *Controller) downloadAndVerify(ctx context.Context, diskImageName, fileU
 
 	log.Printf("Controller: downloaded %s (%d bytes)", filepath.Base(destPath), written)
 	return result, nil
+}
+
+// verifyExistingFile checks if an existing file is valid
+// Returns nil if file doesn't exist or verification fails (should download)
+// Returns verification result if file is valid (skip download)
+func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, checksums map[string]map[string]string, filename string) *k8s.DiskImageVerification {
+	// Check if file exists
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return nil // File doesn't exist, need to download
+	}
+
+	// Check size
+	if expectedSize > 0 && info.Size() != expectedSize {
+		log.Printf("Controller: existing file %s size mismatch (expected %d, got %d), will re-download", filename, expectedSize, info.Size())
+		return nil // Size mismatch, need to download
+	}
+
+	// Compute checksums
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil // Can't read file, need to download
+	}
+	defer file.Close()
+
+	sha512Hash := sha512.New()
+	sha256Hash := sha256.New()
+	md5Hash := md5.New()
+	multiWriter := io.MultiWriter(sha512Hash, sha256Hash, md5Hash)
+
+	if _, err := io.Copy(multiWriter, file); err != nil {
+		return nil // Error reading file, need to download
+	}
+
+	// Verify checksums
+	result := &k8s.DiskImageVerification{
+		FileSizeMatch: "verified",
+		DigestSha512:  verifyChecksum(checksums, "sha512", sha512Hash, filename),
+		DigestSha256:  verifyChecksum(checksums, "sha256", sha256Hash, filename),
+		DigestMd5:     verifyChecksum(checksums, "md5", md5Hash, filename),
+	}
+
+	// If any checksum verification failed, need to re-download
+	if result.DigestSha512 == "failed" || result.DigestSha256 == "failed" || result.DigestMd5 == "failed" {
+		log.Printf("Controller: existing file %s checksum mismatch, will re-download", filename)
+		return nil
+	}
+
+	return result
 }
 
 // discoverChecksums looks for checksum files in parent directories
