@@ -243,7 +243,8 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	}
 
 	// Try to find checksums
-	checksums := c.discoverChecksums(ctx, fileURL)
+	// Use background context to avoid premature cancellation from download timeout
+	checksums := c.discoverChecksums(context.Background(), fileURL)
 
 	// Extract filename from URL for verification
 	filename, _ := filenameFromURL(fileURL)
@@ -321,6 +322,9 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		failedDigests = append(failedDigests, "SHA512")
 	}
 	if len(failedDigests) > 0 {
+		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("Controller: failed to remove temporary file %s after checksum failure: %v", tmpPath, removeErr)
+		}
 		return result, fmt.Errorf("%s checksum verification failed", strings.Join(failedDigests, " and "))
 	}
 
@@ -549,8 +553,9 @@ func filenameFromURL(rawURL string) (string, error) {
 		return "", fmt.Errorf("parse URL: %w", err)
 	}
 	filename := filepath.Base(u.Path)
-	// filepath.Base returns "." for empty paths or paths ending in "/"
-	if filename == "." {
+	// filepath.Base returns "." for empty paths or paths ending in "/",
+	// and "/" when the path is exactly "/"
+	if filename == "." || filename == "/" {
 		return "", fmt.Errorf("URL has no filename: %s", rawURL)
 	}
 	return filename, nil
