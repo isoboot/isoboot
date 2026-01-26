@@ -30,10 +30,10 @@ const checksumDiscoveryTimeout = 30 * time.Second
 // of a hash when displaying mismatches.
 const hashDisplayChars = 4
 
-// minHashLenForDisplay is the minimum hash length to use partial display.
-// Must be at least 2*hashDisplayChars to safely show prefix and suffix.
+// minHashLengthForPartialDisplay is the minimum hash length to use partial display
+// (showing first/last chars with ellipsis). Must be >= 2*hashDisplayChars.
 // Hashes shorter than this show the full value instead.
-const minHashLenForDisplay = 8
+const minHashLengthForPartialDisplay = 8
 
 // checksumSource represents checksums from a single checksum file.
 // Tracking the source URL allows computing the exact relative path for lookups.
@@ -520,7 +520,7 @@ func parseChecksumFile(r io.Reader) map[string]string {
 // formatHashMismatch returns a human-readable comparison of expected vs actual hash.
 // Shows first or last hashDisplayChars hex chars with ellipsis to help identify the mismatch.
 func formatHashMismatch(expected, actual string) string {
-	if len(expected) < minHashLenForDisplay || len(actual) < minHashLenForDisplay {
+	if len(expected) < minHashLengthForPartialDisplay || len(actual) < minHashLengthForPartialDisplay {
 		return fmt.Sprintf("expected %s, got %s", expected, actual)
 	}
 
