@@ -277,9 +277,9 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		return result, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	// Create temp file
+	// Create temp file with restricted permissions
 	tmpPath := destPath + ".tmp"
-	tmpFile, err := os.Create(tmpPath)
+	tmpFile, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create temp file: %w", err)
@@ -469,7 +469,8 @@ func parseChecksumFile(r io.Reader) map[string]string {
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
 			hash := parts[0]
-			filename := strings.TrimPrefix(parts[len(parts)-1], "*")
+			lastPart := parts[len(parts)-1]
+			filename := strings.TrimPrefix(lastPart, "*")
 			filename = strings.TrimPrefix(filename, "./")
 			result[filename] = hash
 			// Also store with path variations
