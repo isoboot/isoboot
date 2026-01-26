@@ -337,15 +337,11 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 		return nil // Size mismatch, need to download
 	}
 
-	// If no checksums available, size-only verification is less secure but still useful
-	// for detecting incomplete downloads. Log a warning for visibility.
+	// If no checksums available, we cannot securely verify file contents.
+	// Force re-download rather than relying on size-only verification.
 	if len(checksums) == 0 {
-		log.Printf("Controller: WARNING: existing file %s verified by size only (no checksums available)", filename)
-		return &k8s.DiskImageVerification{
-			FileSizeMatch: "verified",
-			DigestSha256:  "not_found",
-			DigestSha512:  "not_found",
-		}
+		log.Printf("Controller: existing file %s cannot be securely verified (no checksums available), will re-download", filename)
+		return nil
 	}
 
 	// Compute checksums
@@ -471,8 +467,9 @@ func parseChecksumFile(r io.Reader) map[string]string {
 			filename := strings.TrimPrefix(lastPart, "*")
 			filename = strings.TrimPrefix(filename, "./")
 			result[filename] = hash
-			// Also store base filename, but don't overwrite if already exists
-			// (avoids conflicts when different paths have same base filename)
+			// Also store base filename for simpler lookups. First entry wins if
+			// multiple paths share the same base filename (e.g., dir1/file.iso
+			// and dir2/file.iso). Callers should prefer full path lookups.
 			base := filepath.Base(filename)
 			if _, exists := result[base]; !exists {
 				result[base] = hash

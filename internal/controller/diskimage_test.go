@@ -227,14 +227,11 @@ func TestVerifyExistingFile(t *testing.T) {
 		}
 	})
 
-	t.Run("no checksums available (passes)", func(t *testing.T) {
+	t.Run("no checksums available (triggers re-download)", func(t *testing.T) {
 		checksums := map[string]map[string]string{}
 		result := ctrl.verifyExistingFile(testFile, int64(len(testContent)), checksums, "test.iso")
-		if result == nil {
-			t.Fatal("expected verification result when no checksums available")
-		}
-		if result.DigestSha256 != "not_found" {
-			t.Errorf("expected DigestSha256=not_found, got %s", result.DigestSha256)
+		if result != nil {
+			t.Error("expected nil when no checksums available (should trigger re-download)")
 		}
 	})
 }
