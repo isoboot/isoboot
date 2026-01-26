@@ -30,11 +30,12 @@ func NewBootHandler(host, port string, ctrlClient *controllerclient.Client, conf
 
 // TemplateData is passed to boot templates
 type TemplateData struct {
-	Host       string
-	Port       string
-	Hostname   string
-	Domain     string
-	BootTarget string
+	Host        string
+	Port        string
+	MachineName string // Full machine name (e.g., "vm-deb-0099.lan")
+	Hostname    string // First part before dot (e.g., "vm-deb-0099")
+	Domain      string // Everything after first dot (e.g., "lan")
+	BootTarget  string
 }
 
 // splitHostDomain splits a machine name into hostname and domain.
@@ -135,11 +136,12 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 
 	hostname, domain := splitHostDomain(bootInfo.MachineName)
 	data := TemplateData{
-		Host:       h.host,
-		Port:       h.port,
-		Hostname:   hostname,
-		Domain:     domain,
-		BootTarget: bootInfo.Target,
+		Host:        h.host,
+		Port:        h.port,
+		MachineName: bootInfo.MachineName,
+		Hostname:    hostname,
+		Domain:      domain,
+		BootTarget:  bootInfo.Target,
 	}
 
 	var buf bytes.Buffer
