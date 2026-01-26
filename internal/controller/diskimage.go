@@ -250,6 +250,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	filename, _ := filenameFromURL(fileURL)
 	if filename == "" {
 		filename = filepath.Base(fileURL) // fallback
+		log.Printf("Controller: could not determine filename from URL %s, using fallback: %s", fileURL, filename)
 	}
 
 	// Check if file already exists and is valid
@@ -515,7 +516,7 @@ func parseChecksumFile(r io.Reader) map[string]string {
 
 	// If scanner encountered an error, log it and return partial results
 	if err := scanner.Err(); err != nil {
-		log.Printf("Controller: error scanning checksum file: %v", err)
+		log.Printf("Controller: error scanning checksum file (returning partial results): %v", err)
 	}
 
 	return result
