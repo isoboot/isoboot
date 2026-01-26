@@ -39,7 +39,7 @@ type TemplateData struct {
 
 // splitHostDomain splits a machine name into hostname and domain.
 // "abc.lan" -> ("abc", "lan")
-// "www.usa.gov" -> ("www", "usa.gov")
+// "web.example.com" -> ("web", "example.com")
 // "server01" -> ("server01", "")
 func splitHostDomain(name string) (hostname, domain string) {
 	if idx := strings.Index(name, "."); idx != -1 {

@@ -134,7 +134,7 @@ func TestSplitHostDomain(t *testing.T) {
 		wantDomain   string
 	}{
 		{"abc.lan", "abc", "lan"},
-		{"www.usa.gov", "www", "usa.gov"},
+		{"web.example.com", "web", "example.com"},
 		{"server01", "server01", ""},
 		{"vm-deb-0099.internal.example.com", "vm-deb-0099", "internal.example.com"},
 		{"", "", ""},
