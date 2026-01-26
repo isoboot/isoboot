@@ -287,8 +287,8 @@ func TestParseDeploy_NoOptionalFields(t *testing.T) {
 		Object: map[string]interface{}{
 			"metadata": map[string]interface{}{"name": "minimal-deploy"},
 			"spec": map[string]interface{}{
-				"machineRef": "vm125",
-				"target":     "debian-13",
+				"machineRef":    "vm125",
+				"bootTargetRef": "debian-13",
 			},
 		},
 	}

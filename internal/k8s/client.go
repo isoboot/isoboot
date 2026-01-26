@@ -352,10 +352,12 @@ func getString(m map[string]interface{}, key string) string {
 }
 
 func getInt(m map[string]interface{}, key string) int {
-	if v, ok := m[key].(int64); ok {
+	switch v := m[key].(type) {
+	case int:
+		return v
+	case int64:
 		return int(v)
-	}
-	if v, ok := m[key].(float64); ok {
+	case float64:
 		return int(v)
 	}
 	return 0
