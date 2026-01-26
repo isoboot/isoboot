@@ -131,6 +131,16 @@ func safePathSegment(name string) string {
 	return base
 }
 
+// safeDiskImageDir returns a sanitized disk image directory name, falling back
+// to "default" if the name is empty or invalid. This prevents path collapsing
+// when used with filepath.Join.
+func safeDiskImageDir(name string) string {
+	if sanitized := safePathSegment(name); sanitized != "" {
+		return sanitized
+	}
+	return "default"
+}
+
 // DiskImageName returns the DiskImage name to use for file paths.
 // If DiskImageRef is set, use it; otherwise default to target name.
 // The result is sanitized to prevent path traversal attacks and will never be empty.
@@ -151,19 +161,19 @@ func (t TargetConfig) DiskImageName(targetName string) string {
 }
 
 // ISOPathWithFilename returns the path to the ISO file with explicit filename.
-// The diskImageName is sanitized to prevent path traversal.
+// The diskImageName is sanitized to prevent path traversal and will never be empty.
 func ISOPathWithFilename(basePath, diskImageName, filename string) string {
-	return filepath.Join(basePath, safePathSegment(diskImageName), safePathSegment(filename))
+	return filepath.Join(basePath, safeDiskImageDir(diskImageName), safePathSegment(filename))
 }
 
 // FirmwarePath returns the path to the firmware file for a DiskImage.
-// The diskImageName is sanitized to prevent path traversal.
+// The diskImageName is sanitized to prevent path traversal and will never be empty.
 func FirmwarePath(basePath, diskImageName string) string {
-	return filepath.Join(basePath, safePathSegment(diskImageName), "firmware", "firmware.cpio.gz")
+	return filepath.Join(basePath, safeDiskImageDir(diskImageName), "firmware", "firmware.cpio.gz")
 }
 
 // InitrdOrigPath returns the path to the original initrd extracted from ISO.
-// The diskImageName is sanitized to prevent path traversal.
+// The diskImageName is sanitized to prevent path traversal and will never be empty.
 func InitrdOrigPath(basePath, diskImageName string) string {
-	return filepath.Join(basePath, safePathSegment(diskImageName), "initrd.gz.orig")
+	return filepath.Join(basePath, safeDiskImageDir(diskImageName), "initrd.gz.orig")
 }

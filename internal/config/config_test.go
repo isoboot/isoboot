@@ -140,6 +140,13 @@ func TestISOPathWithFilename(t *testing.T) {
 	if path != expected {
 		t.Errorf("Expected %s, got %s", expected, path)
 	}
+
+	// Test fallback to "default" for invalid diskImageName
+	path = ISOPathWithFilename("/opt/isoboot/iso", "..", "mini.iso")
+	expected = "/opt/isoboot/iso/default/mini.iso"
+	if path != expected {
+		t.Errorf("Expected %s for invalid diskImageName, got %s", expected, path)
+	}
 }
 
 func TestFirmwarePath(t *testing.T) {
@@ -147,6 +154,28 @@ func TestFirmwarePath(t *testing.T) {
 	expected := "/opt/isoboot/iso/debian-13/firmware/firmware.cpio.gz"
 	if path != expected {
 		t.Errorf("Expected %s, got %s", expected, path)
+	}
+
+	// Test fallback to "default" for invalid diskImageName
+	path = FirmwarePath("/opt/isoboot/iso", "..")
+	expected = "/opt/isoboot/iso/default/firmware/firmware.cpio.gz"
+	if path != expected {
+		t.Errorf("Expected %s for invalid diskImageName, got %s", expected, path)
+	}
+}
+
+func TestInitrdOrigPath(t *testing.T) {
+	path := InitrdOrigPath("/opt/isoboot/iso", "debian-13")
+	expected := "/opt/isoboot/iso/debian-13/initrd.gz.orig"
+	if path != expected {
+		t.Errorf("Expected %s, got %s", expected, path)
+	}
+
+	// Test fallback to "default" for invalid diskImageName
+	path = InitrdOrigPath("/opt/isoboot/iso", "..")
+	expected = "/opt/isoboot/iso/default/initrd.gz.orig"
+	if path != expected {
+		t.Errorf("Expected %s for invalid diskImageName, got %s", expected, path)
 	}
 }
 
