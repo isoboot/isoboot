@@ -354,7 +354,7 @@ func TestDownloadAndVerify(t *testing.T) {
 	t.Run("skips download for valid existing file", func(t *testing.T) {
 		destPath := filepath.Join(tmpDir, "existing.iso")
 		// Pre-create the file
-		if err := os.WriteFile(destPath, testContent, 0600); err != nil {
+		if err := os.WriteFile(destPath, testContent, 0o600); err != nil {
 			t.Fatalf("failed to create existing file: %v", err)
 		}
 
