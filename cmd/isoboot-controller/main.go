@@ -60,8 +60,10 @@ func main() {
 	}
 
 	// Create and start controller
-	// NOTE: SetISOBasePath and SetHostPort must be called before Start;
-	// the controller may use these values immediately after starting.
+	// NOTE: SetISOBasePath and SetHostPort must be called before Start.
+	// The controller uses these values immediately after starting. Calling
+	// these methods after Start or omitting them results in the controller
+	// using empty/default values, causing download failures or incorrect URLs.
 	ctrl := controller.New(k8sClient)
 	ctrl.SetISOBasePath(isoBasePath)
 	ctrl.SetHostPort(httpHost, httpPort)

@@ -177,8 +177,8 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		DigestSha256:  "pending",
 	}
 
-	// Create parent directory with restricted permissions (owner and group only)
-	if err := os.MkdirAll(filepath.Dir(destPath), 0750); err != nil {
+	// Create parent directory with restricted permissions (owner only)
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create directory: %w", err)
 	}
