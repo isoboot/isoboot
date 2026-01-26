@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/isoboot/isoboot/internal/config"
-	"github.com/isoboot/isoboot/internal/downloader"
 	"github.com/isoboot/isoboot/internal/iso"
 )
 
@@ -18,14 +17,12 @@ const streamChunkSize = 1024 * 1024 // 1MB chunks for streaming
 type ISOHandler struct {
 	basePath      string
 	configWatcher *config.ConfigWatcher
-	downloader    *downloader.Downloader
 }
 
 func NewISOHandler(basePath string, configWatcher *config.ConfigWatcher) *ISOHandler {
 	return &ISOHandler{
 		basePath:      basePath,
 		configWatcher: configWatcher,
-		downloader:    downloader.New(),
 	}
 }
 
@@ -53,24 +50,26 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate ISO filename matches config to prevent disk exhaustion
-	// (attacker could request arbitrary filenames to fill disk)
+	// Validate ISO filename matches config to prevent path traversal
 	expectedFilename := filepath.Base(targetConfig.ISO)
 	if isoFilename != expectedFilename {
 		http.Error(w, fmt.Sprintf("invalid ISO filename: expected %s", expectedFilename), http.StatusBadRequest)
 		return
 	}
 
-	// Ensure ISO is downloaded (blocks if download in progress)
-	isoPath := config.ISOPathWithFilename(h.basePath, target, isoFilename)
-	if err := h.downloader.EnsureFile(isoPath, targetConfig.ISO); err != nil {
-		http.Error(w, fmt.Sprintf("failed to get ISO: %v", err), http.StatusInternalServerError)
+	// Get DiskImage name for file paths (may differ from target name)
+	diskImageName := targetConfig.DiskImageName(target)
+
+	// Check if ISO exists (downloaded by controller)
+	isoPath := config.ISOPathWithFilename(h.basePath, diskImageName, isoFilename)
+	if _, err := os.Stat(isoPath); os.IsNotExist(err) {
+		http.Error(w, fmt.Sprintf("ISO not ready: %s (DiskImage may still be downloading)", diskImageName), http.StatusNotFound)
 		return
 	}
 
 	// Check if this is initrd.gz and we have firmware
 	if filePath == "initrd.gz" {
-		h.serveInitrdWithFirmware(w, r, target, isoFilename, targetConfig)
+		h.serveInitrdWithFirmware(w, r, diskImageName, isoFilename, targetConfig)
 		return
 	}
 
@@ -118,16 +117,14 @@ func (h *ISOHandler) serveFileFromISO(w http.ResponseWriter, isoPath, filePath s
 // serveInitrdWithFirmware serves initrd.gz, merging with firmware if present
 // Per https://wiki.debian.org/DebianInstaller/NetbootFirmware:
 // cat initrd.gz firmware.cpio.gz > combined.gz
-func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Request, target, isoFilename string, targetConfig config.TargetConfig) {
-	isoPath := config.ISOPathWithFilename(h.basePath, target, isoFilename)
-	firmwarePath := config.FirmwarePath(h.basePath, target)
+func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Request, diskImageName, isoFilename string, targetConfig config.TargetConfig) {
+	isoPath := config.ISOPathWithFilename(h.basePath, diskImageName, isoFilename)
+	firmwarePath := config.FirmwarePath(h.basePath, diskImageName)
 
-	// Check if firmware is configured and download if needed
+	// Check if firmware exists (downloaded by controller)
 	hasFirmware := false
 	if targetConfig.Firmware != "" {
-		if err := h.downloader.EnsureFile(firmwarePath, targetConfig.Firmware); err != nil {
-			fmt.Printf("Warning: failed to download firmware: %v\n", err)
-		} else {
+		if _, err := os.Stat(firmwarePath); err == nil {
 			hasFirmware = true
 		}
 	}
