@@ -147,6 +147,20 @@ func TestISOPathWithFilename(t *testing.T) {
 	if path != expected {
 		t.Errorf("Expected %s for invalid diskImageName, got %s", expected, path)
 	}
+
+	// Test fallback to "file" for invalid filename (path traversal attempt)
+	path = ISOPathWithFilename("/opt/isoboot/iso", "debian-13", "../../etc/passwd")
+	expected = "/opt/isoboot/iso/debian-13/passwd"
+	if path != expected {
+		t.Errorf("Expected %s for path traversal filename, got %s", expected, path)
+	}
+
+	// Test fallback to "file" for lone ".." filename
+	path = ISOPathWithFilename("/opt/isoboot/iso", "debian-13", "..")
+	expected = "/opt/isoboot/iso/debian-13/file"
+	if path != expected {
+		t.Errorf("Expected %s for '..' filename, got %s", expected, path)
+	}
 }
 
 func TestFirmwarePath(t *testing.T) {

@@ -141,6 +141,16 @@ func safeDiskImageDir(name string) string {
 	return "default"
 }
 
+// safeFilename returns a sanitized filename, falling back to "file" if the
+// name is empty or invalid. This prevents path collapsing when used with
+// filepath.Join.
+func safeFilename(name string) string {
+	if sanitized := safePathSegment(name); sanitized != "" {
+		return sanitized
+	}
+	return "file"
+}
+
 // DiskImageName returns the DiskImage name to use for file paths.
 // If DiskImageRef is set, use it; otherwise default to target name.
 // The result is sanitized to prevent path traversal attacks and will never be empty.
@@ -161,9 +171,10 @@ func (t TargetConfig) DiskImageName(targetName string) string {
 }
 
 // ISOPathWithFilename returns the path to the ISO file with explicit filename.
-// The diskImageName is sanitized to prevent path traversal and will never be empty.
+// Both diskImageName and filename are sanitized to prevent path traversal and
+// will never be empty.
 func ISOPathWithFilename(basePath, diskImageName, filename string) string {
-	return filepath.Join(basePath, safeDiskImageDir(diskImageName), safePathSegment(filename))
+	return filepath.Join(basePath, safeDiskImageDir(diskImageName), safeFilename(filename))
 }
 
 // FirmwarePath returns the path to the firmware file for a DiskImage.
