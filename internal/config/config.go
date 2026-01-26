@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -122,8 +123,13 @@ func (cw *ConfigWatcher) GetTarget(name string) (TargetConfig, bool) {
 
 // safePathSegment normalizes a value so it can be safely used as a single
 // directory component in a path. It strips any leading path elements and
-// rejects special values that could lead to directory traversal.
+// rejects special values that could lead to directory traversal or null byte
+// injection.
 func safePathSegment(name string) string {
+	// Reject strings containing null bytes (potential null byte injection)
+	if strings.Contains(name, "\x00") {
+		return ""
+	}
 	base := filepath.Base(name)
 	if base == "." || base == ".." {
 		return ""

@@ -314,3 +314,66 @@ func TestDiskImageRef_YAMLUnmarshal(t *testing.T) {
 		t.Errorf("DiskImageName() = %q, want %q", ubuntuTarget.DiskImageName("ubuntu-24"), "ubuntu-24")
 	}
 }
+
+func TestPathFunctions_WithMaliciousDiskImageRef(t *testing.T) {
+	// Integration test: verify end-to-end path sanitization when TargetConfig
+	// has a malicious DiskImageRef and path functions use the sanitized result
+	basePath := "/opt/isoboot/iso"
+
+	tests := []struct {
+		name         string
+		diskImageRef string
+		targetName   string
+		wantDir      string
+	}{
+		{
+			name:         "path traversal in DiskImageRef",
+			diskImageRef: "../../../etc/passwd",
+			targetName:   "debian-13",
+			wantDir:      "passwd",
+		},
+		{
+			name:         "null byte injection in DiskImageRef",
+			diskImageRef: "valid\x00malicious",
+			targetName:   "debian-13",
+			wantDir:      "debian-13", // falls back to target name
+		},
+		{
+			name:         "lone .. in DiskImageRef",
+			diskImageRef: "..",
+			targetName:   "ubuntu-24",
+			wantDir:      "ubuntu-24", // falls back to target name
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := TargetConfig{DiskImageRef: tt.diskImageRef}
+			diskImageName := cfg.DiskImageName(tt.targetName)
+
+			// Verify DiskImageName returns sanitized value
+			if diskImageName != tt.wantDir {
+				t.Errorf("DiskImageName() = %q, want %q", diskImageName, tt.wantDir)
+			}
+
+			// Verify path functions use the sanitized name correctly
+			isoPath := ISOPathWithFilename(basePath, diskImageName, "mini.iso")
+			expectedISO := basePath + "/" + tt.wantDir + "/mini.iso"
+			if isoPath != expectedISO {
+				t.Errorf("ISOPathWithFilename() = %q, want %q", isoPath, expectedISO)
+			}
+
+			fwPath := FirmwarePath(basePath, diskImageName)
+			expectedFW := basePath + "/" + tt.wantDir + "/firmware/firmware.cpio.gz"
+			if fwPath != expectedFW {
+				t.Errorf("FirmwarePath() = %q, want %q", fwPath, expectedFW)
+			}
+
+			initrdPath := InitrdOrigPath(basePath, diskImageName)
+			expectedInitrd := basePath + "/" + tt.wantDir + "/initrd.gz.orig"
+			if initrdPath != expectedInitrd {
+				t.Errorf("InitrdOrigPath() = %q, want %q", initrdPath, expectedInitrd)
+			}
+		})
+	}
+}
