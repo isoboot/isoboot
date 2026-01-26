@@ -226,11 +226,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("HEAD request: %w", err)
 	}
-	defer func() {
-		if headResp.Body != nil {
-			headResp.Body.Close()
-		}
-	}()
+	defer headResp.Body.Close()
 
 	// Only use Content-Length if HEAD succeeded (2xx response)
 	var expectedSize int64
@@ -473,8 +469,12 @@ func parseChecksumFile(r io.Reader) map[string]string {
 			filename := strings.TrimPrefix(lastPart, "*")
 			filename = strings.TrimPrefix(filename, "./")
 			result[filename] = hash
-			// Also store with path variations
-			result[filepath.Base(filename)] = hash
+			// Also store base filename, but don't overwrite if already exists
+			// (avoids conflicts when different paths have same base filename)
+			base := filepath.Base(filename)
+			if _, exists := result[base]; !exists {
+				result[base] = hash
+			}
 		}
 	}
 
