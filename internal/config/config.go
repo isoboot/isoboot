@@ -13,7 +13,7 @@ import (
 type TargetConfig struct {
 	ISO          string `json:"iso" yaml:"iso"`
 	Firmware     string `json:"firmware,omitempty" yaml:"firmware,omitempty"`
-	DiskImageRef string `json:"diskImageRef,omitempty" yaml:"diskImageRef,omitempty"` // DiskImage name for file paths (defaults to target name)
+	DiskImageRef string `json:"diskImageRef,omitempty" yaml:"diskImageRef,omitempty"` // Reference to a DiskImage identifier for file paths (defaults to target name if unset)
 }
 
 type Config struct {
