@@ -227,9 +227,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("HEAD request: %w", err)
 	}
-	if headResp.Body != nil {
-		defer headResp.Body.Close()
-	}
+	defer headResp.Body.Close()
 
 	// Check HEAD response status
 	var expectedSize int64
@@ -315,8 +313,15 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	result.DigestSha512 = verifyChecksum(checksums, "sha512", sha512Hash, filename)
 
 	// If any checksum verification explicitly failed, don't persist the bad file
-	if result.DigestSha256 == "failed" || result.DigestSha512 == "failed" {
-		return result, fmt.Errorf("checksum verification failed")
+	var failedDigests []string
+	if result.DigestSha256 == "failed" {
+		failedDigests = append(failedDigests, "SHA256")
+	}
+	if result.DigestSha512 == "failed" {
+		failedDigests = append(failedDigests, "SHA512")
+	}
+	if len(failedDigests) > 0 {
+		return result, fmt.Errorf("%s checksum verification failed", strings.Join(failedDigests, " and "))
 	}
 
 	// Atomic rename
@@ -460,9 +465,10 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 // as keys for flexible lookups. When multiple entries share the same base filename
 // (e.g., "dir1/file.iso" and "dir2/file.iso"), the first entry's hash is used for
 // the base filename key. Callers should prefer full path lookups when available.
-// Returns an empty map if there's a scanner error (e.g., line too long, I/O error).
+// On scanner error, returns partial results parsed so far (may be empty).
 func parseChecksumFile(r io.Reader) map[string]string {
 	result := make(map[string]string)
+	warnedBases := make(map[string]bool) // track bases we've warned about
 	scanner := bufio.NewScanner(r)
 
 	for scanner.Scan() {
@@ -497,15 +503,15 @@ func parseChecksumFile(r io.Reader) map[string]string {
 		base := filepath.Base(filename)
 		if _, exists := result[base]; !exists {
 			result[base] = hash
-		} else {
+		} else if !warnedBases[base] {
 			log.Printf("Controller: duplicate base filename %q in checksum file, keeping first entry", base)
+			warnedBases[base] = true
 		}
 	}
 
-	// If scanner encountered an error, log it and return nil to distinguish from empty file
+	// If scanner encountered an error, log it and return partial results
 	if err := scanner.Err(); err != nil {
 		log.Printf("Controller: error scanning checksum file: %v", err)
-		return nil
 	}
 
 	return result
