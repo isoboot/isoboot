@@ -526,6 +526,10 @@ func (c *Client) ListDiskImages(ctx context.Context) ([]*DiskImage, error) {
 
 // UpdateDiskImageStatus updates the status of a DiskImage
 func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status *DiskImageStatus) error {
+	if status == nil {
+		return fmt.Errorf("status cannot be nil")
+	}
+
 	obj, err := c.dynamicClient.Resource(diskImageGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("get diskimage: %w", err)

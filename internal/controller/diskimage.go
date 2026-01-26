@@ -397,10 +397,19 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 	}
 
 	// Try current directory, then 1 level up, then 2 levels up
-	dirs := []string{
-		path.Dir(u.Path),
-		path.Dir(path.Dir(u.Path)),
-		path.Dir(path.Dir(path.Dir(u.Path))),
+	// Deduplicate directories (path.Dir("/") stays "/")
+	dirs := []string{}
+	seen := make(map[string]bool)
+	dir := path.Dir(u.Path)
+	for i := 0; i < 3; i++ {
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+		if dir == "/" {
+			break // Stop at root
+		}
+		dir = path.Dir(dir)
 	}
 
 	checksumFiles := []struct {
@@ -452,6 +461,7 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 }
 
 // parseChecksumFile parses a checksum file (SHA256SUMS format)
+// Returns an empty map if there's a scanner error (e.g., line too long, I/O error)
 func parseChecksumFile(r io.Reader) map[string]string {
 	result := make(map[string]string)
 	scanner := bufio.NewScanner(r)
@@ -472,6 +482,11 @@ func parseChecksumFile(r io.Reader) map[string]string {
 			// Also store with path variations
 			result[filepath.Base(filename)] = hash
 		}
+	}
+
+	// If scanner encountered an error, return empty result to avoid partial data
+	if scanner.Err() != nil {
+		return make(map[string]string)
 	}
 
 	return result
