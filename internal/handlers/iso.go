@@ -44,14 +44,30 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	target := parts[0]
+	bootTargetName := parts[0]
 	isoFilename := parts[1]
 	filePath := parts[2]
 
-	// Get target config for ISO filename validation
-	targetConfig, ok := h.configWatcher.GetTarget(target)
+	// Get BootTarget first to determine diskImageRef and includeFirmwarePath.
+	// This gRPC call is made per-request, consistent with other handlers (boot, answer).
+	bootTarget, err := h.controllerClient.GetBootTarget(r.Context(), bootTargetName)
+	if err != nil {
+		if errors.Is(err, controllerclient.ErrNotFound) {
+			http.Error(w, fmt.Sprintf("boot target not found: %s", bootTargetName), http.StatusNotFound)
+		} else {
+			log.Printf("iso: failed to get BootTarget %s: %v", bootTargetName, err)
+			http.Error(w, "failed to resolve boot target", http.StatusBadGateway)
+		}
+		return
+	}
+
+	// Use diskImageRef from BootTarget for config lookup and file path construction
+	diskImageRef := bootTarget.DiskImageRef
+
+	// Get target config using diskImageRef for ISO filename validation
+	targetConfig, ok := h.configWatcher.GetTarget(diskImageRef)
 	if !ok {
-		http.Error(w, fmt.Sprintf("unknown target: %s", target), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("unknown disk image: %s", diskImageRef), http.StatusNotFound)
 		return
 	}
 
@@ -62,24 +78,8 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get BootTarget to determine diskImageRef and includeFirmwarePath.
-	// This gRPC call is made per-request, consistent with other handlers (boot, answer).
-	bootTarget, err := h.controllerClient.GetBootTarget(r.Context(), target)
-	if err != nil {
-		if errors.Is(err, controllerclient.ErrNotFound) {
-			http.Error(w, fmt.Sprintf("boot target not found: %s", target), http.StatusNotFound)
-		} else {
-			log.Printf("iso: failed to get BootTarget %s: %v", target, err)
-			http.Error(w, "failed to resolve boot target", http.StatusBadGateway)
-		}
-		return
-	}
-
-	// Use diskImageRef from BootTarget for file path construction
-	diskImageDir := bootTarget.DiskImageRef
-
 	// Check if ISO exists (downloaded by controller)
-	isoPath := config.ISOPathWithFilename(h.basePath, diskImageDir, isoFilename)
+	isoPath := config.ISOPathWithFilename(h.basePath, diskImageRef, isoFilename)
 	if _, err := os.Stat(isoPath); err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "ISO file not found", http.StatusNotFound)
@@ -92,7 +92,7 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Check if this path should have firmware merged.
 	// Firmware is only merged when includeFirmwarePath is explicitly set.
 	if shouldMergeFirmware(filePath, bootTarget.IncludeFirmwarePath) {
-		h.serveFileWithFirmware(w, r, diskImageDir, isoFilename, filePath, targetConfig)
+		h.serveFileWithFirmware(w, r, diskImageRef, isoFilename, filePath, targetConfig)
 		return
 	}
 
@@ -140,9 +140,9 @@ func (h *ISOHandler) serveFileFromISO(w http.ResponseWriter, isoPath, filePath s
 // serveFileWithFirmware serves a file from the ISO, appending firmware if present.
 // Per https://wiki.debian.org/DebianInstaller/NetbootFirmware:
 // cat initrd.gz firmware.cpio.gz > combined.gz
-func (h *ISOHandler) serveFileWithFirmware(w http.ResponseWriter, r *http.Request, diskImageDir, isoFilename, filePath string, targetConfig config.TargetConfig) {
-	isoPath := config.ISOPathWithFilename(h.basePath, diskImageDir, isoFilename)
-	firmwareFilePath := config.FirmwarePath(h.basePath, diskImageDir)
+func (h *ISOHandler) serveFileWithFirmware(w http.ResponseWriter, r *http.Request, diskImageRef, isoFilename, filePath string, targetConfig config.TargetConfig) {
+	isoPath := config.ISOPathWithFilename(h.basePath, diskImageRef, isoFilename)
+	firmwareFilePath := config.FirmwarePath(h.basePath, diskImageRef)
 
 	// Check if optional firmware (downloaded by the controller) exists for this disk image.
 	// If not present, hasFirmware remains false and the handler continues without firmware.
