@@ -118,6 +118,16 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 		return
 	}
 
+	// Validate isoBasePath is set
+	if c.isoBasePath == "" {
+		status.Phase = "Failed"
+		status.Message = "Controller isoBasePath not configured"
+		if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
+			log.Printf("Controller: failed to update DiskImage %s to Failed: %v", di.Name, updateErr)
+		}
+		return
+	}
+
 	// Download ISO
 	isoPath := filepath.Join(c.isoBasePath, di.Name, filepath.Base(di.ISO))
 	isoResult, err := c.downloadAndVerify(downloadCtx, di.ISO, isoPath)
@@ -207,7 +217,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	expectedSize := headResp.ContentLength
 
 	// Try to find checksums
-	checksums := c.discoverChecksums(fileURL)
+	checksums := c.discoverChecksums(ctx, fileURL)
 
 	// Check if file already exists and is valid
 	if existingResult := c.verifyExistingFile(destPath, expectedSize, checksums, filepath.Base(fileURL)); existingResult != nil {
@@ -269,6 +279,11 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	result.DigestSha256 = verifyChecksum(checksums, "sha256", sha256Hash, filepath.Base(fileURL))
 	result.DigestMd5 = verifyChecksum(checksums, "md5", md5Hash, filepath.Base(fileURL))
 
+	// If any checksum verification explicitly failed, don't persist the bad file
+	if result.DigestSha512 == "failed" || result.DigestSha256 == "failed" || result.DigestMd5 == "failed" {
+		return result, fmt.Errorf("checksum verification failed")
+	}
+
 	// Atomic rename
 	if err := os.Rename(tmpPath, destPath); err != nil {
 		return result, fmt.Errorf("rename: %w", err)
@@ -292,6 +307,17 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 	if expectedSize > 0 && info.Size() != expectedSize {
 		log.Printf("Controller: existing file %s size mismatch (expected %d, got %d), will re-download", filename, expectedSize, info.Size())
 		return nil // Size mismatch, need to download
+	}
+
+	// If no checksums discovered, size match alone is sufficient (skip expensive hashing)
+	if len(checksums) == 0 {
+		log.Printf("Controller: existing file %s size verified (no checksums available)", filename)
+		return &k8s.DiskImageVerification{
+			FileSizeMatch: "verified",
+			DigestSha512:  "not_found",
+			DigestSha256:  "not_found",
+			DigestMd5:     "not_found",
+		}
 	}
 
 	// Compute checksums
@@ -328,7 +354,7 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 }
 
 // discoverChecksums looks for checksum files in parent directories
-func (c *Controller) discoverChecksums(fileURL string) map[string]map[string]string {
+func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[string]map[string]string {
 	checksums := make(map[string]map[string]string) // type -> filename -> hash
 
 	u, err := url.Parse(fileURL)
@@ -352,12 +378,19 @@ func (c *Controller) discoverChecksums(fileURL string) map[string]map[string]str
 		{"MD5SUMS", "md5"},
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-
 	for _, dir := range dirs {
 		for _, cf := range checksumFiles {
 			checksumURL := fmt.Sprintf("%s://%s%s/%s", u.Scheme, u.Host, dir, cf.name)
-			resp, err := client.Get(checksumURL)
+
+			reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, checksumURL, nil)
+			if err != nil {
+				cancel()
+				continue
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			cancel()
 			if err != nil || resp.StatusCode != http.StatusOK {
 				if resp != nil {
 					resp.Body.Close()

@@ -269,7 +269,7 @@ func TestDiscoverChecksums(t *testing.T) {
 
 	t.Run("discovers checksums from multiple locations", func(t *testing.T) {
 		fileURL := server.URL + "/images/mini.iso"
-		checksums := ctrl.discoverChecksums(fileURL)
+		checksums := ctrl.discoverChecksums(context.Background(), fileURL)
 
 		if sha256, ok := checksums["sha256"]; !ok {
 			t.Error("expected sha256 checksums")
@@ -290,7 +290,7 @@ func TestDiscoverChecksums(t *testing.T) {
 		defer emptyServer.Close()
 
 		fileURL := emptyServer.URL + "/some/path/file.iso"
-		checksums := ctrl.discoverChecksums(fileURL)
+		checksums := ctrl.discoverChecksums(context.Background(), fileURL)
 
 		// Should return empty map, not error
 		if len(checksums) != 0 {
@@ -299,7 +299,7 @@ func TestDiscoverChecksums(t *testing.T) {
 	})
 
 	t.Run("handles invalid URL", func(t *testing.T) {
-		checksums := ctrl.discoverChecksums("not-a-valid-url")
+		checksums := ctrl.discoverChecksums(context.Background(), "not-a-valid-url")
 		if len(checksums) != 0 {
 			t.Errorf("expected empty checksums for invalid URL, got %v", checksums)
 		}
