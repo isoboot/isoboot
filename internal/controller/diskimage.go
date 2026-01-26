@@ -482,7 +482,10 @@ func parseChecksumFile(r io.Reader) map[string]string {
 			// Binary mode: "hash *filename"
 			hash = strings.TrimSpace(line[:i])
 			filename = strings.TrimSpace(line[i+2:])
-		} else {
+		}
+
+		// Skip lines that don't match either format
+		if hash == "" || filename == "" {
 			continue
 		}
 
@@ -499,10 +502,10 @@ func parseChecksumFile(r io.Reader) map[string]string {
 		}
 	}
 
-	// If scanner encountered an error, log it and return empty result to avoid partial data
+	// If scanner encountered an error, log it and return nil to distinguish from empty file
 	if err := scanner.Err(); err != nil {
 		log.Printf("Controller: error scanning checksum file: %v", err)
-		return make(map[string]string)
+		return nil
 	}
 
 	return result
