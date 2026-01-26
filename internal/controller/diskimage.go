@@ -599,6 +599,7 @@ func lookupChecksumByRelativePath(checksums map[string]string, relativePath stri
 
 	// Fallback: some checksum files only list base filenames.
 	// If exactly one entry matches the basename, use it.
+	// Note: Use path.Base (not filepath.Base) since these are URL paths with forward slashes.
 	basename := path.Base(relativePath)
 	var matchedHash string
 	var matchCount int
