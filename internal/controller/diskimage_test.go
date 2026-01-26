@@ -381,8 +381,12 @@ func TestDownloadAndVerify(t *testing.T) {
 	})
 
 	t.Run("handles connection error", func(t *testing.T) {
+		// Create and immediately close a server to get a valid but unreachable port
+		closedServer := httptest.NewServer(http.NewServeMux())
+		closedServer.Close()
+
 		destPath := filepath.Join(tmpDir, "connfail.iso")
-		result, err := ctrl.downloadAndVerify(context.Background(), "http://localhost:99999/test.iso", destPath)
+		result, err := ctrl.downloadAndVerify(context.Background(), closedServer.URL+"/test.iso", destPath)
 
 		if err == nil {
 			t.Error("expected error for connection failure")
