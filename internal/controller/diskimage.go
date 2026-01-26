@@ -417,26 +417,27 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 		for _, cf := range checksumFiles {
 			checksumURL := fmt.Sprintf("%s://%s%s/%s", u.Scheme, u.Host, dir, cf.name)
 
-			reqCtx, cancel := context.WithTimeout(ctx, checksumDiscoveryTimeout)
-			req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, checksumURL, nil)
-			if err != nil {
-				cancel()
-				continue
-			}
+			// Use function to scope defer for context cancellation
+			parsed := func() map[string]string {
+				reqCtx, cancel := context.WithTimeout(ctx, checksumDiscoveryTimeout)
+				defer cancel()
 
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil || resp.StatusCode != http.StatusOK {
-				if resp != nil {
-					resp.Body.Close()
+				req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, checksumURL, nil)
+				if err != nil {
+					return nil
 				}
-				cancel()
-				continue
-			}
 
-			// Parse checksum file
-			parsed := parseChecksumFile(resp.Body)
-			resp.Body.Close()
-			cancel()
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil || resp.StatusCode != http.StatusOK {
+					if resp != nil {
+						resp.Body.Close()
+					}
+					return nil
+				}
+				defer resp.Body.Close()
+
+				return parseChecksumFile(resp.Body)
+			}()
 
 			if len(parsed) > 0 {
 				if checksums[cf.hashType] == nil {
