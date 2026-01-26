@@ -101,9 +101,11 @@ func main() {
 
 	// Start server
 	addr := fmt.Sprintf(":%s", port)
-	log.Printf("Starting isoboot-http on %s:%s", host, port)
-	log.Printf("ISO path: %s", isoPath)
-	log.Printf("Templates ConfigMap: %s", templatesConfigMap)
+	log.Printf("Starting isoboot-http server")
+	log.Printf("  Advertised host: %s", host)
+	log.Printf("  Listen address: %s", addr)
+	log.Printf("  ISO path: %s", isoPath)
+	log.Printf("  Templates ConfigMap: %s", templatesConfigMap)
 
 	if err := http.ListenAndServe(addr, loggingMiddleware(mux)); err != nil {
 		log.Fatalf("Server failed: %v", err)
