@@ -223,9 +223,11 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("HEAD request: %w", err)
 	}
-	if headResp.Body != nil {
-		headResp.Body.Close()
-	}
+	defer func() {
+		if headResp.Body != nil {
+			headResp.Body.Close()
+		}
+	}()
 
 	// Only use Content-Length if HEAD succeeded (2xx response)
 	var expectedSize int64
