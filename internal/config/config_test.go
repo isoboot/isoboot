@@ -238,7 +238,7 @@ func TestDiskImageName(t *testing.T) {
 		},
 		{
 			name:       "falls back to target name for lone ..",
-			config:     TargetConfig{DiskImageRef: ".."}, // safePathSegment("..") returns "", triggering fallback
+			config:     TargetConfig{DiskImageRef: ".."}, // invalid, falls back to target name
 			targetName: "debian-13",
 			expected:   "debian-13",
 		},
