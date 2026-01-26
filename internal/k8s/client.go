@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -525,6 +526,7 @@ func (c *Client) ListDiskImages(ctx context.Context) ([]*DiskImage, error) {
 	for _, item := range list.Items {
 		di, err := parseDiskImage(&item)
 		if err != nil {
+			log.Printf("k8s: failed to parse DiskImage %s: %v", item.GetName(), err)
 			continue
 		}
 		diskImages = append(diskImages, di)
@@ -553,21 +555,11 @@ func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status 
 	}
 
 	if status.ISO != nil {
-		statusMap["iso"] = map[string]interface{}{
-			"fileSizeMatch": status.ISO.FileSizeMatch,
-			"digestSha256":  status.ISO.DigestSha256,
-			"digestSha512":  status.ISO.DigestSha512,
-			"digestMd5":     status.ISO.DigestMd5,
-		}
+		statusMap["iso"] = verificationToMap(status.ISO)
 	}
 
 	if status.Firmware != nil {
-		statusMap["firmware"] = map[string]interface{}{
-			"fileSizeMatch": status.Firmware.FileSizeMatch,
-			"digestSha256":  status.Firmware.DigestSha256,
-			"digestSha512":  status.Firmware.DigestSha512,
-			"digestMd5":     status.Firmware.DigestMd5,
-		}
+		statusMap["firmware"] = verificationToMap(status.Firmware)
 	}
 
 	obj.Object["status"] = statusMap
@@ -578,4 +570,14 @@ func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status 
 	}
 
 	return nil
+}
+
+// verificationToMap converts a DiskImageVerification to a map for status updates
+func verificationToMap(v *DiskImageVerification) map[string]interface{} {
+	return map[string]interface{}{
+		"fileSizeMatch": v.FileSizeMatch,
+		"digestSha256":  v.DigestSha256,
+		"digestSha512":  v.DigestSha512,
+		"digestMd5":     v.DigestMd5,
+	}
 }
