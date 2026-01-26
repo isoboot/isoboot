@@ -47,7 +47,7 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	isoFilename := parts[1]
 	filePath := parts[2]
 
-	// Get target config
+	// Get target config for ISO filename validation
 	targetConfig, ok := h.configWatcher.GetTarget(target)
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown target: %s", target), http.StatusNotFound)
@@ -61,8 +61,17 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get DiskImage directory name for file path construction (may differ from target name when DiskImageRef is set)
-	diskImageDir := targetConfig.DiskImageName(target)
+	// Get BootTarget to determine diskImageRef and includeFirmwarePath.
+	// This gRPC call is made per-request, consistent with other handlers (boot, answer).
+	bootTarget, err := h.controllerClient.GetBootTarget(r.Context(), target)
+	if err != nil {
+		log.Printf("iso: failed to get BootTarget %s: %v", target, err)
+		http.Error(w, "failed to resolve boot target", http.StatusBadGateway)
+		return
+	}
+
+	// Use diskImageRef from BootTarget for file path construction
+	diskImageDir := bootTarget.DiskImageRef
 
 	// Check if ISO exists (downloaded by controller)
 	isoPath := config.ISOPathWithFilename(h.basePath, diskImageDir, isoFilename)
@@ -75,23 +84,18 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get BootTarget to check for includeFirmwarePath.
-	// This gRPC call is made per-request, consistent with other handlers (boot, answer).
-	bootTarget, err := h.controllerClient.GetBootTarget(r.Context(), target)
-	if err != nil {
-		log.Printf("iso: failed to get BootTarget %s, serving plain file: %v", target, err)
-		h.serveFileFromISO(w, isoPath, filePath)
-		return
-	}
-
-	// Normalize paths for comparison: ensure both have leading slash
-	requestPath := "/" + filePath
+	// Determine firmware merge path: use includeFirmwarePath if set,
+	// otherwise default to /initrd.gz for backward compatibility
 	firmwarePath := bootTarget.IncludeFirmwarePath
-	if firmwarePath != "" && !strings.HasPrefix(firmwarePath, "/") {
+	if firmwarePath == "" {
+		firmwarePath = "/initrd.gz"
+	} else if !strings.HasPrefix(firmwarePath, "/") {
 		firmwarePath = "/" + firmwarePath
 	}
 
-	if firmwarePath != "" && requestPath == firmwarePath {
+	// Check if this path should have firmware merged
+	requestPath := "/" + filePath
+	if requestPath == firmwarePath {
 		h.serveFileWithFirmware(w, r, diskImageDir, isoFilename, filePath, targetConfig)
 		return
 	}
