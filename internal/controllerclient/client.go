@@ -76,7 +76,7 @@ func (c *Client) MarkBootStarted(ctx context.Context, mac string) error {
 	return nil
 }
 
-// MarkBootCompleted marks a deploy as Completed (by hostname)
+// MarkBootCompleted marks a deploy as Complete (by hostname)
 func (c *Client) MarkBootCompleted(ctx context.Context, hostname string) error {
 	resp, err := c.client.MarkBootCompleted(ctx, &pb.MarkBootCompletedRequest{Hostname: hostname})
 	if err != nil {
