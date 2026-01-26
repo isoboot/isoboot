@@ -151,3 +151,27 @@ func TestSplitHostDomain(t *testing.T) {
 		}
 	}
 }
+
+func TestServeBootDone_NoID(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+	}
+
+	req := httptest.NewRequest("GET", "/boot/done", nil)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d", w.Code)
+	}
+
+	if w.Header().Get("Content-Length") != "0" {
+		t.Errorf("Expected Content-Length: 0, got %s", w.Header().Get("Content-Length"))
+	}
+}

@@ -162,8 +162,33 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// ServeBootDone marks a deploy as completed
+// GET /boot/done?id={machineName}
+func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if err := h.ctrlClient.MarkBootCompleted(ctx, id); err != nil {
+		log.Printf("Error marking boot completed for %s: %v", id, err)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Length", "2")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
+}
+
 // RegisterRoutes registers boot-related routes
 func (h *BootHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/boot/boot.ipxe", h.ServeBootIPXE)
 	mux.HandleFunc("/boot/conditional-boot", h.ServeConditionalBoot)
+	mux.HandleFunc("/boot/done", h.ServeBootDone)
 }

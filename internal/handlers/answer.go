@@ -59,39 +59,7 @@ func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(content))
 }
 
-// CompleteDeployment marks a deployment as completed
-func (h *AnswerHandler) CompleteDeployment(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Parse path: /api/deploy/{hostname}/complete
-	path := strings.TrimPrefix(r.URL.Path, "/api/deploy/")
-	parts := strings.Split(path, "/")
-	if len(parts) < 2 || parts[1] != "complete" {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	hostname := parts[0]
-	ctx := r.Context()
-
-	// Mark deploy as completed via controller (using hostname)
-	if err := h.ctrlClient.MarkBootCompleted(ctx, hostname); err != nil {
-		log.Printf("Error completing deploy for %s: %v", hostname, err)
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	body := []byte("OK")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
-	w.WriteHeader(http.StatusOK)
-	w.Write(body)
-}
-
 // RegisterRoutes registers answer file routes
 func (h *AnswerHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/answer/", h.ServeAnswer)
-	mux.HandleFunc("/api/deploy/", h.CompleteDeployment)
 }
