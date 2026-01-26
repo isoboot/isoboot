@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"text/template"
 	"time"
 
@@ -18,10 +19,12 @@ const (
 
 // Controller watches Deploy CRDs and manages their lifecycle
 type Controller struct {
-	k8sClient *k8s.Client
-	stopCh    chan struct{}
-	host      string
-	port      string
+	k8sClient          *k8s.Client
+	stopCh             chan struct{}
+	host               string
+	port               string
+	isoBasePath        string
+	activeDownloads    sync.Map // tracks in-progress DiskImage downloads by name
 }
 
 // New creates a new controller
@@ -36,6 +39,11 @@ func New(k8sClient *k8s.Client) *Controller {
 func (c *Controller) SetHostPort(host, port string) {
 	c.host = host
 	c.port = port
+}
+
+// SetISOBasePath sets the base path for ISO storage
+func (c *Controller) SetISOBasePath(path string) {
+	c.isoBasePath = path
 }
 
 // Start begins the controller reconciliation loop
@@ -70,6 +78,10 @@ func (c *Controller) run() {
 func (c *Controller) reconcile() {
 	ctx := context.Background()
 
+	// Reconcile DiskImages first (downloads)
+	c.reconcileDiskImages(ctx)
+
+	// Then reconcile Deploys
 	deploys, err := c.k8sClient.ListDeploys(ctx)
 	if err != nil {
 		log.Printf("Controller: failed to list deploys: %v", err)
@@ -93,10 +105,22 @@ func (c *Controller) reconcileDeploy(ctx context.Context, deploy *k8s.Deploy) {
 		return
 	}
 
-	// If previously in ConfigError but now valid, reset to Pending
-	if deploy.Status.Phase == "ConfigError" {
-		log.Printf("Controller: %s references now valid, resetting to Pending", deploy.Name)
-		if err := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "Pending", "References validated"); err != nil {
+	// Check if DiskImage is ready
+	diskImageReady, diskImageMsg := c.checkDiskImageReady(ctx, deploy)
+	if !diskImageReady {
+		if deploy.Status.Phase != "WaitingForDiskImage" || deploy.Status.Message != diskImageMsg {
+			log.Printf("Controller: %s waiting for DiskImage: %s", deploy.Name, diskImageMsg)
+			if err := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "WaitingForDiskImage", diskImageMsg); err != nil {
+				log.Printf("Controller: failed to set WaitingForDiskImage for %s: %v", deploy.Name, err)
+			}
+		}
+		return
+	}
+
+	// If previously in ConfigError or WaitingForDiskImage but now valid, reset to Pending
+	if deploy.Status.Phase == "ConfigError" || deploy.Status.Phase == "WaitingForDiskImage" {
+		log.Printf("Controller: %s now ready, setting to Pending", deploy.Name)
+		if err := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "Pending", "Ready for boot"); err != nil {
 			log.Printf("Controller: failed to reset %s to Pending: %v", deploy.Name, err)
 		}
 		return
@@ -120,6 +144,37 @@ func (c *Controller) reconcileDeploy(ctx context.Context, deploy *k8s.Deploy) {
 				log.Printf("Controller: failed to set Failed for %s: %v", deploy.Name, err)
 			}
 		}
+	}
+}
+
+// checkDiskImageReady checks if the DiskImage for this Deploy is ready
+func (c *Controller) checkDiskImageReady(ctx context.Context, deploy *k8s.Deploy) (bool, string) {
+	// Get BootTarget to find DiskImage reference
+	bootTarget, err := c.k8sClient.GetBootTarget(ctx, deploy.Spec.BootTargetRef)
+	if err != nil {
+		return false, fmt.Sprintf("BootTarget '%s' not found", deploy.Spec.BootTargetRef)
+	}
+
+	// Get DiskImage
+	diskImage, err := c.k8sClient.GetDiskImage(ctx, bootTarget.DiskImageRef)
+	if err != nil {
+		return false, fmt.Sprintf("DiskImage '%s' not found", bootTarget.DiskImageRef)
+	}
+
+	return checkDiskImageStatus(diskImage)
+}
+
+// checkDiskImageStatus checks the status of a DiskImage and returns whether it's ready
+func checkDiskImageStatus(diskImage *k8s.DiskImage) (bool, string) {
+	switch diskImage.Status.Phase {
+	case "Complete":
+		return true, ""
+	case "Failed":
+		return false, fmt.Sprintf("DiskImage '%s' failed: %s", diskImage.Name, diskImage.Status.Message)
+	case "Downloading":
+		return false, fmt.Sprintf("DiskImage '%s' downloading (%d%%)", diskImage.Name, diskImage.Status.Progress)
+	default:
+		return false, fmt.Sprintf("DiskImage '%s' pending", diskImage.Name)
 	}
 }
 

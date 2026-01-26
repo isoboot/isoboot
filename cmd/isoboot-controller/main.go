@@ -16,18 +16,40 @@ import (
 
 func main() {
 	var (
-		port      string
-		namespace string
+		port        string
+		namespace   string
+		isoBasePath string
+		httpHost    string
+		httpPort    string
 	)
 
 	flag.StringVar(&port, "port", "8081", "gRPC server port")
 	flag.StringVar(&namespace, "namespace", "", "Kubernetes namespace")
+	flag.StringVar(&isoBasePath, "iso-path", "/opt/isoboot/iso", "Base path for ISO storage")
+	flag.StringVar(&httpHost, "http-host", "", "HTTP server host for template rendering")
+	flag.StringVar(&httpPort, "http-port", "8080", "HTTP server port for template rendering")
 	flag.Parse()
+
+	// Track which flags were explicitly set
+	flagsSet := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) {
+		flagsSet[f.Name] = true
+	})
 
 	if namespace == "" {
 		namespace = os.Getenv("POD_NAMESPACE")
 		if namespace == "" {
 			log.Fatal("--namespace or POD_NAMESPACE is required")
+		}
+	}
+
+	// Only use env vars as fallback when flags weren't explicitly set
+	if !flagsSet["http-host"] {
+		httpHost = os.Getenv("HTTP_HOST")
+	}
+	if !flagsSet["http-port"] {
+		if envPort := os.Getenv("HTTP_PORT"); envPort != "" {
+			httpPort = envPort
 		}
 	}
 
@@ -38,7 +60,13 @@ func main() {
 	}
 
 	// Create and start controller
+	// NOTE: SetISOBasePath and SetHostPort must be called before Start.
+	// The controller uses these values immediately after starting. Calling
+	// these methods after Start or omitting them results in the controller
+	// using empty/default values, causing download failures or incorrect URLs.
 	ctrl := controller.New(k8sClient)
+	ctrl.SetISOBasePath(isoBasePath)
+	ctrl.SetHostPort(httpHost, httpPort)
 	ctrl.Start()
 	defer ctrl.Stop()
 
