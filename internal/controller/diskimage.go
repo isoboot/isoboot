@@ -471,7 +471,9 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 // On scanner error, returns partial results parsed so far (may be empty).
 func parseChecksumFile(r io.Reader) map[string]string {
 	result := make(map[string]string)
-	// Track bases we've warned about (scoped to this single parse call, not retained across calls)
+	// Track bases we've warned about for this single parse call only. This intentionally
+	// deduplicates warnings within one checksum file, but allows the same warning to
+	// appear again when other checksum files are parsed (i.e., no cross-call dedup).
 	warnedBases := make(map[string]bool)
 	scanner := bufio.NewScanner(r)
 
