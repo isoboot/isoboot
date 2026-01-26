@@ -252,13 +252,11 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		log.Printf("Controller: could not determine filename from URL %s, using fallback: %s", fileURL, filename)
 	}
 
-	// Check if file already exists and is valid
-	// Only verify when we have size or checksums to validate against
-	if expectedSize > 0 || len(checksums) > 0 {
-		if existingResult := c.verifyExistingFile(destPath, expectedSize, checksums, filename); existingResult != nil {
-			log.Printf("Controller: existing file %s verified, skipping download", filepath.Base(destPath))
-			return existingResult, nil
-		}
+	// Check if file already exists and is valid (verifyExistingFile handles edge cases like
+	// missing checksums or size, returning nil to trigger re-download when verification isn't possible)
+	if existingResult := c.verifyExistingFile(destPath, expectedSize, checksums, filename); existingResult != nil {
+		log.Printf("Controller: existing file %s verified, skipping download", filepath.Base(destPath))
+		return existingResult, nil
 	}
 
 	// Download file
@@ -473,7 +471,8 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 // On scanner error, returns partial results parsed so far (may be empty).
 func parseChecksumFile(r io.Reader) map[string]string {
 	result := make(map[string]string)
-	warnedBases := make(map[string]bool) // track bases we've warned about
+	// Track bases we've warned about (scoped to this single parse call, not retained across calls)
+	warnedBases := make(map[string]bool)
 	scanner := bufio.NewScanner(r)
 
 	for scanner.Scan() {
