@@ -368,6 +368,105 @@ func TestGetInt(t *testing.T) {
 	}
 }
 
+func TestParseBootTarget(t *testing.T) {
+	tests := []struct {
+		name        string
+		obj         *unstructured.Unstructured
+		expected    *BootTarget
+		expectError bool
+	}{
+		{
+			name: "valid BootTarget with all fields",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "debian-13-with-firmware"},
+					"spec": map[string]interface{}{
+						"diskImageRef":        "debian-13",
+						"includeFirmwarePath": "/initrd.gz",
+						"template":            "kernel /linux\ninitrd /initrd.gz",
+					},
+				},
+			},
+			expected: &BootTarget{
+				Name:                "debian-13-with-firmware",
+				DiskImageRef:        "debian-13",
+				IncludeFirmwarePath: "/initrd.gz",
+				Template:            "kernel /linux\ninitrd /initrd.gz",
+			},
+			expectError: false,
+		},
+		{
+			name: "missing diskImageRef returns error",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "invalid-target"},
+					"spec": map[string]interface{}{
+						"template": "kernel /linux",
+					},
+				},
+			},
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name: "missing includeFirmwarePath is OK (optional)",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "debian-13"},
+					"spec": map[string]interface{}{
+						"diskImageRef": "debian-13",
+						"template":     "kernel /linux",
+					},
+				},
+			},
+			expected: &BootTarget{
+				Name:                "debian-13",
+				DiskImageRef:        "debian-13",
+				IncludeFirmwarePath: "",
+				Template:            "kernel /linux",
+			},
+			expectError: false,
+		},
+		{
+			name: "missing spec returns error",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "no-spec"},
+				},
+			},
+			expected:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseBootTarget(tt.obj)
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if result.Name != tt.expected.Name {
+				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
+			}
+			if result.DiskImageRef != tt.expected.DiskImageRef {
+				t.Errorf("DiskImageRef = %q, want %q", result.DiskImageRef, tt.expected.DiskImageRef)
+			}
+			if result.IncludeFirmwarePath != tt.expected.IncludeFirmwarePath {
+				t.Errorf("IncludeFirmwarePath = %q, want %q", result.IncludeFirmwarePath, tt.expected.IncludeFirmwarePath)
+			}
+			if result.Template != tt.expected.Template {
+				t.Errorf("Template = %q, want %q", result.Template, tt.expected.Template)
+			}
+		})
+	}
+}
+
 func TestParseDiskImage(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -9,27 +9,30 @@ import (
 	"strings"
 
 	"github.com/isoboot/isoboot/internal/config"
+	"github.com/isoboot/isoboot/internal/controllerclient"
 	"github.com/isoboot/isoboot/internal/iso"
 )
 
 const streamChunkSize = 1024 * 1024 // 1MB chunks for streaming
 
 type ISOHandler struct {
-	basePath      string
-	configWatcher *config.ConfigWatcher
+	basePath         string
+	configWatcher    *config.ConfigWatcher
+	controllerClient *controllerclient.Client
 }
 
-func NewISOHandler(basePath string, configWatcher *config.ConfigWatcher) *ISOHandler {
+func NewISOHandler(basePath string, configWatcher *config.ConfigWatcher, controllerClient *controllerclient.Client) *ISOHandler {
 	return &ISOHandler{
-		basePath:      basePath,
-		configWatcher: configWatcher,
+		basePath:         basePath,
+		configWatcher:    configWatcher,
+		controllerClient: controllerClient,
 	}
 }
 
 // ServeISOContent serves files from ISO images
 // Path format: /iso/content/{target}/{isoFilename}/{filepath}
 // Example: /iso/content/debian-13/mini.iso/linux
-// Special handling for initrd.gz - merges with firmware if present
+// Special handling for includeFirmwarePath - merges with firmware if present
 func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Parse path: /iso/content/debian-13/mini.iso/linux
 	path := strings.TrimPrefix(r.URL.Path, "/iso/content/")
@@ -71,8 +74,17 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if this is initrd.gz and we have firmware
-	if filePath == "initrd.gz" {
+	// Get BootTarget to check for includeFirmwarePath
+	bootTarget, err := h.controllerClient.GetBootTarget(r.Context(), target)
+	if err != nil {
+		// Fall back to serving plain file if BootTarget lookup fails
+		h.serveFileFromISO(w, isoPath, filePath)
+		return
+	}
+
+	// Check if this path matches includeFirmwarePath (with or without leading slash)
+	requestPath := "/" + filePath
+	if bootTarget.IncludeFirmwarePath != "" && requestPath == bootTarget.IncludeFirmwarePath {
 		h.serveInitrdWithFirmware(w, r, diskImageDir, isoFilename, targetConfig)
 		return
 	}

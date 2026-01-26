@@ -75,6 +75,7 @@ message GetBootTargetResponse {
   bool found = 1;
   string disk_image_ref = 2;
   string template = 3;
+  string include_firmware_path = 4;
 }
 
 message GetResponseTemplateRequest {

@@ -109,8 +109,9 @@ func (c *Client) GetTemplate(ctx context.Context, name, configMap string) (strin
 
 // BootTargetInfo returned by GetBootTarget
 type BootTargetInfo struct {
-	DiskImageRef string
-	Template     string
+	DiskImageRef        string
+	IncludeFirmwarePath string
+	Template            string
 }
 
 // GetBootTarget retrieves a BootTarget by name
@@ -125,8 +126,9 @@ func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInf
 	}
 
 	return &BootTargetInfo{
-		DiskImageRef: resp.DiskImageRef,
-		Template:     resp.Template,
+		DiskImageRef:        resp.DiskImageRef,
+		IncludeFirmwarePath: resp.IncludeFirmwarePath,
+		Template:            resp.Template,
 	}, nil
 }
 

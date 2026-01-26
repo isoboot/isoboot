@@ -115,9 +115,10 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 	}
 
 	return &pb.GetBootTargetResponse{
-		Found:        true,
-		DiskImageRef: bt.DiskImageRef,
-		Template:     bt.Template,
+		Found:               true,
+		DiskImageRef:        bt.DiskImageRef,
+		Template:            bt.Template,
+		IncludeFirmwarePath: bt.IncludeFirmwarePath,
 	}, nil
 }
 

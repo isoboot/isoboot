@@ -97,9 +97,10 @@ type DiskImageVerification struct {
 
 // BootTarget represents a BootTarget CRD
 type BootTarget struct {
-	Name         string
-	DiskImageRef string
-	Template     string
+	Name                string
+	DiskImageRef        string
+	IncludeFirmwarePath string
+	Template            string
 }
 
 // ResponseTemplate represents a ResponseTemplate CRD
@@ -253,10 +254,16 @@ func parseBootTarget(obj *unstructured.Unstructured) (*BootTarget, error) {
 		return nil, fmt.Errorf("invalid boottarget spec")
 	}
 
+	diskImageRef := getString(spec, "diskImageRef")
+	if diskImageRef == "" {
+		return nil, fmt.Errorf("diskImageRef is required")
+	}
+
 	return &BootTarget{
-		Name:         obj.GetName(),
-		DiskImageRef: getString(spec, "diskImageRef"),
-		Template:     getString(spec, "template"),
+		Name:                obj.GetName(),
+		DiskImageRef:        diskImageRef,
+		IncludeFirmwarePath: getString(spec, "includeFirmwarePath"),
+		Template:            getString(spec, "template"),
 	}, nil
 }
 
