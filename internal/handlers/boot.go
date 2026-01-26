@@ -30,10 +30,10 @@ func NewBootHandler(host, port string, ctrlClient *controllerclient.Client, conf
 
 // TemplateData is passed to boot templates
 type TemplateData struct {
-	Host     string
-	Port     string
-	Hostname string
-	Target   string
+	Host       string
+	Port       string
+	Hostname   string
+	BootTarget string
 }
 
 func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.Template, error) {
@@ -122,10 +122,10 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	}
 
 	data := TemplateData{
-		Host:     h.host,
-		Port:     h.port,
-		Hostname: bootInfo.MachineName,
-		Target:   bootInfo.Target,
+		Host:       h.host,
+		Port:       h.port,
+		Hostname:   bootInfo.MachineName,
+		BootTarget: bootInfo.Target,
 	}
 
 	var buf bytes.Buffer
