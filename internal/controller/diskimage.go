@@ -227,9 +227,9 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		return result, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	// Create temp file
+	// Create temp file with restricted permissions
 	tmpPath := destPath + ".tmp"
-	tmpFile, err := os.Create(tmpPath)
+	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create temp file: %w", err)

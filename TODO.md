@@ -41,8 +41,8 @@ Project tracking for isoboot - PXE boot infrastructure on Kubernetes.
 
 - [x] DiskImage CRD for ISO/firmware references
 - [x] Controller-based download (not on-demand in HTTP)
-- [x] Checksum discovery (SHA512SUMS, SHA256SUMS, MD5SUMS)
-- [x] Checksum verification (SHA512, SHA256, MD5)
+- [x] Checksum discovery (SHA512SUMS, SHA256SUMS)
+- [x] Checksum verification (SHA512, SHA256)
 - [x] File size verification
 - [x] Existing file verification (skip download if valid)
 - [x] DiskImage status tracking (Pending → Downloading → Complete/Failed)
