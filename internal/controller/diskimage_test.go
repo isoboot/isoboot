@@ -42,9 +42,7 @@ def456 *file2.iso`,
 def456  subdir/file2.iso`,
 			expected: map[string]string{
 				"subdir/file1.iso": "abc123",
-				"file1.iso":        "abc123",
 				"subdir/file2.iso": "def456",
-				"file2.iso":        "def456",
 			},
 		},
 		{
@@ -89,63 +87,81 @@ func TestVerifyChecksum(t *testing.T) {
 	actualHash := fmt.Sprintf("%x", hash.Sum(nil))
 
 	tests := []struct {
-		name      string
-		checksums map[string]map[string]string
-		hashType  string
-		filename  string
-		expected  string
+		name     string
+		sources  []checksumSource
+		hashType string
+		fileURL  string
+		expected string
 	}{
 		{
 			name: "matching checksum",
-			checksums: map[string]map[string]string{
-				"sha256": {"test.iso": actualHash},
+			sources: []checksumSource{
+				{hashType: "sha256", checksumURL: "http://example.com/SHA256SUMS", checksums: map[string]string{"test.iso": actualHash}},
 			},
 			hashType: "sha256",
-			filename: "test.iso",
+			fileURL:  "http://example.com/test.iso",
 			expected: "verified",
 		},
 		{
 			name: "matching checksum case insensitive",
-			checksums: map[string]map[string]string{
-				"sha256": {"test.iso": strings.ToUpper(actualHash)},
+			sources: []checksumSource{
+				{hashType: "sha256", checksumURL: "http://example.com/SHA256SUMS", checksums: map[string]string{"test.iso": strings.ToUpper(actualHash)}},
 			},
 			hashType: "sha256",
-			filename: "test.iso",
+			fileURL:  "http://example.com/test.iso",
 			expected: "verified",
 		},
 		{
 			name: "mismatched checksum",
-			checksums: map[string]map[string]string{
-				"sha256": {"test.iso": "wronghash"},
+			sources: []checksumSource{
+				{hashType: "sha256", checksumURL: "http://example.com/SHA256SUMS", checksums: map[string]string{"test.iso": "wronghash1234567890abcdef"}},
 			},
 			hashType: "sha256",
-			filename: "test.iso",
+			fileURL:  "http://example.com/test.iso",
 			expected: "failed",
 		},
 		{
 			name: "hash type not found",
-			checksums: map[string]map[string]string{
-				"sha512": {"test.iso": "somehash"}, // sha256 not in map
+			sources: []checksumSource{
+				{hashType: "sha512", checksumURL: "http://example.com/SHA512SUMS", checksums: map[string]string{"test.iso": "somehash"}},
 			},
 			hashType: "sha256",
-			filename: "test.iso",
+			fileURL:  "http://example.com/test.iso",
 			expected: "not_found",
 		},
 		{
 			name: "filename not found",
-			checksums: map[string]map[string]string{
-				"sha256": {"other.iso": actualHash},
+			sources: []checksumSource{
+				{hashType: "sha256", checksumURL: "http://example.com/SHA256SUMS", checksums: map[string]string{"other.iso": actualHash}},
 			},
 			hashType: "sha256",
-			filename: "test.iso",
+			fileURL:  "http://example.com/test.iso",
 			expected: "not_found",
 		},
 		{
-			name:      "empty checksums",
-			checksums: map[string]map[string]string{},
-			hashType:  "sha256",
-			filename:  "test.iso",
-			expected:  "not_found",
+			name:     "empty checksums",
+			sources:  []checksumSource{},
+			hashType: "sha256",
+			fileURL:  "http://example.com/test.iso",
+			expected: "not_found",
+		},
+		{
+			name: "relative path match",
+			sources: []checksumSource{
+				{hashType: "sha256", checksumURL: "http://example.com/images/SHA256SUMS", checksums: map[string]string{"netboot/test.iso": actualHash}},
+			},
+			hashType: "sha256",
+			fileURL:  "http://example.com/images/netboot/test.iso",
+			expected: "verified",
+		},
+		{
+			name: "relative path with ./ prefix",
+			sources: []checksumSource{
+				{hashType: "sha256", checksumURL: "http://example.com/images/SHA256SUMS", checksums: map[string]string{"./netboot/test.iso": actualHash}},
+			},
+			hashType: "sha256",
+			fileURL:  "http://example.com/images/netboot/test.iso",
+			expected: "verified",
 		},
 	}
 
@@ -154,7 +170,7 @@ func TestVerifyChecksum(t *testing.T) {
 			hash := sha256.New()
 			hash.Write(testData)
 
-			result := verifyChecksum(tt.checksums, tt.hashType, hash, tt.filename)
+			result := verifyChecksum(tt.sources, tt.hashType, hash, tt.fileURL)
 			if result != tt.expected {
 				t.Errorf("expected %q, got %q", tt.expected, result)
 			}
@@ -185,11 +201,11 @@ func TestVerifyExistingFile(t *testing.T) {
 	ctrl := &Controller{}
 
 	t.Run("valid file with matching checksums", func(t *testing.T) {
-		checksums := map[string]map[string]string{
-			"sha256": {"test.iso": expectedSha256},
+		checksums := []checksumSource{
+			{hashType: "sha256", checksumURL: "http://example.com/SHA256SUMS", checksums: map[string]string{"test.iso": expectedSha256}},
 		}
 
-		result := ctrl.verifyExistingFile(testFile, int64(len(testContent)), checksums, "test.iso")
+		result := ctrl.verifyExistingFile(testFile, int64(len(testContent)), checksums, "http://example.com/test.iso")
 		if result == nil {
 			t.Fatal("expected verification result, got nil")
 		}
@@ -202,34 +218,34 @@ func TestVerifyExistingFile(t *testing.T) {
 	})
 
 	t.Run("file does not exist", func(t *testing.T) {
-		checksums := map[string]map[string]string{}
-		result := ctrl.verifyExistingFile(filepath.Join(tmpDir, "nonexistent.iso"), 100, checksums, "nonexistent.iso")
+		checksums := []checksumSource{}
+		result := ctrl.verifyExistingFile(filepath.Join(tmpDir, "nonexistent.iso"), 100, checksums, "http://example.com/nonexistent.iso")
 		if result != nil {
 			t.Error("expected nil for nonexistent file")
 		}
 	})
 
 	t.Run("file size mismatch", func(t *testing.T) {
-		checksums := map[string]map[string]string{}
-		result := ctrl.verifyExistingFile(testFile, 999999, checksums, "test.iso")
+		checksums := []checksumSource{}
+		result := ctrl.verifyExistingFile(testFile, 999999, checksums, "http://example.com/test.iso")
 		if result != nil {
 			t.Error("expected nil for size mismatch")
 		}
 	})
 
 	t.Run("checksum mismatch", func(t *testing.T) {
-		checksums := map[string]map[string]string{
-			"sha256": {"test.iso": "wronghash"},
+		checksums := []checksumSource{
+			{hashType: "sha256", checksumURL: "http://example.com/SHA256SUMS", checksums: map[string]string{"test.iso": "wronghash"}},
 		}
-		result := ctrl.verifyExistingFile(testFile, int64(len(testContent)), checksums, "test.iso")
+		result := ctrl.verifyExistingFile(testFile, int64(len(testContent)), checksums, "http://example.com/test.iso")
 		if result != nil {
 			t.Error("expected nil for checksum mismatch")
 		}
 	})
 
 	t.Run("no checksums available (triggers re-download)", func(t *testing.T) {
-		checksums := map[string]map[string]string{}
-		result := ctrl.verifyExistingFile(testFile, int64(len(testContent)), checksums, "test.iso")
+		checksums := []checksumSource{}
+		result := ctrl.verifyExistingFile(testFile, int64(len(testContent)), checksums, "http://example.com/test.iso")
 		if result != nil {
 			t.Error("expected nil when no checksums available (should trigger re-download)")
 		}
@@ -252,12 +268,29 @@ func TestDiscoverChecksums(t *testing.T) {
 
 	t.Run("discovers checksums from directory", func(t *testing.T) {
 		fileURL := server.URL + "/images/mini.iso"
-		checksums := ctrl.discoverChecksums(context.Background(), fileURL)
+		sources := ctrl.discoverChecksums(context.Background(), fileURL)
 
-		if sha256, ok := checksums["sha256"]; !ok {
-			t.Error("expected sha256 checksums")
-		} else if hash, ok := sha256["mini.iso"]; !ok || hash != "abc123def456" {
-			t.Errorf("expected sha256 hash abc123def456, got %v", sha256)
+		if len(sources) == 0 {
+			t.Fatal("expected at least one checksum source")
+		}
+
+		// Find the SHA256 source
+		var found bool
+		for _, src := range sources {
+			if src.hashType == "sha256" {
+				found = true
+				if hash, ok := src.checksums["mini.iso"]; !ok || hash != "abc123def456" {
+					t.Errorf("expected SHA256 hash abc123def456, got %v", src.checksums)
+				}
+				// Verify checksumURL is correct
+				expectedURL := server.URL + "/images/SHA256SUMS"
+				if src.checksumURL != expectedURL {
+					t.Errorf("expected checksumURL %s, got %s", expectedURL, src.checksumURL)
+				}
+			}
+		}
+		if !found {
+			t.Error("expected SHA256 checksum source")
 		}
 	})
 
@@ -267,18 +300,18 @@ func TestDiscoverChecksums(t *testing.T) {
 		defer emptyServer.Close()
 
 		fileURL := emptyServer.URL + "/some/path/file.iso"
-		checksums := ctrl.discoverChecksums(context.Background(), fileURL)
+		sources := ctrl.discoverChecksums(context.Background(), fileURL)
 
-		// Should return empty map, not error
-		if len(checksums) != 0 {
-			t.Errorf("expected empty checksums for missing files, got %v", checksums)
+		// Should return empty slice, not error
+		if len(sources) != 0 {
+			t.Errorf("expected empty sources for missing files, got %v", sources)
 		}
 	})
 
 	t.Run("handles invalid URL", func(t *testing.T) {
-		checksums := ctrl.discoverChecksums(context.Background(), "not-a-valid-url")
-		if len(checksums) != 0 {
-			t.Errorf("expected empty checksums for invalid URL, got %v", checksums)
+		sources := ctrl.discoverChecksums(context.Background(), "not-a-valid-url")
+		if len(sources) != 0 {
+			t.Errorf("expected empty sources for invalid URL, got %v", sources)
 		}
 	})
 }
@@ -535,7 +568,7 @@ func TestFilenameFromURL(t *testing.T) {
 }
 
 func TestParseChecksumFileDuplicateBaseFilenames(t *testing.T) {
-	// Test that first entry wins when multiple paths share the same base filename
+	// Tests that all full paths are stored (exact relative path matching uses these)
 	input := `abc123  dir1/file.iso
 def456  dir2/file.iso
 ghi789  dir3/file.iso`
@@ -553,8 +586,176 @@ ghi789  dir3/file.iso`
 		t.Errorf("expected dir3/file.iso=ghi789, got %v", result["dir3/file.iso"])
 	}
 
-	// Base filename should have the first entry's hash (first entry wins)
-	if hash, ok := result["file.iso"]; !ok || hash != "abc123" {
-		t.Errorf("expected base filename file.iso=abc123 (first entry wins), got %v", result["file.iso"])
+	// Base filename should NOT be stored (exact relative path matching is used)
+	if _, ok := result["file.iso"]; ok {
+		t.Errorf("base filename file.iso should not be stored, got %v", result["file.iso"])
 	}
 }
+
+func TestRelativePathFromChecksumURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		checksumURL string
+		fileURL     string
+		expected    string
+	}{
+		{
+			name:        "file in same directory",
+			checksumURL: "http://example.com/images/SHA256SUMS",
+			fileURL:     "http://example.com/images/mini.iso",
+			expected:    "mini.iso",
+		},
+		{
+			name:        "file in subdirectory",
+			checksumURL: "http://example.com/images/SHA256SUMS",
+			fileURL:     "http://example.com/images/netboot/mini.iso",
+			expected:    "netboot/mini.iso",
+		},
+		{
+			name:        "file in nested subdirectory",
+			checksumURL: "http://example.com/dists/trixie/main/SHA256SUMS",
+			fileURL:     "http://example.com/dists/trixie/main/installer-amd64/current/images/netboot/mini.iso",
+			expected:    "installer-amd64/current/images/netboot/mini.iso",
+		},
+		{
+			name:        "file not under checksum directory",
+			checksumURL: "http://example.com/images/SHA256SUMS",
+			fileURL:     "http://example.com/other/mini.iso",
+			expected:    "",
+		},
+		{
+			name:        "different hosts",
+			checksumURL: "http://example.com/images/SHA256SUMS",
+			fileURL:     "http://other.com/images/mini.iso",
+			expected:    "", // Different host, path prefix doesn't apply
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := relativePathFromChecksumURL(tt.checksumURL, tt.fileURL)
+			if result != tt.expected {
+				t.Errorf("relativePathFromChecksumURL(%q, %q) = %q, want %q",
+					tt.checksumURL, tt.fileURL, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestLookupChecksumByRelativePath(t *testing.T) {
+	checksums := map[string]string{
+		"mini.iso":               "hash1",
+		"netboot/mini.iso":       "hash2",
+		"./netboot/gtk/mini.iso": "hash3",
+	}
+
+	tests := []struct {
+		name         string
+		relativePath string
+		expectedHash string
+		expectedOK   bool
+	}{
+		{
+			name:         "exact match",
+			relativePath: "mini.iso",
+			expectedHash: "hash1",
+			expectedOK:   true,
+		},
+		{
+			name:         "path match",
+			relativePath: "netboot/mini.iso",
+			expectedHash: "hash2",
+			expectedOK:   true,
+		},
+		{
+			name:         "match with ./ prefix in checksums",
+			relativePath: "netboot/gtk/mini.iso",
+			expectedHash: "hash3",
+			expectedOK:   true,
+		},
+		{
+			name:         "not found",
+			relativePath: "other.iso",
+			expectedHash: "",
+			expectedOK:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hash, ok := lookupChecksumByRelativePath(checksums, tt.relativePath)
+			if hash != tt.expectedHash || ok != tt.expectedOK {
+				t.Errorf("lookupChecksumByRelativePath(%q) = (%q, %v), want (%q, %v)",
+					tt.relativePath, hash, ok, tt.expectedHash, tt.expectedOK)
+			}
+		})
+	}
+
+	// Tests for basename fallback when checksum file only has base filenames
+	t.Run("basename fallback - unique match", func(t *testing.T) {
+		// Checksum file only lists base filename, file is in subdirectory
+		cs := map[string]string{
+			"installer.iso": "uniquehash",
+		}
+		hash, ok := lookupChecksumByRelativePath(cs, "subdir/installer.iso")
+		if !ok || hash != "uniquehash" {
+			t.Errorf("expected basename fallback to match, got (%q, %v)", hash, ok)
+		}
+	})
+
+	t.Run("basename fallback - ambiguous", func(t *testing.T) {
+		// Multiple entries with same basename - should not match
+		cs := map[string]string{
+			"a/file.iso": "hash_a",
+			"b/file.iso": "hash_b",
+		}
+		hash, ok := lookupChecksumByRelativePath(cs, "c/file.iso")
+		if ok {
+			t.Errorf("expected no match for ambiguous basename, got (%q, %v)", hash, ok)
+		}
+	})
+}
+
+func TestFormatHashMismatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected string
+		actual   string
+		want     string
+	}{
+		{
+			name:     "first 4 chars differ",
+			expected: "abcd1234567890abcdef",
+			actual:   "1234abcd567890abcdef",
+			want:     "expected abcd..., got 1234...",
+		},
+		{
+			name:     "last 4 chars differ",
+			expected: "abcd1234567890abcd",
+			actual:   "abcd1234567890efgh",
+			want:     "expected ...abcd, got ...efgh",
+		},
+		{
+			name:     "middle differs",
+			expected: "abcd1111111111efgh",
+			actual:   "abcd2222222222efgh",
+			want:     "hash mismatch",
+		},
+		{
+			name:     "short hashes",
+			expected: "abc",
+			actual:   "def",
+			want:     "expected abc, got def",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatHashMismatch(tt.expected, tt.actual)
+			if got != tt.want {
+				t.Errorf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
