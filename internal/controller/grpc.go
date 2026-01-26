@@ -64,7 +64,7 @@ func (s *GRPCServer) MarkBootStarted(ctx context.Context, req *pb.MarkBootStarte
 	return &pb.MarkBootStartedResponse{Success: true}, nil
 }
 
-// MarkBootCompleted marks a deploy as Completed (by hostname)
+// MarkBootCompleted marks a deploy as Complete (by hostname)
 func (s *GRPCServer) MarkBootCompleted(ctx context.Context, req *pb.MarkBootCompletedRequest) (*pb.MarkBootCompletedResponse, error) {
 	hostname := req.Hostname
 

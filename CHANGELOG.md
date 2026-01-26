@@ -4,7 +4,7 @@
 
 ### Added
 - `isoboot-controller` gRPC server for Kubernetes API access
-- Controller manages Deploy lifecycle (Pending → InProgress → Completed)
+- Controller manages Deploy lifecycle (Pending → InProgress → Complete)
 - gRPC service for HTTP pod to query deploys and templates
 
 ### Changed
