@@ -93,7 +93,6 @@ type DiskImageVerification struct {
 	FileSizeMatch string // pending, processing, verified, failed
 	DigestSha256  string // pending, processing, verified, failed, not_found
 	DigestSha512  string // pending, processing, verified, failed, not_found
-	DigestMd5     string // pending, processing, verified, failed, not_found
 }
 
 // BootTarget represents a BootTarget CRD
@@ -224,7 +223,6 @@ func parseDiskImage(obj *unstructured.Unstructured) (*DiskImage, error) {
 				FileSizeMatch: getString(isoStatus, "fileSizeMatch"),
 				DigestSha256:  getString(isoStatus, "digestSha256"),
 				DigestSha512:  getString(isoStatus, "digestSha512"),
-				DigestMd5:     getString(isoStatus, "digestMd5"),
 			}
 		}
 		if fwStatus, ok := status["firmware"].(map[string]interface{}); ok {
@@ -232,7 +230,6 @@ func parseDiskImage(obj *unstructured.Unstructured) (*DiskImage, error) {
 				FileSizeMatch: getString(fwStatus, "fileSizeMatch"),
 				DigestSha256:  getString(fwStatus, "digestSha256"),
 				DigestSha512:  getString(fwStatus, "digestSha512"),
-				DigestMd5:     getString(fwStatus, "digestMd5"),
 			}
 		}
 	}
@@ -578,6 +575,5 @@ func verificationToMap(v *DiskImageVerification) map[string]interface{} {
 		"fileSizeMatch": v.FileSizeMatch,
 		"digestSha256":  v.DigestSha256,
 		"digestSha512":  v.DigestSha512,
-		"digestMd5":     v.DigestMd5,
 	}
 }
