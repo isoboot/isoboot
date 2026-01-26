@@ -128,7 +128,7 @@ func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Requ
 	// Check if firmware exists (downloaded by controller)
 	hasFirmware := false
 	if targetConfig.Firmware != "" {
-		if _, err := os.Stat(firmwarePath); !os.IsNotExist(err) {
+		if _, err := os.Stat(firmwarePath); err == nil {
 			hasFirmware = true
 		}
 	}
