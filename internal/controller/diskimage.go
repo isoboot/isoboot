@@ -124,7 +124,7 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 		return
 	}
 
-	// Check if ISO file already exists to show appropriate status
+	// Check if files already exist to show appropriate status
 	isoFilename, err := filenameFromURL(di.ISO)
 	if err != nil {
 		status := &k8s.DiskImageStatus{
@@ -138,9 +138,26 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 	}
 	isoPath := filepath.Join(c.isoBasePath, di.Name, isoFilename)
 
-	// Determine initial status based on whether file exists
-	var initialPhase, initialMessage string
+	// Determine initial status based on whether all required files exist
+	allFilesExist := false
 	if _, err := os.Stat(isoPath); err == nil {
+		// ISO exists, check firmware if specified
+		if di.Firmware != "" {
+			fwFilename, fwErr := filenameFromURL(di.Firmware)
+			if fwErr == nil {
+				fwPath := filepath.Join(c.isoBasePath, di.Name, "firmware", fwFilename)
+				if _, err := os.Stat(fwPath); err == nil {
+					allFilesExist = true
+				}
+			}
+		} else {
+			// No firmware required, ISO exists
+			allFilesExist = true
+		}
+	}
+
+	var initialPhase, initialMessage string
+	if allFilesExist {
 		initialPhase = "Verifying"
 		initialMessage = "Verifying existing files"
 	} else {
