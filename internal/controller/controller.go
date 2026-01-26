@@ -24,7 +24,7 @@ type Controller struct {
 	host               string
 	port               string
 	isoBasePath        string
-	activeDownloads    sync.Map // tracks in-progress DiskImage downloads by name
+	activeDiskImageDownloads sync.Map // tracks in-progress DiskImage downloads by name
 }
 
 // New creates a new controller

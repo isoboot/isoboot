@@ -125,6 +125,7 @@ func TestVerifyChecksum(t *testing.T) {
 		{
 			name: "hash type not found",
 			checksums: map[string]map[string]string{
+				"sha512": {"test.iso": "somehash"}, // sha256 not in map
 			},
 			hashType: "sha256",
 			filename: "test.iso",
@@ -172,7 +173,7 @@ func TestVerifyExistingFile(t *testing.T) {
 	// Create a test file with known content
 	testContent := []byte("test file content for verification")
 	testFile := filepath.Join(tmpDir, "test.iso")
-	if err := os.WriteFile(testFile, testContent, 0600); err != nil {
+	if err := os.WriteFile(testFile, testContent, 0o600); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
@@ -180,7 +181,6 @@ func TestVerifyExistingFile(t *testing.T) {
 	sha256Hash := sha256.New()
 	sha256Hash.Write(testContent)
 	expectedSha256 := fmt.Sprintf("%x", sha256Hash.Sum(nil))
-
 
 	ctrl := &Controller{}
 
@@ -227,14 +227,11 @@ func TestVerifyExistingFile(t *testing.T) {
 		}
 	})
 
-	t.Run("no checksums available (passes)", func(t *testing.T) {
+	t.Run("no checksums available (triggers re-download)", func(t *testing.T) {
 		checksums := map[string]map[string]string{}
 		result := ctrl.verifyExistingFile(testFile, int64(len(testContent)), checksums, "test.iso")
-		if result == nil {
-			t.Fatal("expected verification result when no checksums available")
-		}
-		if result.DigestSha256 != "not_found" {
-			t.Errorf("expected DigestSha256=not_found, got %s", result.DigestSha256)
+		if result != nil {
+			t.Error("expected nil when no checksums available (should trigger re-download)")
 		}
 	})
 }
@@ -255,7 +252,7 @@ func TestDiscoverChecksums(t *testing.T) {
 
 	t.Run("discovers checksums from directory", func(t *testing.T) {
 		fileURL := server.URL + "/images/mini.iso"
-		checksums := ctrl.discoverChecksums(fileURL)
+		checksums := ctrl.discoverChecksums(context.Background(), fileURL)
 
 		if sha256, ok := checksums["sha256"]; !ok {
 			t.Error("expected sha256 checksums")
@@ -270,7 +267,7 @@ func TestDiscoverChecksums(t *testing.T) {
 		defer emptyServer.Close()
 
 		fileURL := emptyServer.URL + "/some/path/file.iso"
-		checksums := ctrl.discoverChecksums(fileURL)
+		checksums := ctrl.discoverChecksums(context.Background(), fileURL)
 
 		// Should return empty map, not error
 		if len(checksums) != 0 {
@@ -279,7 +276,7 @@ func TestDiscoverChecksums(t *testing.T) {
 	})
 
 	t.Run("handles invalid URL", func(t *testing.T) {
-		checksums := ctrl.discoverChecksums("not-a-valid-url")
+		checksums := ctrl.discoverChecksums(context.Background(), "not-a-valid-url")
 		if len(checksums) != 0 {
 			t.Errorf("expected empty checksums for invalid URL, got %v", checksums)
 		}
@@ -354,7 +351,7 @@ func TestDownloadAndVerify(t *testing.T) {
 	t.Run("skips download for valid existing file", func(t *testing.T) {
 		destPath := filepath.Join(tmpDir, "existing.iso")
 		// Pre-create the file
-		if err := os.WriteFile(destPath, testContent, 0600); err != nil {
+		if err := os.WriteFile(destPath, testContent, 0o600); err != nil {
 			t.Fatalf("failed to create existing file: %v", err)
 		}
 
@@ -381,12 +378,12 @@ func TestDownloadAndVerify(t *testing.T) {
 	})
 
 	t.Run("handles connection error", func(t *testing.T) {
-		// Create and immediately close a server to get a valid but unreachable port
-		closedServer := httptest.NewServer(http.NewServeMux())
-		closedServer.Close()
+		// Use a closed httptest.Server to reliably force a connection error
+		connFailServer := httptest.NewServer(http.NewServeMux())
+		connFailServer.Close()
 
 		destPath := filepath.Join(tmpDir, "connfail.iso")
-		result, err := ctrl.downloadAndVerify(context.Background(), closedServer.URL+"/test.iso", destPath)
+		result, err := ctrl.downloadAndVerify(context.Background(), connFailServer.URL+"/test.iso", destPath)
 
 		if err == nil {
 			t.Error("expected error for connection failure")
@@ -395,4 +392,169 @@ func TestDownloadAndVerify(t *testing.T) {
 			t.Errorf("expected FileSizeMatch=failed, got %s", result.FileSizeMatch)
 		}
 	})
+
+	t.Run("handles HEAD request 4xx error", func(t *testing.T) {
+		// Create server that returns 403 Forbidden on HEAD
+		forbiddenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		}))
+		defer forbiddenServer.Close()
+
+		destPath := filepath.Join(tmpDir, "forbidden.iso")
+		result, err := ctrl.downloadAndVerify(context.Background(), forbiddenServer.URL+"/forbidden.iso", destPath)
+
+		if err == nil {
+			t.Error("expected error for 403 Forbidden")
+		}
+		if !strings.Contains(err.Error(), "403") {
+			t.Errorf("expected error to mention 403, got: %v", err)
+		}
+		if result.FileSizeMatch != "failed" {
+			t.Errorf("expected FileSizeMatch=failed, got %s", result.FileSizeMatch)
+		}
+	})
+
+	t.Run("handles HEAD request 5xx error", func(t *testing.T) {
+		// Create server that returns 500 Internal Server Error on HEAD
+		errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer errorServer.Close()
+
+		destPath := filepath.Join(tmpDir, "servererror.iso")
+		result, err := ctrl.downloadAndVerify(context.Background(), errorServer.URL+"/error.iso", destPath)
+
+		if err == nil {
+			t.Error("expected error for 500 Internal Server Error")
+		}
+		if !strings.Contains(err.Error(), "500") {
+			t.Errorf("expected error to mention 500, got: %v", err)
+		}
+		if result.FileSizeMatch != "failed" {
+			t.Errorf("expected FileSizeMatch=failed, got %s", result.FileSizeMatch)
+		}
+	})
+
+	t.Run("cleans up temp file on checksum failure", func(t *testing.T) {
+		// Create server with wrong checksum (use subdirectory to avoid double-slash URL issues)
+		badChecksumContent := []byte("content with wrong checksum")
+		badMux := http.NewServeMux()
+		badMux.HandleFunc("/downloads/SHA256SUMS", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "wronghash  badchecksum.iso\n")
+		})
+		badMux.HandleFunc("/downloads/badchecksum.iso", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodHead {
+				w.Header().Set("Content-Length", fmt.Sprintf("%d", len(badChecksumContent)))
+				return
+			}
+			w.Write(badChecksumContent)
+		})
+		badServer := httptest.NewServer(badMux)
+		defer badServer.Close()
+
+		destPath := filepath.Join(tmpDir, "badchecksum.iso")
+		tmpPath := destPath + ".tmp"
+
+		_, err := ctrl.downloadAndVerify(context.Background(), badServer.URL+"/downloads/badchecksum.iso", destPath)
+
+		if err == nil {
+			t.Error("expected error for checksum failure")
+		}
+		if !strings.Contains(err.Error(), "checksum verification failed") {
+			t.Errorf("expected checksum failure error, got: %v", err)
+		}
+
+		// Verify temp file was cleaned up
+		if _, statErr := os.Stat(tmpPath); !os.IsNotExist(statErr) {
+			t.Error("expected temp file to be removed after checksum failure")
+		}
+
+		// Verify final file was not created
+		if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
+			t.Error("expected final file to not exist after checksum failure")
+		}
+	})
+}
+
+func TestFilenameFromURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		expected    string
+		expectError bool
+	}{
+		{
+			name:        "normal URL with filename",
+			url:         "http://example.com/path/to/file.iso",
+			expected:    "file.iso",
+			expectError: false,
+		},
+		{
+			name:        "URL ending with slash returns last component",
+			url:         "http://example.com/path/to/",
+			expected:    "to", // filepath.Base("/path/to/") = "to"
+			expectError: false,
+		},
+		{
+			name:        "URL with only root path",
+			url:         "http://example.com/",
+			expected:    "",
+			expectError: true, // filepath.Base("/") = "/"
+		},
+		{
+			name:        "URL with no path",
+			url:         "http://example.com",
+			expected:    "",
+			expectError: true, // filepath.Base("") = "."
+		},
+		{
+			name:        "URL with query string",
+			url:         "http://example.com/file.iso?token=abc",
+			expected:    "file.iso",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := filenameFromURL(tt.url)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error for URL %q, got result %q", tt.url, result)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error for URL %q: %v", tt.url, err)
+				}
+				if result != tt.expected {
+					t.Errorf("expected %q, got %q", tt.expected, result)
+				}
+			}
+		})
+	}
+}
+
+func TestParseChecksumFileDuplicateBaseFilenames(t *testing.T) {
+	// Test that first entry wins when multiple paths share the same base filename
+	input := `abc123  dir1/file.iso
+def456  dir2/file.iso
+ghi789  dir3/file.iso`
+
+	result := parseChecksumFile(strings.NewReader(input))
+
+	// Full paths should all be present
+	if hash, ok := result["dir1/file.iso"]; !ok || hash != "abc123" {
+		t.Errorf("expected dir1/file.iso=abc123, got %v", result["dir1/file.iso"])
+	}
+	if hash, ok := result["dir2/file.iso"]; !ok || hash != "def456" {
+		t.Errorf("expected dir2/file.iso=def456, got %v", result["dir2/file.iso"])
+	}
+	if hash, ok := result["dir3/file.iso"]; !ok || hash != "ghi789" {
+		t.Errorf("expected dir3/file.iso=ghi789, got %v", result["dir3/file.iso"])
+	}
+
+	// Base filename should have the first entry's hash (first entry wins)
+	if hash, ok := result["file.iso"]; !ok || hash != "abc123" {
+		t.Errorf("expected base filename file.iso=abc123 (first entry wins), got %v", result["file.iso"])
+	}
 }
