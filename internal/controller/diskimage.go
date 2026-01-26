@@ -129,7 +129,16 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 	}
 
 	// Download ISO
-	isoPath := filepath.Join(c.isoBasePath, di.Name, filepath.Base(di.ISO))
+	isoFilename, err := filenameFromURL(di.ISO)
+	if err != nil {
+		status.Phase = "Failed"
+		status.Message = fmt.Sprintf("Invalid ISO URL: %v", err)
+		if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
+			log.Printf("Controller: failed to update DiskImage %s to Failed: %v", di.Name, updateErr)
+		}
+		return
+	}
+	isoPath := filepath.Join(c.isoBasePath, di.Name, isoFilename)
 	isoResult, err := c.downloadAndVerify(downloadCtx, di.ISO, isoPath)
 	if err != nil {
 		status.Phase = "Failed"
@@ -160,7 +169,16 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 			log.Printf("Controller: failed to update DiskImage %s firmware progress: %v", di.Name, updateErr)
 		}
 
-		fwPath := filepath.Join(c.isoBasePath, di.Name, "firmware", filepath.Base(di.Firmware))
+		fwFilename, err := filenameFromURL(di.Firmware)
+		if err != nil {
+			status.Phase = "Failed"
+			status.Message = fmt.Sprintf("Invalid firmware URL: %v", err)
+			if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
+				log.Printf("Controller: failed to update DiskImage %s to Failed: %v", di.Name, updateErr)
+			}
+			return
+		}
+		fwPath := filepath.Join(c.isoBasePath, di.Name, "firmware", fwFilename)
 		fwResult, err := c.downloadAndVerify(downloadCtx, di.Firmware, fwPath)
 		if err != nil {
 			status.Phase = "Failed"
@@ -214,15 +232,31 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	if headResp.Body != nil {
 		headResp.Body.Close()
 	}
-	expectedSize := headResp.ContentLength
+
+	// Only use Content-Length if HEAD succeeded (2xx response)
+	var expectedSize int64
+	if headResp.StatusCode >= 200 && headResp.StatusCode < 300 {
+		expectedSize = headResp.ContentLength
+	} else {
+		log.Printf("Controller: HEAD request for %s returned %d, will not use Content-Length", fileURL, headResp.StatusCode)
+	}
 
 	// Try to find checksums
 	checksums := c.discoverChecksums(ctx, fileURL)
 
+	// Extract filename from URL for verification
+	filename, _ := filenameFromURL(fileURL)
+	if filename == "" {
+		filename = filepath.Base(fileURL) // fallback
+	}
+
 	// Check if file already exists and is valid
-	if existingResult := c.verifyExistingFile(destPath, expectedSize, checksums, filepath.Base(fileURL)); existingResult != nil {
-		log.Printf("Controller: existing file %s verified, skipping download", filepath.Base(destPath))
-		return existingResult, nil
+	// Only verify when we have size or checksums to validate against
+	if expectedSize > 0 || len(checksums) > 0 {
+		if existingResult := c.verifyExistingFile(destPath, expectedSize, checksums, filename); existingResult != nil {
+			log.Printf("Controller: existing file %s verified, skipping download", filepath.Base(destPath))
+			return existingResult, nil
+		}
 	}
 
 	// Download file
@@ -275,9 +309,9 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	result.FileSizeMatch = "verified"
 
 	// Verify checksums
-	result.DigestSha512 = verifyChecksum(checksums, "sha512", sha512Hash, filepath.Base(fileURL))
-	result.DigestSha256 = verifyChecksum(checksums, "sha256", sha256Hash, filepath.Base(fileURL))
-	result.DigestMd5 = verifyChecksum(checksums, "md5", md5Hash, filepath.Base(fileURL))
+	result.DigestSha512 = verifyChecksum(checksums, "sha512", sha512Hash, filename)
+	result.DigestSha256 = verifyChecksum(checksums, "sha256", sha256Hash, filename)
+	result.DigestMd5 = verifyChecksum(checksums, "md5", md5Hash, filename)
 
 	// If any checksum verification explicitly failed, don't persist the bad file
 	if result.DigestSha512 == "failed" || result.DigestSha256 == "failed" || result.DigestMd5 == "failed" {
@@ -465,4 +499,17 @@ func verifyChecksum(checksums map[string]map[string]string, hashType string, h h
 
 	log.Printf("Controller: %s checksum mismatch for %s: expected %s, got %s", hashType, filename, expected, actual)
 	return "failed"
+}
+
+// filenameFromURL extracts the filename from a URL, handling query strings
+func filenameFromURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parse URL: %w", err)
+	}
+	filename := path.Base(u.Path)
+	if filename == "" || filename == "." || filename == "/" {
+		return "", fmt.Errorf("URL has no filename: %s", rawURL)
+	}
+	return filename, nil
 }
