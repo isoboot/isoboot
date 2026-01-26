@@ -472,8 +472,8 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) []ch
 }
 
 // parseChecksumFile parses a checksum file (SHA256SUMS format).
-// Returns a map of path to hash. Only stores full paths as keys to allow
-// progressive matching when multiple files share the same base filename.
+// Returns a map of path to hash. Only stores full paths as keys; base filenames
+// are not duplicated since exact relative path matching handles lookups.
 // On scanner error, returns partial results parsed so far (may be empty).
 func parseChecksumFile(r io.Reader) map[string]string {
 	result := make(map[string]string)
