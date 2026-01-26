@@ -245,7 +245,7 @@ func (c *Controller) RenderTemplate(ctx context.Context, deploy *k8s.Deploy, tem
 	data["Host"] = c.host
 	data["Port"] = c.port
 	data["Hostname"] = deploy.Spec.MachineRef
-	data["Target"] = deploy.Spec.BootTargetRef
+	data["BootTarget"] = deploy.Spec.BootTargetRef
 
 	// Parse and execute template
 	tmpl, err := template.New("response").Option("missingkey=error").Parse(templateContent)

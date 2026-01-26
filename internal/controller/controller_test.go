@@ -103,7 +103,7 @@ func TestRenderTemplate_BasicVariables(t *testing.T) {
 	templateContent := `Host: {{ .Host }}
 Port: {{ .Port }}
 Hostname: {{ .Hostname }}
-BootTargetRef: {{ .Target }}`
+BootTargetRef: {{ .BootTarget }}`
 
 	ctx := context.Background()
 	result, err := ctrl.RenderTemplate(ctx, deploy, templateContent)
