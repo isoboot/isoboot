@@ -227,7 +227,9 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("HEAD request: %w", err)
 	}
-	defer headResp.Body.Close()
+	if headResp.Body != nil {
+		defer headResp.Body.Close()
+	}
 
 	// Check HEAD response status
 	var expectedSize int64
@@ -474,11 +476,11 @@ func parseChecksumFile(r io.Reader) map[string]string {
 		var hash, filename string
 		if i := strings.Index(line, "  "); i != -1 {
 			// Text mode: "hash  filename"
-			hash = line[:i]
+			hash = strings.TrimSpace(line[:i])
 			filename = strings.TrimSpace(line[i+2:])
 		} else if i := strings.Index(line, " *"); i != -1 {
 			// Binary mode: "hash *filename"
-			hash = line[:i]
+			hash = strings.TrimSpace(line[:i])
 			filename = strings.TrimSpace(line[i+2:])
 		} else {
 			continue
