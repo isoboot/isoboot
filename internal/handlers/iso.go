@@ -125,7 +125,8 @@ func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Requ
 	isoPath := config.ISOPathWithFilename(h.basePath, diskImageName, isoFilename)
 	firmwarePath := config.FirmwarePath(h.basePath, diskImageName)
 
-	// Check if firmware exists for this disk image (downloaded by controller)
+	// Check if optional firmware (downloaded by the controller) exists for this disk image.
+	// If not present, hasFirmware remains false and the handler continues without firmware.
 	hasFirmware := false
 	if targetConfig.Firmware != "" {
 		if _, err := os.Stat(firmwarePath); err == nil {
