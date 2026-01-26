@@ -323,11 +323,17 @@ func parseDeploy(obj *unstructured.Unstructured) (*Deploy, error) {
 		return nil, fmt.Errorf("invalid deploy spec")
 	}
 
+	// Support both bootTargetRef (new) and target (legacy) for backward compatibility
+	bootTargetRef := getString(spec, "bootTargetRef")
+	if bootTargetRef == "" {
+		bootTargetRef = getString(spec, "target")
+	}
+
 	deploy := &Deploy{
 		Name: obj.GetName(),
 		Spec: DeploySpec{
 			MachineRef:          getString(spec, "machineRef"),
-			BootTargetRef:       getString(spec, "bootTargetRef"),
+			BootTargetRef:       bootTargetRef,
 			ResponseTemplateRef: getString(spec, "responseTemplateRef"),
 			ConfigMaps:          getStringSlice(spec, "configMaps"),
 			Secrets:             getStringSlice(spec, "secrets"),
@@ -352,10 +358,14 @@ func getString(m map[string]interface{}, key string) string {
 }
 
 func getInt(m map[string]interface{}, key string) int {
-	if v, ok := m[key].(int64); ok {
+	switch v := m[key].(type) {
+	case int:
+		return v
+	case int32:
 		return int(v)
-	}
-	if v, ok := m[key].(float64); ok {
+	case int64:
+		return int(v)
+	case float64:
 		return int(v)
 	}
 	return 0
@@ -524,6 +534,10 @@ func (c *Client) ListDiskImages(ctx context.Context) ([]*DiskImage, error) {
 
 // UpdateDiskImageStatus updates the status of a DiskImage
 func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status *DiskImageStatus) error {
+	if status == nil {
+		return fmt.Errorf("status cannot be nil")
+	}
+
 	obj, err := c.dynamicClient.Resource(diskImageGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("get diskimage: %w", err)
