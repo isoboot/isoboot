@@ -51,12 +51,24 @@ if err != nil {
 
 Available variables:
 - From ConfigMaps/Secrets: any key-value pairs
-- System vars: `Host`, `Port`, `Hostname`, `Target`
+- System vars: `Host`, `Port`, `Hostname`, `BootTarget`
 
 ### Error Handling in HTTP Handlers
 - Return 502 Bad Gateway for gRPC/transport errors
 - Return 404 Not Found only for "resource not found" errors
+- Use sentinel errors (e.g., `controllerclient.ErrNotFound`) to distinguish error types
 - Always set Content-Length header
+
+### BootTarget and Firmware Merging
+BootTarget CRD fields:
+- `diskImageRef` (required): Reference to DiskImage resource
+- `includeFirmwarePath` (optional): Path that triggers firmware merging (e.g., `/initrd.gz`)
+- `template`: iPXE boot template content
+
+Firmware merging behavior:
+- Only occurs when `includeFirmwarePath` is set AND the requested path matches
+- Concatenates initrd + firmware.cpio.gz for Debian netboot with non-free firmware
+- If `includeFirmwarePath` is not set, serves files as-is (no merging)
 
 ## Commands
 
@@ -69,6 +81,8 @@ go build ./cmd/isoboot-controller
 go build ./cmd/isoboot-http
 
 # Generate protobuf (if proto files change)
+# Note: protoc may output to nested path like github.com/isoboot/isoboot/api/controllerpb/
+# If so, copy files to api/controllerpb/ manually
 protoc --go_out=. --go-grpc_out=. api/proto/controller.proto
 ```
 
