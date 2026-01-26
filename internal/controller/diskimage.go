@@ -190,13 +190,13 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	}
 
 	// Get expected file size from HEAD request
-	client := &http.Client{}
+	// Use http.DefaultClient to reuse connections across downloads
 	headReq, err := http.NewRequestWithContext(ctx, http.MethodHead, fileURL, nil)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create HEAD request: %w", err)
 	}
-	headResp, err := client.Do(headReq)
+	headResp, err := http.DefaultClient.Do(headReq)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("HEAD request: %w", err)
@@ -222,7 +222,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create GET request: %w", err)
 	}
-	resp, err := client.Do(getReq)
+	resp, err := http.DefaultClient.Do(getReq)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("GET request: %w", err)
