@@ -246,10 +246,10 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	checksums := c.discoverChecksums(ctx, fileURL)
 
 	// Extract filename from URL for verification
-	filename, _ := filenameFromURL(fileURL)
-	if filename == "" {
+	filename, err := filenameFromURL(fileURL)
+	if err != nil {
+		log.Printf("Controller: error determining filename from URL %s: %v, using fallback", fileURL, err)
 		filename = filepath.Base(fileURL) // fallback
-		log.Printf("Controller: could not determine filename from URL %s, using fallback: %s", fileURL, filename)
 	}
 
 	// Check if the file already exists and is valid.
