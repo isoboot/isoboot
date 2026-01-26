@@ -517,10 +517,16 @@ func TestParseDiskImage(t *testing.T) {
 			if tt.expected.Status.ISO != nil {
 				if result.Status.ISO == nil {
 					t.Error("Status.ISO is nil, expected non-nil")
-				} else {
-					if result.Status.ISO.FileSizeMatch != tt.expected.Status.ISO.FileSizeMatch {
-						t.Errorf("Status.ISO.FileSizeMatch = %q, want %q", result.Status.ISO.FileSizeMatch, tt.expected.Status.ISO.FileSizeMatch)
-					}
+				} else if !reflect.DeepEqual(result.Status.ISO, tt.expected.Status.ISO) {
+					t.Errorf("Status.ISO = %+v, want %+v", result.Status.ISO, tt.expected.Status.ISO)
+				}
+			}
+			// Check Firmware verification if expected
+			if tt.expected.Status.Firmware != nil {
+				if result.Status.Firmware == nil {
+					t.Error("Status.Firmware is nil, expected non-nil")
+				} else if !reflect.DeepEqual(result.Status.Firmware, tt.expected.Status.Firmware) {
+					t.Errorf("Status.Firmware = %+v, want %+v", result.Status.Firmware, tt.expected.Status.Firmware)
 				}
 			}
 		})
