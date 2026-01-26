@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/isoboot/isoboot/internal/config"
 	"github.com/isoboot/isoboot/internal/controllerclient"
 	"github.com/isoboot/isoboot/internal/iso"
 )
@@ -19,14 +18,12 @@ const streamChunkSize = 1024 * 1024 // 1MB chunks for streaming
 
 type ISOHandler struct {
 	basePath         string
-	configWatcher    *config.ConfigWatcher
 	controllerClient *controllerclient.Client
 }
 
-func NewISOHandler(basePath string, configWatcher *config.ConfigWatcher, controllerClient *controllerclient.Client) *ISOHandler {
+func NewISOHandler(basePath string, controllerClient *controllerclient.Client) *ISOHandler {
 	return &ISOHandler{
 		basePath:         basePath,
-		configWatcher:    configWatcher,
 		controllerClient: controllerClient,
 	}
 }
@@ -61,25 +58,20 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use diskImageRef from BootTarget for config lookup and file path construction
+	// Use diskImageRef from BootTarget for file path construction
 	diskImageRef := bootTarget.DiskImageRef
 
-	// Get target config using diskImageRef for ISO filename validation
-	targetConfig, ok := h.configWatcher.GetTarget(diskImageRef)
-	if !ok {
-		http.Error(w, fmt.Sprintf("unknown disk image: %s", diskImageRef), http.StatusNotFound)
-		return
-	}
+	// Construct ISO path
+	isoPath := filepath.Join(h.basePath, diskImageRef, isoFilename)
 
-	// Validate requested ISO filename matches config to prevent unauthorized file access and disk abuse
-	expectedFilename := filepath.Base(targetConfig.ISO)
-	if isoFilename != expectedFilename {
-		http.Error(w, fmt.Sprintf("invalid ISO filename: expected %s", expectedFilename), http.StatusBadRequest)
+	// Security: ensure path doesn't escape diskImage directory (prevent path traversal)
+	diskImageDir := filepath.Join(h.basePath, diskImageRef) + string(os.PathSeparator)
+	if !strings.HasPrefix(isoPath, diskImageDir) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
 
 	// Check if ISO exists (downloaded by controller)
-	isoPath := config.ISOPathWithFilename(h.basePath, diskImageRef, isoFilename)
 	if _, err := os.Stat(isoPath); err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "ISO file not found", http.StatusNotFound)
@@ -92,7 +84,7 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Check if this path should have firmware merged.
 	// Firmware is only merged when includeFirmwarePath is explicitly set.
 	if shouldMergeFirmware(filePath, bootTarget.IncludeFirmwarePath) {
-		h.serveFileWithFirmware(w, r, diskImageRef, isoFilename, filePath, targetConfig)
+		h.serveFileWithFirmware(w, r, diskImageRef, isoFilename, filePath)
 		return
 	}
 
@@ -140,18 +132,13 @@ func (h *ISOHandler) serveFileFromISO(w http.ResponseWriter, isoPath, filePath s
 // serveFileWithFirmware serves a file from the ISO, appending firmware if present.
 // Per https://wiki.debian.org/DebianInstaller/NetbootFirmware:
 // cat initrd.gz firmware.cpio.gz > combined.gz
-func (h *ISOHandler) serveFileWithFirmware(w http.ResponseWriter, r *http.Request, diskImageRef, isoFilename, filePath string, targetConfig config.TargetConfig) {
-	isoPath := config.ISOPathWithFilename(h.basePath, diskImageRef, isoFilename)
-	firmwareFilePath := config.FirmwarePath(h.basePath, diskImageRef)
+func (h *ISOHandler) serveFileWithFirmware(w http.ResponseWriter, r *http.Request, diskImageRef, isoFilename, filePath string) {
+	isoPath := filepath.Join(h.basePath, diskImageRef, isoFilename)
+	firmwareFilePath := filepath.Join(h.basePath, diskImageRef, "firmware", "firmware.cpio.gz")
 
-	// Check if optional firmware (downloaded by the controller) exists for this disk image.
-	// If not present, hasFirmware remains false and the handler continues without firmware.
-	hasFirmware := false
-	if targetConfig.Firmware != "" {
-		if _, err := os.Stat(firmwareFilePath); err == nil {
-			hasFirmware = true
-		}
-	}
+	// Check if firmware file exists (downloaded by controller if DiskImage has firmware URL)
+	_, err := os.Stat(firmwareFilePath)
+	hasFirmware := err == nil
 
 	// Open ISO and get the requested file
 	isoFile, err := iso.OpenISO9660(isoPath)

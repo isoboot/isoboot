@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/isoboot/isoboot/internal/config"
 	"github.com/isoboot/isoboot/internal/controllerclient"
 	"github.com/isoboot/isoboot/internal/handlers"
 )
@@ -41,7 +40,6 @@ func main() {
 		controllerAddr     string
 		templatesConfigMap string
 		isoPath            string
-		configPath         string
 	)
 
 	flag.StringVar(&host, "host", "", "Host IP to advertise in boot scripts")
@@ -50,7 +48,6 @@ func main() {
 	flag.StringVar(&controllerAddr, "controller", "localhost:8081", "Controller gRPC address")
 	flag.StringVar(&templatesConfigMap, "templates-configmap", "", "ConfigMap containing boot templates")
 	flag.StringVar(&isoPath, "iso-path", "/opt/isoboot/iso", "Path to ISO storage directory")
-	flag.StringVar(&configPath, "config", "", "Path to config file for hot-reload")
 	flag.Parse()
 
 	if host == "" {
@@ -59,14 +56,6 @@ func main() {
 	if templatesConfigMap == "" {
 		log.Fatal("--templates-configmap is required")
 	}
-
-	// Initialize config watcher for hot-reload
-	configWatcher, err := config.NewConfigWatcher(configPath)
-	if err != nil {
-		log.Fatalf("Failed to create config watcher: %v", err)
-	}
-	configWatcher.Start()
-	defer configWatcher.Stop()
 
 	// Connect to controller via gRPC
 	log.Printf("Connecting to controller at %s...", controllerAddr)
@@ -92,7 +81,7 @@ func main() {
 	bootHandler.RegisterRoutes(mux)
 
 	// ISO content handlers
-	isoHandler := handlers.NewISOHandler(isoPath, configWatcher, ctrlClient)
+	isoHandler := handlers.NewISOHandler(isoPath, ctrlClient)
 	isoHandler.RegisterRoutes(mux)
 
 	// Answer file handlers
