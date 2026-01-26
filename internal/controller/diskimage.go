@@ -75,7 +75,7 @@ func (c *Controller) reconcileDiskImage(ctx context.Context, di *k8s.DiskImage) 
 	// (Downloading phase may be stale if controller restarted mid-download)
 	if di.Status.Phase == "Pending" || di.Status.Phase == "Downloading" {
 		// Check if download is already in progress (prevent concurrent downloads)
-		if _, alreadyRunning := c.activeDownloads.LoadOrStore(di.Name, true); alreadyRunning {
+		if _, alreadyRunning := c.activeDiskImageDownloads.LoadOrStore(di.Name, true); alreadyRunning {
 			return
 		}
 		// Pass parent context so downloads can be cancelled during shutdown
@@ -85,8 +85,8 @@ func (c *Controller) reconcileDiskImage(ctx context.Context, di *k8s.DiskImage) 
 
 // downloadDiskImage downloads and verifies a DiskImage
 func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskImage) {
-	// Clean up activeDownloads tracking when done
-	defer c.activeDownloads.Delete(di.Name)
+	// Clean up activeDiskImageDownloads tracking when done
+	defer c.activeDiskImageDownloads.Delete(di.Name)
 
 	// Create a context with timeout for download operations (HTTP requests)
 	downloadCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
@@ -337,7 +337,6 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 		return nil // Size mismatch, need to download
 	}
 
-	// If no checksums discovered, size match alone is sufficient (skip expensive hashing)
 	// If no checksums available, size-only verification is less secure but still useful
 	// for detecting incomplete downloads. Log a warning for visibility.
 	if len(checksums) == 0 {
@@ -520,8 +519,8 @@ func filenameFromURL(rawURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse URL: %w", err)
 	}
-	filename := path.Base(u.Path)
-	// path.Base returns "." for empty paths or paths ending in "/"
+	filename := filepath.Base(u.Path)
+	// filepath.Base returns "." for empty paths or paths ending in "/"
 	if filename == "." {
 		return "", fmt.Errorf("URL has no filename: %s", rawURL)
 	}
