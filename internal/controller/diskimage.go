@@ -21,7 +21,8 @@ import (
 	"github.com/isoboot/isoboot/internal/k8s"
 )
 
-const downloadTimeout = 30 * time.Minute
+// downloadRequestTimeout is the timeout for individual HTTP download requests.
+const downloadRequestTimeout = 30 * time.Minute
 
 // reconcileDiskImages reconciles all DiskImage resources
 func (c *Controller) reconcileDiskImages(ctx context.Context) {
@@ -87,7 +88,7 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 	defer c.activeDownloads.Delete(di.Name)
 
 	// Create a context with timeout for download operations (HTTP requests)
-	downloadCtx, cancel := context.WithTimeout(parentCtx, downloadTimeout)
+	downloadCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
 	defer cancel()
 
 	// Use background context for status updates so they succeed even if download times out
