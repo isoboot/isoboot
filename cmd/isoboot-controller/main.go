@@ -44,7 +44,7 @@ func main() {
 	}
 
 	// Only use env vars as fallback when flags weren't explicitly set
-	if !flagsSet["http-host"] && httpHost == "" {
+	if !flagsSet["http-host"] {
 		httpHost = os.Getenv("HTTP_HOST")
 	}
 	if !flagsSet["http-port"] {
