@@ -242,9 +242,8 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		log.Printf("Controller: HEAD request for %s returned %d, will not use Content-Length", fileURL, headResp.StatusCode)
 	}
 
-	// Try to find checksums
-	// Use background context to avoid premature cancellation from download timeout
-	checksums := c.discoverChecksums(context.Background(), fileURL)
+	// Try to find checksums (uses its own per-request timeouts internally)
+	checksums := c.discoverChecksums(ctx, fileURL)
 
 	// Extract filename from URL for verification
 	filename, _ := filenameFromURL(fileURL)
@@ -429,7 +428,8 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 		for _, cf := range checksumFiles {
 			checksumURL := fmt.Sprintf("%s://%s%s/%s", u.Scheme, u.Host, dir, cf.name)
 
-			// Use function to scope defer for context cancellation
+			// Use an inner function so defer cancel() runs per iteration; without this, defers in the loop
+			// body would only execute when discoverChecksums() returns.
 			parsed := func() map[string]string {
 				reqCtx, cancel := context.WithTimeout(ctx, checksumDiscoveryTimeout)
 				defer cancel()

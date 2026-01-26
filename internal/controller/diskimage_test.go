@@ -125,7 +125,7 @@ func TestVerifyChecksum(t *testing.T) {
 		{
 			name: "hash type not found",
 			checksums: map[string]map[string]string{
-				"sha512": {"test.iso": "somehash"}, // Only sha512 available while sha256 is requested; verifies the function returns "not_found" when the requested hash type is missing from the checksums map.
+				"sha512": {"test.iso": "somehash"}, // sha256 not in map
 			},
 			hashType: "sha256",
 			filename: "test.iso",
