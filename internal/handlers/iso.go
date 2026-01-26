@@ -62,8 +62,12 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 
 	// Check if ISO exists (downloaded by controller)
 	isoPath := config.ISOPathWithFilename(h.basePath, diskImageName, isoFilename)
-	if _, err := os.Stat(isoPath); os.IsNotExist(err) {
-		http.Error(w, "ISO file not found", http.StatusNotFound)
+	if _, err := os.Stat(isoPath); err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "ISO file not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to access ISO file", http.StatusInternalServerError)
 		return
 	}
 
