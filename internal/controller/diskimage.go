@@ -483,8 +483,9 @@ func parseChecksumFile(r io.Reader) map[string]string {
 			continue
 		}
 
-		// Format: "hash  filename" (text mode) or "hash *filename" (binary mode)
-		// Use strings.Index to correctly handle filenames containing spaces
+		// Format: "hash  filename" (text mode) or "hash *filename" (binary mode).
+		// We use strings.Index instead of strings.Fields, because strings.Fields splits on
+		// any whitespace and would incorrectly break filenames that contain spaces.
 		var hash, filename string
 		if i := strings.Index(line, "  "); i != -1 {
 			// Text mode: "hash  filename"
