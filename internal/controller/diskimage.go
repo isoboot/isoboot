@@ -26,6 +26,19 @@ const downloadRequestTimeout = 15 * time.Minute
 // checksumDiscoveryTimeout is the timeout for fetching checksum files.
 const checksumDiscoveryTimeout = 30 * time.Second
 
+// maxPathComponentsForMatch is the maximum number of path components to try
+// when disambiguating multiple checksum matches. If still ambiguous after this
+// many components, we report "multiple matches" instead of continuing.
+const maxPathComponentsForMatch = 3
+
+// hashDisplayChars is the number of hex characters to show from the start/end
+// of a hash when displaying mismatches. Requires minHashLenForDisplay * 2 chars.
+const hashDisplayChars = 4
+
+// minHashLenForDisplay is the minimum hash length to use partial display.
+// Hashes shorter than this show the full value instead.
+const minHashLenForDisplay = 8
+
 // reconcileDiskImages reconciles all DiskImage resources
 func (c *Controller) reconcileDiskImages(ctx context.Context) {
 	diskImages, err := c.k8sClient.ListDiskImages(ctx)
@@ -551,8 +564,8 @@ func findChecksumByPath(checksums map[string]string, fileURL string) (string, st
 		if len(matches) == 0 {
 			continue // Try more components
 		}
-		// Multiple matches - if we've tried 3+ components, give up
-		if numParts >= 3 {
+		// Multiple matches - if we've tried enough components, give up
+		if numParts >= maxPathComponentsForMatch {
 			return "", "multiple"
 		}
 		// Otherwise try more components to disambiguate
@@ -562,24 +575,24 @@ func findChecksumByPath(checksums map[string]string, fileURL string) (string, st
 }
 
 // formatHashMismatch returns a human-readable comparison of expected vs actual hash.
-// Shows first 4 or last 4 hex chars with ellipsis to help identify the mismatch.
+// Shows first or last hashDisplayChars hex chars with ellipsis to help identify the mismatch.
 func formatHashMismatch(expected, actual string) string {
-	if len(expected) < 8 || len(actual) < 8 {
+	if len(expected) < minHashLenForDisplay || len(actual) < minHashLenForDisplay {
 		return fmt.Sprintf("expected %s, got %s", expected, actual)
 	}
 
-	expFirst4 := expected[:4]
-	actFirst4 := actual[:4]
-	expLast4 := expected[len(expected)-4:]
-	actLast4 := actual[len(actual)-4:]
+	expFirst := expected[:hashDisplayChars]
+	actFirst := actual[:hashDisplayChars]
+	expLast := expected[len(expected)-hashDisplayChars:]
+	actLast := actual[len(actual)-hashDisplayChars:]
 
-	if expFirst4 != actFirst4 {
-		// First 4 differ - show "expected abcd..., got 1234..."
-		return fmt.Sprintf("expected %s..., got %s...", expFirst4, actFirst4)
+	if expFirst != actFirst {
+		// First chars differ - show "expected abcd..., got 1234..."
+		return fmt.Sprintf("expected %s..., got %s...", expFirst, actFirst)
 	}
-	if expLast4 != actLast4 {
-		// Last 4 differ - show "expected ...aabb, got ...ccdd"
-		return fmt.Sprintf("expected ...%s, got ...%s", expLast4, actLast4)
+	if expLast != actLast {
+		// Last chars differ - show "expected ...aabb, got ...ccdd"
+		return fmt.Sprintf("expected ...%s, got ...%s", expLast, actLast)
 	}
 	// Both ends same, middle differs
 	return "hash mismatch"
