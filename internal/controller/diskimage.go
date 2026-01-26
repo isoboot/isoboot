@@ -23,6 +23,9 @@ import (
 // downloadRequestTimeout is the timeout for individual HTTP download requests.
 const downloadRequestTimeout = 30 * time.Minute
 
+// checksumDiscoveryTimeout is the timeout for fetching checksum files.
+const checksumDiscoveryTimeout = 30 * time.Second
+
 // reconcileDiskImages reconciles all DiskImage resources
 func (c *Controller) reconcileDiskImages(ctx context.Context) {
 	diskImages, err := c.k8sClient.ListDiskImages(ctx)
@@ -415,7 +418,7 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 		for _, cf := range checksumFiles {
 			checksumURL := fmt.Sprintf("%s://%s%s/%s", u.Scheme, u.Host, dir, cf.name)
 
-			reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			reqCtx, cancel := context.WithTimeout(ctx, checksumDiscoveryTimeout)
 			req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, checksumURL, nil)
 			if err != nil {
 				cancel()
