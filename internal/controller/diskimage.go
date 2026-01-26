@@ -26,11 +26,6 @@ const downloadRequestTimeout = 15 * time.Minute
 // checksumDiscoveryTimeout is the timeout for fetching checksum files.
 const checksumDiscoveryTimeout = 30 * time.Second
 
-// maxPathComponentsForMatch is the maximum number of path components to try
-// when disambiguating multiple checksum matches. If still ambiguous after this
-// many components, we report "multiple matches" instead of continuing.
-const maxPathComponentsForMatch = 3
-
 // hashDisplayChars is the number of hex characters to show from the start/end
 // of a hash when displaying mismatches. Requires minHashLenForDisplay * 2 chars.
 const hashDisplayChars = 4
@@ -38,6 +33,14 @@ const hashDisplayChars = 4
 // minHashLenForDisplay is the minimum hash length to use partial display.
 // Hashes shorter than this show the full value instead.
 const minHashLenForDisplay = 8
+
+// checksumSource represents checksums from a single checksum file.
+// Tracking the source URL allows computing the exact relative path for lookups.
+type checksumSource struct {
+	hashType    string            // "sha256" or "sha512"
+	checksumURL string            // URL of the checksum file (e.g., .../images/SHA256SUMS)
+	checksums   map[string]string // path -> hash
+}
 
 // reconcileDiskImages reconciles all DiskImage resources
 func (c *Controller) reconcileDiskImages(ctx context.Context) {
@@ -313,34 +316,23 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	}
 	result.FileSizeMatch = "verified"
 
-	// Verify checksums using full URL for progressive path matching
+	// Verify SHA256 and SHA512 checksums using exact relative path matching
 	result.DigestSha256 = verifyChecksum(checksums, "sha256", sha256Hash, fileURL)
 	result.DigestSha512 = verifyChecksum(checksums, "sha512", sha512Hash, fileURL)
 
-	// If any checksum verification explicitly failed or had multiple matches, don't persist the file
+	// If any checksum verification explicitly failed, don't persist the file
 	var failedDigests []string
-	var multipleMatches []string
 	if result.DigestSha256 == "failed" {
 		failedDigests = append(failedDigests, "SHA256")
-	} else if result.DigestSha256 == "multiple_matches" {
-		multipleMatches = append(multipleMatches, "SHA256")
 	}
 	if result.DigestSha512 == "failed" {
 		failedDigests = append(failedDigests, "SHA512")
-	} else if result.DigestSha512 == "multiple_matches" {
-		multipleMatches = append(multipleMatches, "SHA512")
 	}
 	if len(failedDigests) > 0 {
 		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			log.Printf("Controller: failed to remove temporary file %s after checksum failure: %v", tmpPath, removeErr)
 		}
 		return result, fmt.Errorf("%s checksum verification failed", strings.Join(failedDigests, " and "))
-	}
-	if len(multipleMatches) > 0 {
-		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			log.Printf("Controller: failed to remove temporary file %s after multiple checksum matches: %v", tmpPath, removeErr)
-		}
-		return result, fmt.Errorf("%s checksum has multiple matches in checksum file, cannot verify", strings.Join(multipleMatches, " and "))
 	}
 
 	// Atomic rename
@@ -355,7 +347,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 // verifyExistingFile checks if an existing file is valid
 // Returns nil if file doesn't exist or verification fails (should download)
 // Returns verification result if file is valid (skip download)
-func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, checksums map[string]map[string]string, fileURL string) *k8s.DiskImageVerification {
+func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, checksums []checksumSource, fileURL string) *k8s.DiskImageVerification {
 	// Check if file exists
 	info, err := os.Stat(filePath)
 	if err != nil {
@@ -375,7 +367,7 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 		return nil
 	}
 
-	// Compute checksums
+	// Compute SHA256 and SHA512 hashes
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil // Can't read file, need to download
@@ -390,33 +382,30 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 		return nil // Error reading file, need to download
 	}
 
-	// Verify checksums using full URL for progressive path matching
+	// Verify SHA256 and SHA512 checksums using exact relative path matching
 	result := &k8s.DiskImageVerification{
 		FileSizeMatch: "verified",
 		DigestSha256:  verifyChecksum(checksums, "sha256", sha256Hash, fileURL),
 		DigestSha512:  verifyChecksum(checksums, "sha512", sha512Hash, fileURL),
 	}
 
-	// If any checksum verification failed or had multiple matches, need to re-download
+	// If any checksum verification failed, need to re-download
 	if result.DigestSha256 == "failed" || result.DigestSha512 == "failed" {
 		log.Printf("Controller: existing file %s checksum mismatch, will re-download", fileURL)
-		return nil
-	}
-	if result.DigestSha256 == "multiple_matches" || result.DigestSha512 == "multiple_matches" {
-		log.Printf("Controller: existing file %s has multiple checksum matches, will re-download", fileURL)
 		return nil
 	}
 
 	return result
 }
 
-// discoverChecksums looks for checksum files in parent directories
-func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[string]map[string]string {
-	checksums := make(map[string]map[string]string) // type -> filename -> hash
+// discoverChecksums looks for checksum files in parent directories.
+// Returns a slice of checksumSource, each tracking the source URL for exact path matching.
+func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) []checksumSource {
+	var sources []checksumSource
 
 	u, err := url.Parse(fileURL)
 	if err != nil {
-		return checksums
+		return sources
 	}
 
 	// Try current directory, then 1 level up, then 2 levels up
@@ -447,8 +436,7 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 		for _, cf := range checksumFiles {
 			checksumURL := fmt.Sprintf("%s://%s%s/%s", u.Scheme, u.Host, dir, cf.name)
 
-			// Use an inner function so defer cancel() runs per iteration; without this, defers in the loop
-			// body would only execute when discoverChecksums() returns.
+			// Use an inner function so defer cancel() runs per iteration
 			parsed := func() map[string]string {
 				reqCtx, cancel := context.WithTimeout(ctx, checksumDiscoveryTimeout)
 				defer cancel()
@@ -471,17 +459,16 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 			}()
 
 			if len(parsed) > 0 {
-				if checksums[cf.hashType] == nil {
-					checksums[cf.hashType] = make(map[string]string)
-				}
-				for k, v := range parsed {
-					checksums[cf.hashType][k] = v
-				}
+				sources = append(sources, checksumSource{
+					hashType:    cf.hashType,
+					checksumURL: checksumURL,
+					checksums:   parsed,
+				})
 			}
 		}
 	}
 
-	return checksums
+	return sources
 }
 
 // parseChecksumFile parses a checksum file (SHA256SUMS format).
@@ -529,51 +516,6 @@ func parseChecksumFile(r io.Reader) map[string]string {
 	return result
 }
 
-// findChecksumByPath finds a checksum using progressive path matching.
-// It starts with just the filename, then progressively adds path components
-// from the URL until exactly one match is found or all components are exhausted.
-// Returns (hash, "found"), (hash, "multiple"), or ("", "not_found").
-func findChecksumByPath(checksums map[string]string, fileURL string) (string, string) {
-	u, err := url.Parse(fileURL)
-	if err != nil {
-		return "", "not_found"
-	}
-
-	// Split path into components, e.g., "/debian/dists/.../netboot/mini.iso"
-	// becomes ["debian", "dists", ..., "netboot", "mini.iso"]
-	pathParts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(pathParts) == 0 {
-		return "", "not_found"
-	}
-
-	// Try progressively longer suffixes: "mini.iso", "netboot/mini.iso", etc.
-	for numParts := 1; numParts <= len(pathParts); numParts++ {
-		suffix := strings.Join(pathParts[len(pathParts)-numParts:], "/")
-
-		var matches []string
-		for path, hash := range checksums {
-			// Match if path equals suffix or ends with /suffix
-			if path == suffix || strings.HasSuffix(path, "/"+suffix) {
-				matches = append(matches, hash)
-			}
-		}
-
-		if len(matches) == 1 {
-			return matches[0], "found"
-		}
-		if len(matches) == 0 {
-			continue // Try more components
-		}
-		// Multiple matches - if we've tried enough components, give up
-		if numParts >= maxPathComponentsForMatch {
-			return "", "multiple"
-		}
-		// Otherwise try more components to disambiguate
-	}
-
-	return "", "not_found"
-}
-
 // formatHashMismatch returns a human-readable comparison of expected vs actual hash.
 // Shows first or last hashDisplayChars hex chars with ellipsis to help identify the mismatch.
 func formatHashMismatch(expected, actual string) string {
@@ -598,54 +540,93 @@ func formatHashMismatch(expected, actual string) string {
 	return "hash mismatch"
 }
 
-// urlMatchesChecksumPath checks if a URL path ends with a checksum file path.
-// E.g., URL "http://example.com/debian/dists/trixie/netboot/mini.iso"
-// matches checksum path "netboot/mini.iso" or "./netboot/mini.iso".
-func urlMatchesChecksumPath(fileURL, checksumPath string) bool {
-	u, err := url.Parse(fileURL)
+// relativePathFromChecksumURL computes the relative path of fileURL from the
+// directory containing checksumURL.
+// E.g., checksumURL = ".../images/SHA256SUMS", fileURL = ".../images/netboot/mini.iso"
+// returns "netboot/mini.iso"
+func relativePathFromChecksumURL(checksumURL, fileURL string) string {
+	checksumU, err := url.Parse(checksumURL)
 	if err != nil {
-		return false
+		return ""
 	}
-	urlPath := strings.TrimPrefix(u.Path, "/")
-	checksumPath = strings.TrimPrefix(checksumPath, "./")
+	fileU, err := url.Parse(fileURL)
+	if err != nil {
+		return ""
+	}
 
-	return urlPath == checksumPath || strings.HasSuffix(urlPath, "/"+checksumPath)
+	// Must be same host
+	if checksumU.Host != fileU.Host {
+		return ""
+	}
+
+	// Get directory of checksum file (e.g., /debian/dists/.../images)
+	checksumDir := path.Dir(checksumU.Path)
+
+	// Get file path (e.g., /debian/dists/.../images/netboot/mini.iso)
+	filePath := fileU.Path
+
+	// Compute relative path by stripping the checksum directory prefix
+	// Handle root directory case where checksumDir is "/"
+	var prefix string
+	if checksumDir == "/" {
+		prefix = "/"
+	} else {
+		prefix = checksumDir + "/"
+	}
+
+	if strings.HasPrefix(filePath, prefix) {
+		return strings.TrimPrefix(filePath, prefix)
+	}
+
+	return ""
+}
+
+// lookupChecksumByRelativePath looks up a hash by the exact relative path.
+// Tries both "path" and "./path" forms since checksum files use both conventions.
+// Returns (hash, true) if found, ("", false) otherwise.
+func lookupChecksumByRelativePath(checksums map[string]string, relativePath string) (string, bool) {
+	// Try exact path first
+	if hash, ok := checksums[relativePath]; ok {
+		return hash, true
+	}
+	// Try with ./ prefix
+	if hash, ok := checksums["./"+relativePath]; ok {
+		return hash, true
+	}
+	return "", false
 }
 
 // verifyChecksum verifies a hash against discovered checksums.
-// Returns "verified", "not_found", "multiple_matches", or "failed".
-// Uses fast path: first checks if actual hash exists in checksums (O(n) hash comparison),
-// then falls back to progressive path matching only for mismatches.
-func verifyChecksum(checksums map[string]map[string]string, hashType string, h hash.Hash, fileURL string) string {
-	typeChecksums, ok := checksums[hashType]
-	if !ok {
-		return "not_found"
-	}
-
+// Uses exact relative path matching based on the checksum file's location.
+// Returns "verified", "not_found", or "failed".
+func verifyChecksum(sources []checksumSource, hashType string, h hash.Hash, fileURL string) string {
 	actual := fmt.Sprintf("%x", h.Sum(nil))
 
-	// Fast path: check if actual hash exists in checksums
-	for path, hash := range typeChecksums {
-		if strings.EqualFold(hash, actual) {
-			// Verify URL ends with this path (security check)
-			if urlMatchesChecksumPath(fileURL, path) {
-				return "verified"
-			}
+	for _, src := range sources {
+		if src.hashType != hashType {
+			continue
 		}
+
+		relativePath := relativePathFromChecksumURL(src.checksumURL, fileURL)
+		if relativePath == "" {
+			continue // File is not under this checksum file's directory
+		}
+
+		expected, found := lookupChecksumByRelativePath(src.checksums, relativePath)
+		if !found {
+			continue // Not in this checksum file
+		}
+
+		// Found the entry - now verify
+		if strings.EqualFold(actual, expected) {
+			return "verified"
+		}
+
+		log.Printf("Controller: %s checksum mismatch for %s: %s", hashType, fileURL, formatHashMismatch(expected, actual))
+		return "failed"
 	}
 
-	// Slow path: find expected hash by path matching to get good error message
-	expected, status := findChecksumByPath(typeChecksums, fileURL)
-	if status == "not_found" {
-		return "not_found"
-	}
-	if status == "multiple" {
-		log.Printf("Controller: %s multiple checksums match %s, cannot verify", hashType, fileURL)
-		return "multiple_matches"
-	}
-
-	log.Printf("Controller: %s checksum mismatch for %s: %s", hashType, fileURL, formatHashMismatch(expected, actual))
-	return "failed"
+	return "not_found"
 }
 
 // filenameFromURL extracts the filename from a URL, handling query strings
