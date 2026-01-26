@@ -92,9 +92,9 @@ func TestRenderTemplate_BasicVariables(t *testing.T) {
 		port: "8080",
 	}
 
-	deploy := &k8s.Deploy{
+	deploy := &k8s.Provision{
 		Name: "test-deploy",
-		Spec: k8s.DeploySpec{
+		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm125",
 			BootTargetRef: "debian-13",
 		},
@@ -127,9 +127,9 @@ func TestRenderTemplate_MissingKey(t *testing.T) {
 		port: "8080",
 	}
 
-	deploy := &k8s.Deploy{
+	deploy := &k8s.Provision{
 		Name: "test-deploy",
-		Spec: k8s.DeploySpec{
+		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm125",
 			BootTargetRef: "debian-13",
 		},
@@ -151,9 +151,9 @@ func TestRenderTemplate_InvalidSyntax(t *testing.T) {
 		port: "8080",
 	}
 
-	deploy := &k8s.Deploy{
+	deploy := &k8s.Provision{
 		Name: "test-deploy",
-		Spec: k8s.DeploySpec{
+		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm125",
 			BootTargetRef: "debian-13",
 		},
@@ -175,9 +175,9 @@ func TestRenderTemplate_PreseedExample(t *testing.T) {
 		port: "8080",
 	}
 
-	deploy := &k8s.Deploy{
+	deploy := &k8s.Provision{
 		Name: "test-deploy",
-		Spec: k8s.DeploySpec{
+		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm125",
 			BootTargetRef: "debian-13",
 		},

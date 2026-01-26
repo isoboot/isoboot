@@ -231,10 +231,10 @@ func TestParseResponseTemplate(t *testing.T) {
 	}
 }
 
-func TestParseDeploy_WithNewFields(t *testing.T) {
+func TestParseProvision_WithNewFields(t *testing.T) {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"metadata": map[string]interface{}{"name": "test-deploy"},
+			"metadata": map[string]interface{}{"name": "test-provision"},
 			"spec": map[string]interface{}{
 				"machineRef":          "vm125",
 				"bootTargetRef":       "debian-13",
@@ -249,13 +249,13 @@ func TestParseDeploy_WithNewFields(t *testing.T) {
 		},
 	}
 
-	result, err := parseDeploy(obj)
+	result, err := parseProvision(obj)
 	if err != nil {
-		t.Fatalf("parseDeploy failed: %v", err)
+		t.Fatalf("parseProvision failed: %v", err)
 	}
 
-	if result.Name != "test-deploy" {
-		t.Errorf("Name = %q, want %q", result.Name, "test-deploy")
+	if result.Name != "test-provision" {
+		t.Errorf("Name = %q, want %q", result.Name, "test-provision")
 	}
 	if result.Spec.MachineRef != "vm125" {
 		t.Errorf("MachineRef = %q, want %q", result.Spec.MachineRef, "vm125")
@@ -282,10 +282,10 @@ func TestParseDeploy_WithNewFields(t *testing.T) {
 	}
 }
 
-func TestParseDeploy_NoOptionalFields(t *testing.T) {
+func TestParseProvision_NoOptionalFields(t *testing.T) {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"metadata": map[string]interface{}{"name": "minimal-deploy"},
+			"metadata": map[string]interface{}{"name": "minimal-provision"},
 			"spec": map[string]interface{}{
 				"machineRef":    "vm125",
 				"bootTargetRef": "debian-13",
@@ -293,9 +293,9 @@ func TestParseDeploy_NoOptionalFields(t *testing.T) {
 		},
 	}
 
-	result, err := parseDeploy(obj)
+	result, err := parseProvision(obj)
 	if err != nil {
-		t.Fatalf("parseDeploy failed: %v", err)
+		t.Fatalf("parseProvision failed: %v", err)
 	}
 
 	// Verify legacy "target" field is read into BootTargetRef

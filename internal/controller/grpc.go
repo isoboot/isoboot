@@ -19,71 +19,71 @@ func NewGRPCServer(ctrl *Controller) *GRPCServer {
 	return &GRPCServer{ctrl: ctrl}
 }
 
-// GetPendingBoot returns boot info for a MAC with pending deploy
+// GetPendingBoot returns boot info for a MAC with pending provision
 func (s *GRPCServer) GetPendingBoot(ctx context.Context, req *pb.GetPendingBootRequest) (*pb.GetPendingBootResponse, error) {
 	mac := strings.ToLower(req.Mac)
 
-	deploy, err := s.ctrl.k8sClient.FindDeployByMAC(ctx, mac, "Pending")
+	provision, err := s.ctrl.k8sClient.FindProvisionByMAC(ctx, mac, "Pending")
 	if err != nil {
-		log.Printf("gRPC: error finding deploy for %s: %v", mac, err)
+		log.Printf("gRPC: error finding provision for %s: %v", mac, err)
 		return &pb.GetPendingBootResponse{Found: false}, nil
 	}
 
-	if deploy == nil {
+	if provision == nil {
 		return &pb.GetPendingBootResponse{Found: false}, nil
 	}
 
 	return &pb.GetPendingBootResponse{
-		Found:       true,
-		MachineName: deploy.Spec.MachineRef,
-		DeployName:  deploy.Name,
-		Target:      deploy.Spec.BootTargetRef,
+		Found:         true,
+		MachineName:   provision.Spec.MachineRef,
+		ProvisionName: provision.Name,
+		Target:        provision.Spec.BootTargetRef,
 	}, nil
 }
 
-// MarkBootStarted marks a deploy as InProgress
+// MarkBootStarted marks a provision as InProgress
 func (s *GRPCServer) MarkBootStarted(ctx context.Context, req *pb.MarkBootStartedRequest) (*pb.MarkBootStartedResponse, error) {
 	mac := strings.ToLower(req.Mac)
 
-	deploy, err := s.ctrl.k8sClient.FindDeployByMAC(ctx, mac, "Pending")
+	provision, err := s.ctrl.k8sClient.FindProvisionByMAC(ctx, mac, "Pending")
 	if err != nil {
-		log.Printf("gRPC: error finding deploy for %s: %v", mac, err)
+		log.Printf("gRPC: error finding provision for %s: %v", mac, err)
 		return &pb.MarkBootStartedResponse{Success: false, Error: err.Error()}, nil
 	}
 
-	if deploy == nil {
-		return &pb.MarkBootStartedResponse{Success: false, Error: "no pending deploy"}, nil
+	if provision == nil {
+		return &pb.MarkBootStartedResponse{Success: false, Error: "no pending provision"}, nil
 	}
 
-	if err := s.ctrl.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "InProgress", "Boot script served"); err != nil {
-		log.Printf("gRPC: error updating deploy %s: %v", deploy.Name, err)
+	if err := s.ctrl.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "InProgress", "Boot script served"); err != nil {
+		log.Printf("gRPC: error updating provision %s: %v", provision.Name, err)
 		return &pb.MarkBootStartedResponse{Success: false, Error: err.Error()}, nil
 	}
 
-	log.Printf("gRPC: marked %s as InProgress", deploy.Name)
+	log.Printf("gRPC: marked %s as InProgress", provision.Name)
 	return &pb.MarkBootStartedResponse{Success: true}, nil
 }
 
-// MarkBootCompleted marks a deploy as Complete (by hostname)
+// MarkBootCompleted marks a provision as Complete (by hostname)
 func (s *GRPCServer) MarkBootCompleted(ctx context.Context, req *pb.MarkBootCompletedRequest) (*pb.MarkBootCompletedResponse, error) {
 	hostname := req.Hostname
 
-	deploy, err := s.ctrl.k8sClient.FindDeployByHostname(ctx, hostname, "InProgress")
+	provision, err := s.ctrl.k8sClient.FindProvisionByHostname(ctx, hostname, "InProgress")
 	if err != nil {
-		log.Printf("gRPC: error finding deploy for %s: %v", hostname, err)
+		log.Printf("gRPC: error finding provision for %s: %v", hostname, err)
 		return &pb.MarkBootCompletedResponse{Success: false, Error: err.Error()}, nil
 	}
 
-	if deploy == nil {
-		return &pb.MarkBootCompletedResponse{Success: false, Error: "no in-progress deploy"}, nil
+	if provision == nil {
+		return &pb.MarkBootCompletedResponse{Success: false, Error: "no in-progress provision"}, nil
 	}
 
-	if err := s.ctrl.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "Complete", "Installation completed"); err != nil {
-		log.Printf("gRPC: error updating deploy %s: %v", deploy.Name, err)
+	if err := s.ctrl.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Complete", "Installation completed"); err != nil {
+		log.Printf("gRPC: error updating provision %s: %v", provision.Name, err)
 		return &pb.MarkBootCompletedResponse{Success: false, Error: err.Error()}, nil
 	}
 
-	log.Printf("gRPC: marked %s as Complete", deploy.Name)
+	log.Printf("gRPC: marked %s as Complete", provision.Name)
 	return &pb.MarkBootCompletedResponse{Success: true}, nil
 }
 
@@ -136,30 +136,30 @@ func (s *GRPCServer) GetResponseTemplate(ctx context.Context, req *pb.GetRespons
 	}, nil
 }
 
-// GetRenderedTemplate renders a template file for a deploy
+// GetRenderedTemplate renders a template file for a provision
 func (s *GRPCServer) GetRenderedTemplate(ctx context.Context, req *pb.GetRenderedTemplateRequest) (*pb.GetRenderedTemplateResponse, error) {
-	// Find the deploy by hostname (InProgress or Pending - race between boot start and answer retrieval)
-	deploy, err := s.ctrl.k8sClient.FindDeployByHostname(ctx, req.Hostname, "InProgress")
+	// Find the provision by hostname (InProgress or Pending - race between boot start and answer retrieval)
+	provision, err := s.ctrl.k8sClient.FindProvisionByHostname(ctx, req.Hostname, "InProgress")
 	if err != nil {
-		log.Printf("gRPC: error finding deploy for %s: %v", req.Hostname, err)
+		log.Printf("gRPC: error finding provision for %s: %v", req.Hostname, err)
 		return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
 	}
 	// If not InProgress, try Pending (installer may request before MarkBootStarted completes)
-	if deploy == nil {
-		deploy, err = s.ctrl.k8sClient.FindDeployByHostname(ctx, req.Hostname, "Pending")
+	if provision == nil {
+		provision, err = s.ctrl.k8sClient.FindProvisionByHostname(ctx, req.Hostname, "Pending")
 		if err != nil {
-			log.Printf("gRPC: error finding pending deploy for %s: %v", req.Hostname, err)
+			log.Printf("gRPC: error finding pending provision for %s: %v", req.Hostname, err)
 			return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
 		}
 	}
-	if deploy == nil {
-		return &pb.GetRenderedTemplateResponse{Found: false, Error: "no active deploy for hostname"}, nil
+	if provision == nil {
+		return &pb.GetRenderedTemplateResponse{Found: false, Error: "no active provision for hostname"}, nil
 	}
 
 	// Get the response template
-	rt, err := s.ctrl.k8sClient.GetResponseTemplate(ctx, deploy.Spec.ResponseTemplateRef)
+	rt, err := s.ctrl.k8sClient.GetResponseTemplate(ctx, provision.Spec.ResponseTemplateRef)
 	if err != nil {
-		log.Printf("gRPC: error getting responsetemplate %s: %v", deploy.Spec.ResponseTemplateRef, err)
+		log.Printf("gRPC: error getting responsetemplate %s: %v", provision.Spec.ResponseTemplateRef, err)
 		return &pb.GetRenderedTemplateResponse{Found: false, Error: "response template not found"}, nil
 	}
 
@@ -170,7 +170,7 @@ func (s *GRPCServer) GetRenderedTemplate(ctx context.Context, req *pb.GetRendere
 	}
 
 	// Render the template
-	rendered, err := s.ctrl.RenderTemplate(ctx, deploy, templateContent)
+	rendered, err := s.ctrl.RenderTemplate(ctx, provision, templateContent)
 	if err != nil {
 		log.Printf("gRPC: error rendering template for %s: %v", req.Hostname, err)
 		return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil

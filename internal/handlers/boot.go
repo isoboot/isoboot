@@ -86,8 +86,8 @@ func (h *BootHandler) ServeBootIPXE(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
-// ServeConditionalBoot checks Deploy CRDs and returns appropriate boot script
-// Returns 404 with Content-Length if no deploy found (iPXE falls back to local boot)
+// ServeConditionalBoot checks Provision CRDs and returns appropriate boot script
+// Returns 404 with Content-Length if no provision found (iPXE falls back to local boot)
 func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -101,7 +101,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	// MAC must be dash-separated (xx-xx-xx-xx-xx-xx from iPXE)
 	mac = strings.ToLower(mac)
 
-	// Find pending deploy for this MAC via controller
+	// Find pending provision for this MAC via controller
 	bootInfo, err := h.ctrlClient.GetPendingBoot(ctx, mac)
 	if err != nil {
 		log.Printf("Error getting boot info for %s: %v", mac, err)
@@ -111,7 +111,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	}
 
 	if bootInfo == nil {
-		// No pending deploy found - return 404 so iPXE falls back to local boot
+		// No pending provision found - return 404 so iPXE falls back to local boot
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -156,13 +156,13 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	w.Write(buf.Bytes())
 
-	// Mark deploy as started via controller
+	// Mark provision as started via controller
 	if err := h.ctrlClient.MarkBootStarted(ctx, mac); err != nil {
 		log.Printf("Warning: failed to mark boot started for %s: %v", mac, err)
 	}
 }
 
-// ServeBootDone marks a deploy as completed
+// ServeBootDone marks a provision as completed
 // GET /boot/done?id={machineName}
 func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
