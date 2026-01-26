@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -90,8 +91,8 @@ type DiskImageStatus struct {
 // DiskImageVerification represents verification status for a file
 type DiskImageVerification struct {
 	FileSizeMatch string // pending, processing, verified, failed
-	DigestSha512  string // pending, processing, verified, failed, not_found
 	DigestSha256  string // pending, processing, verified, failed, not_found
+	DigestSha512  string // pending, processing, verified, failed, not_found
 	DigestMd5     string // pending, processing, verified, failed, not_found
 }
 
@@ -221,16 +222,16 @@ func parseDiskImage(obj *unstructured.Unstructured) (*DiskImage, error) {
 		if isoStatus, ok := status["iso"].(map[string]interface{}); ok {
 			di.Status.ISO = &DiskImageVerification{
 				FileSizeMatch: getString(isoStatus, "fileSizeMatch"),
-				DigestSha512:  getString(isoStatus, "digestSha512"),
 				DigestSha256:  getString(isoStatus, "digestSha256"),
+				DigestSha512:  getString(isoStatus, "digestSha512"),
 				DigestMd5:     getString(isoStatus, "digestMd5"),
 			}
 		}
 		if fwStatus, ok := status["firmware"].(map[string]interface{}); ok {
 			di.Status.Firmware = &DiskImageVerification{
 				FileSizeMatch: getString(fwStatus, "fileSizeMatch"),
-				DigestSha512:  getString(fwStatus, "digestSha512"),
 				DigestSha256:  getString(fwStatus, "digestSha256"),
+				DigestSha512:  getString(fwStatus, "digestSha512"),
 				DigestMd5:     getString(fwStatus, "digestMd5"),
 			}
 		}
@@ -323,11 +324,17 @@ func parseDeploy(obj *unstructured.Unstructured) (*Deploy, error) {
 		return nil, fmt.Errorf("invalid deploy spec")
 	}
 
+	// Support both bootTargetRef (new) and target (legacy) for backward compatibility
+	bootTargetRef := getString(spec, "bootTargetRef")
+	if bootTargetRef == "" {
+		bootTargetRef = getString(spec, "target")
+	}
+
 	deploy := &Deploy{
 		Name: obj.GetName(),
 		Spec: DeploySpec{
 			MachineRef:          getString(spec, "machineRef"),
-			BootTargetRef:       getString(spec, "bootTargetRef"),
+			BootTargetRef:       bootTargetRef,
 			ResponseTemplateRef: getString(spec, "responseTemplateRef"),
 			ConfigMaps:          getStringSlice(spec, "configMaps"),
 			Secrets:             getStringSlice(spec, "secrets"),
@@ -355,6 +362,8 @@ func getInt(m map[string]interface{}, key string) int {
 	switch v := m[key].(type) {
 	case int:
 		return v
+	case int32:
+		return int(v)
 	case int64:
 		return int(v)
 	case float64:
@@ -517,6 +526,7 @@ func (c *Client) ListDiskImages(ctx context.Context) ([]*DiskImage, error) {
 	for _, item := range list.Items {
 		di, err := parseDiskImage(&item)
 		if err != nil {
+			log.Printf("k8s: failed to parse DiskImage %s (skipping): %v", item.GetName(), err)
 			continue
 		}
 		diskImages = append(diskImages, di)
@@ -524,7 +534,10 @@ func (c *Client) ListDiskImages(ctx context.Context) ([]*DiskImage, error) {
 	return diskImages, nil
 }
 
-// UpdateDiskImageStatus updates the status of a DiskImage
+// UpdateDiskImageStatus updates the status of a DiskImage.
+// Note: This performs a full replacement of the status subresource.
+// Callers should provide the complete desired status; any fields not
+// included (e.g., ISO/Firmware set to nil) will be cleared.
 func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status *DiskImageStatus) error {
 	if status == nil {
 		return fmt.Errorf("status cannot be nil")
@@ -542,21 +555,11 @@ func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status 
 	}
 
 	if status.ISO != nil {
-		statusMap["iso"] = map[string]interface{}{
-			"fileSizeMatch": status.ISO.FileSizeMatch,
-			"digestSha512":  status.ISO.DigestSha512,
-			"digestSha256":  status.ISO.DigestSha256,
-			"digestMd5":     status.ISO.DigestMd5,
-		}
+		statusMap["iso"] = verificationToMap(status.ISO)
 	}
 
 	if status.Firmware != nil {
-		statusMap["firmware"] = map[string]interface{}{
-			"fileSizeMatch": status.Firmware.FileSizeMatch,
-			"digestSha512":  status.Firmware.DigestSha512,
-			"digestSha256":  status.Firmware.DigestSha256,
-			"digestMd5":     status.Firmware.DigestMd5,
-		}
+		statusMap["firmware"] = verificationToMap(status.Firmware)
 	}
 
 	obj.Object["status"] = statusMap
@@ -567,4 +570,14 @@ func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status 
 	}
 
 	return nil
+}
+
+// verificationToMap converts a DiskImageVerification to a map for status updates
+func verificationToMap(v *DiskImageVerification) map[string]interface{} {
+	return map[string]interface{}{
+		"fileSizeMatch": v.FileSizeMatch,
+		"digestSha256":  v.DigestSha256,
+		"digestSha512":  v.DigestSha512,
+		"digestMd5":     v.DigestMd5,
+	}
 }

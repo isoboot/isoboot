@@ -95,8 +95,8 @@ func TestRenderTemplate_BasicVariables(t *testing.T) {
 	deploy := &k8s.Deploy{
 		Name: "test-deploy",
 		Spec: k8s.DeploySpec{
-			MachineRef: "vm125",
-			BootTargetRef:     "debian-13",
+			MachineRef:    "vm125",
+			BootTargetRef: "debian-13",
 		},
 	}
 
@@ -130,8 +130,8 @@ func TestRenderTemplate_MissingKey(t *testing.T) {
 	deploy := &k8s.Deploy{
 		Name: "test-deploy",
 		Spec: k8s.DeploySpec{
-			MachineRef: "vm125",
-			BootTargetRef:     "debian-13",
+			MachineRef:    "vm125",
+			BootTargetRef: "debian-13",
 		},
 	}
 
@@ -154,8 +154,8 @@ func TestRenderTemplate_InvalidSyntax(t *testing.T) {
 	deploy := &k8s.Deploy{
 		Name: "test-deploy",
 		Spec: k8s.DeploySpec{
-			MachineRef: "vm125",
-			BootTargetRef:     "debian-13",
+			MachineRef:    "vm125",
+			BootTargetRef: "debian-13",
 		},
 	}
 
@@ -178,8 +178,8 @@ func TestRenderTemplate_PreseedExample(t *testing.T) {
 	deploy := &k8s.Deploy{
 		Name: "test-deploy",
 		Spec: k8s.DeploySpec{
-			MachineRef: "vm125",
-			BootTargetRef:     "debian-13",
+			MachineRef:    "vm125",
+			BootTargetRef: "debian-13",
 		},
 	}
 
