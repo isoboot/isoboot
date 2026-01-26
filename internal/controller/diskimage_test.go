@@ -125,7 +125,7 @@ func TestVerifyChecksum(t *testing.T) {
 		{
 			name: "hash type not found",
 			checksums: map[string]map[string]string{
-				"sha512": {"test.iso": "somehash"}, // sha256 not in map
+				"sha512": {"test.iso": "somehash"}, // SHA256 not in map
 			},
 			hashType: "sha256",
 			filename: "test.iso",

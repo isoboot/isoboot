@@ -252,8 +252,8 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		log.Printf("Controller: could not determine filename from URL %s, using fallback: %s", fileURL, filename)
 	}
 
-	// Check if file already exists and is valid (verifyExistingFile handles edge cases like
-	// missing checksums or size, returning nil to trigger re-download when verification isn't possible)
+	// Check if the file already exists and is valid.
+	// verifyExistingFile returns nil to trigger re-download when verification is not possible.
 	if existingResult := c.verifyExistingFile(destPath, expectedSize, checksums, filename); existingResult != nil {
 		log.Printf("Controller: existing file %s verified, skipping download", filepath.Base(destPath))
 		return existingResult, nil
@@ -351,8 +351,8 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 		return nil // Size mismatch, need to download
 	}
 
-	// If no checksums available, we cannot securely verify file contents.
-	// Force re-download rather than relying on size-only verification.
+	// If no checksums are available, we cannot securely verify file contents.
+	// Return nil to trigger re-download rather than relying on size-only verification.
 	if len(checksums) == 0 {
 		log.Printf("Controller: existing file %s cannot be securely verified (no checksums available), will re-download", filename)
 		return nil
