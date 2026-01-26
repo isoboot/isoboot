@@ -84,20 +84,18 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine firmware merge path: use includeFirmwarePath if set,
-	// otherwise default to /initrd.gz for backward compatibility
-	firmwarePath := bootTarget.IncludeFirmwarePath
-	if firmwarePath == "" {
-		firmwarePath = "/initrd.gz"
-	} else if !strings.HasPrefix(firmwarePath, "/") {
-		firmwarePath = "/" + firmwarePath
-	}
-
-	// Check if this path should have firmware merged
-	requestPath := "/" + filePath
-	if requestPath == firmwarePath {
-		h.serveFileWithFirmware(w, r, diskImageDir, isoFilename, filePath, targetConfig)
-		return
+	// Check if this path should have firmware merged.
+	// Firmware is only merged when includeFirmwarePath is explicitly set.
+	if bootTarget.IncludeFirmwarePath != "" {
+		firmwarePath := bootTarget.IncludeFirmwarePath
+		if !strings.HasPrefix(firmwarePath, "/") {
+			firmwarePath = "/" + firmwarePath
+		}
+		requestPath := "/" + filePath
+		if requestPath == firmwarePath {
+			h.serveFileWithFirmware(w, r, diskImageDir, isoFilename, filePath, targetConfig)
+			return
+		}
 	}
 
 	// Serve from ISO
