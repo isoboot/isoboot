@@ -50,15 +50,14 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate requested ISO filename matches the configured ISO filename to prevent
-	// serving unauthorized ISO files within the ISO directory and potential disk abuse
+	// Validate requested ISO filename matches config to prevent unauthorized file access and disk abuse
 	expectedFilename := filepath.Base(targetConfig.ISO)
 	if isoFilename != expectedFilename {
 		http.Error(w, fmt.Sprintf("invalid ISO filename: expected %s", expectedFilename), http.StatusBadRequest)
 		return
 	}
 
-	// Get DiskImage name for file paths (may differ from target name)
+	// Get DiskImage name for file paths (may differ from target name when DiskImageRef is set)
 	diskImageName := targetConfig.DiskImageName(target)
 
 	// Check if ISO exists (downloaded by controller)
