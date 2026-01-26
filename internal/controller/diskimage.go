@@ -229,11 +229,16 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	}
 	defer headResp.Body.Close()
 
-	// Only use Content-Length if HEAD succeeded (2xx response)
+	// Check HEAD response status
 	var expectedSize int64
 	if headResp.StatusCode >= 200 && headResp.StatusCode < 300 {
 		expectedSize = headResp.ContentLength
+	} else if headResp.StatusCode >= 400 {
+		// Fail immediately on client/server errors
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("HEAD request returned %d for %s", headResp.StatusCode, fileURL)
 	} else {
+		// 3xx redirects - proceed without Content-Length
 		log.Printf("Controller: HEAD request for %s returned %d, will not use Content-Length", fileURL, headResp.StatusCode)
 	}
 
@@ -459,21 +464,31 @@ func parseChecksumFile(r io.Reader) map[string]string {
 			continue
 		}
 
-		// Format: "hash  filename" or "hash *filename"
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			hash := parts[0]
-			lastPart := parts[len(parts)-1]
-			filename := strings.TrimPrefix(lastPart, "*")
-			filename = strings.TrimPrefix(filename, "./")
-			result[filename] = hash
-			// Also store base filename for simpler lookups. First entry wins if
-			// multiple paths share the same base filename (e.g., dir1/file.iso
-			// and dir2/file.iso). Callers should prefer full path lookups.
-			base := filepath.Base(filename)
-			if _, exists := result[base]; !exists {
-				result[base] = hash
-			}
+		// Format: "hash  filename" (text mode) or "hash *filename" (binary mode)
+		// Use strings.Index to correctly handle filenames containing spaces
+		var hash, filename string
+		if i := strings.Index(line, "  "); i != -1 {
+			// Text mode: "hash  filename"
+			hash = line[:i]
+			filename = strings.TrimSpace(line[i+2:])
+		} else if i := strings.Index(line, " *"); i != -1 {
+			// Binary mode: "hash *filename"
+			hash = line[:i]
+			filename = strings.TrimSpace(line[i+2:])
+		} else {
+			continue
+		}
+
+		filename = strings.TrimPrefix(filename, "./")
+		result[filename] = hash
+		// Also store base filename for simpler lookups. First entry wins if
+		// multiple paths share the same base filename (e.g., dir1/file.iso
+		// and dir2/file.iso). Callers should prefer full path lookups.
+		base := filepath.Base(filename)
+		if _, exists := result[base]; !exists {
+			result[base] = hash
+		} else {
+			log.Printf("Controller: duplicate base filename %q in checksum file, keeping first entry", base)
 		}
 	}
 
