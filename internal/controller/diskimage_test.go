@@ -402,7 +402,7 @@ func TestDownloadAndVerify(t *testing.T) {
 
 	t.Run("handles connection error", func(t *testing.T) {
 		destPath := filepath.Join(tmpDir, "connfail.iso")
-		result, err := ctrl.downloadAndVerify(context.Background(), "http://localhost:99999/test.iso", destPath)
+		result, err := ctrl.downloadAndVerify(context.Background(), "http://localhost:65534/test.iso", destPath)
 
 		if err == nil {
 			t.Error("expected error for connection failure")

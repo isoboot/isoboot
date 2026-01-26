@@ -424,17 +424,18 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 			}
 
 			resp, err := http.DefaultClient.Do(req)
-			cancel()
 			if err != nil || resp.StatusCode != http.StatusOK {
 				if resp != nil {
 					resp.Body.Close()
 				}
+				cancel()
 				continue
 			}
 
 			// Parse checksum file
 			parsed := parseChecksumFile(resp.Body)
 			resp.Body.Close()
+			cancel()
 
 			if len(parsed) > 0 {
 				if checksums[cf.hashType] == nil {
