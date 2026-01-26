@@ -261,7 +261,7 @@ func TestParseDeploy_WithNewFields(t *testing.T) {
 		t.Errorf("MachineRef = %q, want %q", result.Spec.MachineRef, "vm125")
 	}
 	if result.Spec.BootTargetRef != "debian-13" {
-		t.Errorf("Target = %q, want %q", result.Spec.BootTargetRef, "debian-13")
+		t.Errorf("BootTargetRef = %q, want %q", result.Spec.BootTargetRef, "debian-13")
 	}
 	if result.Spec.ResponseTemplateRef != "debian-preseed" {
 		t.Errorf("ResponseTemplateRef = %q, want %q", result.Spec.ResponseTemplateRef, "debian-preseed")

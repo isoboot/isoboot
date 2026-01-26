@@ -532,7 +532,10 @@ func (c *Client) ListDiskImages(ctx context.Context) ([]*DiskImage, error) {
 	return diskImages, nil
 }
 
-// UpdateDiskImageStatus updates the status of a DiskImage
+// UpdateDiskImageStatus updates the status of a DiskImage.
+// Note: This performs a full replacement of the status subresource.
+// Callers should provide the complete desired status; any fields not
+// included (e.g., ISO/Firmware set to nil) will be cleared.
 func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status *DiskImageStatus) error {
 	if status == nil {
 		return fmt.Errorf("status cannot be nil")
