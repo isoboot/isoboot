@@ -644,8 +644,8 @@ func TestRelativePathFromChecksumURL(t *testing.T) {
 
 func TestLookupChecksumByRelativePath(t *testing.T) {
 	checksums := map[string]string{
-		"mini.iso":              "hash1",
-		"netboot/mini.iso":      "hash2",
+		"mini.iso":               "hash1",
+		"netboot/mini.iso":       "hash2",
 		"./netboot/gtk/mini.iso": "hash3",
 	}
 
@@ -690,6 +690,30 @@ func TestLookupChecksumByRelativePath(t *testing.T) {
 			}
 		})
 	}
+
+	// Tests for basename fallback when checksum file only has base filenames
+	t.Run("basename fallback - unique match", func(t *testing.T) {
+		// Checksum file only lists base filename, file is in subdirectory
+		cs := map[string]string{
+			"installer.iso": "uniquehash",
+		}
+		hash, ok := lookupChecksumByRelativePath(cs, "subdir/installer.iso")
+		if !ok || hash != "uniquehash" {
+			t.Errorf("expected basename fallback to match, got (%q, %v)", hash, ok)
+		}
+	})
+
+	t.Run("basename fallback - ambiguous", func(t *testing.T) {
+		// Multiple entries with same basename - should not match
+		cs := map[string]string{
+			"a/file.iso": "hash_a",
+			"b/file.iso": "hash_b",
+		}
+		hash, ok := lookupChecksumByRelativePath(cs, "c/file.iso")
+		if ok {
+			t.Errorf("expected no match for ambiguous basename, got (%q, %v)", hash, ok)
+		}
+	})
 }
 
 func TestFormatHashMismatch(t *testing.T) {

@@ -584,6 +584,8 @@ func relativePathFromChecksumURL(checksumURL, fileURL string) string {
 
 // lookupChecksumByRelativePath looks up a hash by the exact relative path.
 // Tries both "path" and "./path" forms since checksum files use both conventions.
+// Falls back to basename matching if the checksum file only lists base filenames
+// and there's exactly one match (no ambiguity).
 // Returns (hash, true) if found, ("", false) otherwise.
 func lookupChecksumByRelativePath(checksums map[string]string, relativePath string) (string, bool) {
 	// Try exact path first
@@ -593,6 +595,24 @@ func lookupChecksumByRelativePath(checksums map[string]string, relativePath stri
 	// Try with ./ prefix
 	if hash, ok := checksums["./"+relativePath]; ok {
 		return hash, true
+	}
+
+	// Fallback: some checksum files only list base filenames.
+	// If exactly one entry matches the basename, use it.
+	basename := path.Base(relativePath)
+	var matchedHash string
+	var matchCount int
+	for p, h := range checksums {
+		if path.Base(p) == basename {
+			matchedHash = h
+			matchCount++
+			if matchCount > 1 {
+				break // Ambiguous, stop searching
+			}
+		}
+	}
+	if matchCount == 1 {
+		return matchedHash, true
 	}
 	return "", false
 }
