@@ -112,11 +112,46 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 	// Use background context for status updates so they succeed even if download times out
 	statusCtx := context.Background()
 
-	// Update status to Downloading
+	// Validate isoBasePath is set
+	if c.isoBasePath == "" {
+		status := &k8s.DiskImageStatus{
+			Phase:   "Failed",
+			Message: "Controller isoBasePath not configured",
+		}
+		if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
+			log.Printf("Controller: failed to update DiskImage %s to Failed: %v", di.Name, updateErr)
+		}
+		return
+	}
+
+	// Check if ISO file already exists to show appropriate status
+	isoFilename, err := filenameFromURL(di.ISO)
+	if err != nil {
+		status := &k8s.DiskImageStatus{
+			Phase:   "Failed",
+			Message: fmt.Sprintf("Invalid ISO URL: %v", err),
+		}
+		if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
+			log.Printf("Controller: failed to update DiskImage %s to Failed: %v", di.Name, updateErr)
+		}
+		return
+	}
+	isoPath := filepath.Join(c.isoBasePath, di.Name, isoFilename)
+
+	// Determine initial status based on whether file exists
+	var initialPhase, initialMessage string
+	if _, err := os.Stat(isoPath); err == nil {
+		initialPhase = "Verifying"
+		initialMessage = "Verifying existing files"
+	} else {
+		initialPhase = "Downloading"
+		initialMessage = "Starting download"
+	}
+
 	status := &k8s.DiskImageStatus{
-		Phase:    "Downloading",
+		Phase:    initialPhase,
 		Progress: 0,
-		Message:  "Starting download",
+		Message:  initialMessage,
 		ISO: &k8s.DiskImageVerification{
 			FileSizeMatch: "processing",
 			DigestSha256:  "pending",
@@ -131,31 +166,10 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 		}
 	}
 	if err := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); err != nil {
-		log.Printf("Controller: failed to update DiskImage %s to Downloading: %v", di.Name, err)
+		log.Printf("Controller: failed to update DiskImage %s to %s: %v", di.Name, initialPhase, err)
 		return
 	}
 
-	// Validate isoBasePath is set
-	if c.isoBasePath == "" {
-		status.Phase = "Failed"
-		status.Message = "Controller isoBasePath not configured"
-		if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
-			log.Printf("Controller: failed to update DiskImage %s to Failed: %v", di.Name, updateErr)
-		}
-		return
-	}
-
-	// Download ISO
-	isoFilename, err := filenameFromURL(di.ISO)
-	if err != nil {
-		status.Phase = "Failed"
-		status.Message = fmt.Sprintf("Invalid ISO URL: %v", err)
-		if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
-			log.Printf("Controller: failed to update DiskImage %s to Failed: %v", di.Name, updateErr)
-		}
-		return
-	}
-	isoPath := filepath.Join(c.isoBasePath, di.Name, isoFilename)
 	isoResult, err := c.downloadAndVerify(downloadCtx, di.ISO, isoPath)
 	if err != nil {
 		status.Phase = "Failed"
