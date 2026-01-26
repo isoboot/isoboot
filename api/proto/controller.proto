@@ -4,15 +4,15 @@ package isoboot.controller.v1;
 
 option go_package = "github.com/isoboot/isoboot/api/controllerpb";
 
-// ControllerService handles deploy lifecycle and template management
+// ControllerService handles provision lifecycle and template management
 service ControllerService {
-  // GetPendingBoot returns boot info for a MAC with pending deploy
+  // GetPendingBoot returns boot info for a MAC with pending provision
   rpc GetPendingBoot(GetPendingBootRequest) returns (GetPendingBootResponse);
 
-  // MarkBootStarted marks a deploy as InProgress
+  // MarkBootStarted marks a provision as InProgress
   rpc MarkBootStarted(MarkBootStartedRequest) returns (MarkBootStartedResponse);
 
-  // MarkBootCompleted marks a deploy as Complete
+  // MarkBootCompleted marks a provision as Complete
   rpc MarkBootCompleted(MarkBootCompletedRequest) returns (MarkBootCompletedResponse);
 
   // GetTemplate retrieves a boot template from ConfigMap
@@ -24,7 +24,7 @@ service ControllerService {
   // GetResponseTemplate retrieves a ResponseTemplate by name
   rpc GetResponseTemplate(GetResponseTemplateRequest) returns (GetResponseTemplateResponse);
 
-  // GetRenderedTemplate renders a template file for a deploy
+  // GetRenderedTemplate renders a template file for a provision
   rpc GetRenderedTemplate(GetRenderedTemplateRequest) returns (GetRenderedTemplateResponse);
 }
 
@@ -35,7 +35,7 @@ message GetPendingBootRequest {
 message GetPendingBootResponse {
   bool found = 1;
   string machine_name = 2;
-  string deploy_name = 3;
+  string provision_name = 3;
   string target = 4;
 }
 

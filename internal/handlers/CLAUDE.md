@@ -6,8 +6,8 @@ HTTP handlers for isoboot-http server.
 
 ### BootHandler (boot.go)
 - `GET /boot/boot.ipxe` - Initial iPXE script (chains to conditional-boot)
-- `GET /boot/conditional-boot?mac=xx-xx-xx-xx-xx-xx` - Returns BootTarget template if Deploy exists, 404 otherwise
-- `GET /boot/done?id={machineName}` - Marks Deploy as completed (call from preseed late_command)
+- `GET /boot/conditional-boot?mac=xx-xx-xx-xx-xx-xx` - Returns BootTarget template if Provision exists, 404 otherwise
+- `GET /boot/done?id={machineName}` - Marks Provision as completed (call from preseed late_command)
 
 Template variables: Host, Port, MachineName, Hostname, Domain, BootTarget
 
@@ -21,7 +21,7 @@ Template variables: Host, Port, MachineName, Hostname, Domain, BootTarget
 ## Error Handling
 
 - 400 Bad Request - Missing required parameters
-- 404 Not Found - Resource not found (Deploy, Machine, file)
+- 404 Not Found - Resource not found (Provision, Machine, file)
 - 502 Bad Gateway - gRPC/controller communication error
 - Always set `Content-Length` header (iPXE requirement)
 

@@ -17,7 +17,7 @@ const (
 	inProgressTimeout = 30 * time.Minute
 )
 
-// Controller watches Deploy CRDs and manages their lifecycle
+// Controller watches Provision CRDs and manages their lifecycle
 type Controller struct {
 	k8sClient          *k8s.Client
 	stopCh             chan struct{}
@@ -81,78 +81,78 @@ func (c *Controller) reconcile() {
 	// Reconcile DiskImages first (downloads)
 	c.reconcileDiskImages(ctx)
 
-	// Then reconcile Deploys
-	deploys, err := c.k8sClient.ListDeploys(ctx)
+	// Then reconcile Provisions
+	provisions, err := c.k8sClient.ListProvisions(ctx)
 	if err != nil {
-		log.Printf("Controller: failed to list deploys: %v", err)
+		log.Printf("Controller: failed to list provisions: %v", err)
 		return
 	}
 
-	for _, deploy := range deploys {
-		c.reconcileDeploy(ctx, deploy)
+	for _, provision := range provisions {
+		c.reconcileProvision(ctx, provision)
 	}
 }
 
-func (c *Controller) reconcileDeploy(ctx context.Context, deploy *k8s.Deploy) {
+func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Provision) {
 	// Validate references before any status changes
-	if err := c.validateDeployRefs(ctx, deploy); err != nil {
-		if deploy.Status.Phase != "ConfigError" || deploy.Status.Message != err.Error() {
-			log.Printf("Controller: config error for %s: %v", deploy.Name, err)
-			if updateErr := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "ConfigError", err.Error()); updateErr != nil {
-				log.Printf("Controller: failed to set ConfigError for %s: %v", deploy.Name, updateErr)
+	if err := c.validateProvisionRefs(ctx, provision); err != nil {
+		if provision.Status.Phase != "ConfigError" || provision.Status.Message != err.Error() {
+			log.Printf("Controller: config error for %s: %v", provision.Name, err)
+			if updateErr := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "ConfigError", err.Error()); updateErr != nil {
+				log.Printf("Controller: failed to set ConfigError for %s: %v", provision.Name, updateErr)
 			}
 		}
 		return
 	}
 
 	// Check if DiskImage is ready
-	diskImageReady, diskImageMsg := c.checkDiskImageReady(ctx, deploy)
+	diskImageReady, diskImageMsg := c.checkDiskImageReady(ctx, provision)
 	if !diskImageReady {
-		if deploy.Status.Phase != "WaitingForDiskImage" || deploy.Status.Message != diskImageMsg {
-			log.Printf("Controller: %s waiting for DiskImage: %s", deploy.Name, diskImageMsg)
-			if err := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "WaitingForDiskImage", diskImageMsg); err != nil {
-				log.Printf("Controller: failed to set WaitingForDiskImage for %s: %v", deploy.Name, err)
+		if provision.Status.Phase != "WaitingForDiskImage" || provision.Status.Message != diskImageMsg {
+			log.Printf("Controller: %s waiting for DiskImage: %s", provision.Name, diskImageMsg)
+			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "WaitingForDiskImage", diskImageMsg); err != nil {
+				log.Printf("Controller: failed to set WaitingForDiskImage for %s: %v", provision.Name, err)
 			}
 		}
 		return
 	}
 
 	// If previously in ConfigError or WaitingForDiskImage but now valid, reset to Pending
-	if deploy.Status.Phase == "ConfigError" || deploy.Status.Phase == "WaitingForDiskImage" {
-		log.Printf("Controller: %s now ready, setting to Pending", deploy.Name)
-		if err := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "Pending", "Ready for boot"); err != nil {
-			log.Printf("Controller: failed to reset %s to Pending: %v", deploy.Name, err)
+	if provision.Status.Phase == "ConfigError" || provision.Status.Phase == "WaitingForDiskImage" {
+		log.Printf("Controller: %s now ready, setting to Pending", provision.Name)
+		if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Pending", "Ready for boot"); err != nil {
+			log.Printf("Controller: failed to reset %s to Pending: %v", provision.Name, err)
 		}
 		return
 	}
 
 	// Initialize empty status to Pending
-	if deploy.Status.Phase == "" {
-		log.Printf("Controller: initializing %s status to Pending", deploy.Name)
-		if err := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "Pending", "Initialized by controller"); err != nil {
-			log.Printf("Controller: failed to set Pending for %s: %v", deploy.Name, err)
+	if provision.Status.Phase == "" {
+		log.Printf("Controller: initializing %s status to Pending", provision.Name)
+		if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Pending", "Initialized by controller"); err != nil {
+			log.Printf("Controller: failed to set Pending for %s: %v", provision.Name, err)
 		}
 		return
 	}
 
-	// Timeout InProgress deploys
-	if deploy.Status.Phase == "InProgress" && !deploy.Status.LastUpdated.IsZero() {
-		age := time.Since(deploy.Status.LastUpdated)
+	// Timeout InProgress provisions
+	if provision.Status.Phase == "InProgress" && !provision.Status.LastUpdated.IsZero() {
+		age := time.Since(provision.Status.LastUpdated)
 		if age > inProgressTimeout {
-			log.Printf("Controller: timing out %s (InProgress for %s)", deploy.Name, age)
-			if err := c.k8sClient.UpdateDeployStatus(ctx, deploy.Name, "Failed", "Timed out waiting for completion"); err != nil {
-				log.Printf("Controller: failed to set Failed for %s: %v", deploy.Name, err)
+			log.Printf("Controller: timing out %s (InProgress for %s)", provision.Name, age)
+			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Failed", "Timed out waiting for completion"); err != nil {
+				log.Printf("Controller: failed to set Failed for %s: %v", provision.Name, err)
 			}
 		}
 	}
 }
 
-// checkDiskImageReady checks if the DiskImage for this Deploy is ready
-func (c *Controller) checkDiskImageReady(ctx context.Context, deploy *k8s.Deploy) (bool, string) {
+// checkDiskImageReady checks if the DiskImage for this Provision is ready
+func (c *Controller) checkDiskImageReady(ctx context.Context, provision *k8s.Provision) (bool, string) {
 	// Get BootTarget to find DiskImage reference
-	bootTarget, err := c.k8sClient.GetBootTarget(ctx, deploy.Spec.BootTargetRef)
+	bootTarget, err := c.k8sClient.GetBootTarget(ctx, provision.Spec.BootTargetRef)
 	if err != nil {
-		return false, fmt.Sprintf("BootTarget '%s' not found", deploy.Spec.BootTargetRef)
+		return false, fmt.Sprintf("BootTarget '%s' not found", provision.Spec.BootTargetRef)
 	}
 
 	// Get DiskImage
@@ -178,34 +178,34 @@ func checkDiskImageStatus(diskImage *k8s.DiskImage) (bool, string) {
 	}
 }
 
-// validateDeployRefs checks that all referenced resources exist
-func (c *Controller) validateDeployRefs(ctx context.Context, deploy *k8s.Deploy) error {
+// validateProvisionRefs checks that all referenced resources exist
+func (c *Controller) validateProvisionRefs(ctx context.Context, provision *k8s.Provision) error {
 	// Validate machineRef
-	if _, err := c.k8sClient.GetMachine(ctx, deploy.Spec.MachineRef); err != nil {
-		return fmt.Errorf("Machine '%s' not found", deploy.Spec.MachineRef)
+	if _, err := c.k8sClient.GetMachine(ctx, provision.Spec.MachineRef); err != nil {
+		return fmt.Errorf("Machine '%s' not found", provision.Spec.MachineRef)
 	}
 
 	// Validate bootTargetRef (BootTarget)
-	if _, err := c.k8sClient.GetBootTarget(ctx, deploy.Spec.BootTargetRef); err != nil {
-		return fmt.Errorf("BootTarget '%s' not found", deploy.Spec.BootTargetRef)
+	if _, err := c.k8sClient.GetBootTarget(ctx, provision.Spec.BootTargetRef); err != nil {
+		return fmt.Errorf("BootTarget '%s' not found", provision.Spec.BootTargetRef)
 	}
 
 	// Validate responseTemplateRef
-	if deploy.Spec.ResponseTemplateRef != "" {
-		if _, err := c.k8sClient.GetResponseTemplate(ctx, deploy.Spec.ResponseTemplateRef); err != nil {
-			return fmt.Errorf("ResponseTemplate '%s' not found", deploy.Spec.ResponseTemplateRef)
+	if provision.Spec.ResponseTemplateRef != "" {
+		if _, err := c.k8sClient.GetResponseTemplate(ctx, provision.Spec.ResponseTemplateRef); err != nil {
+			return fmt.Errorf("ResponseTemplate '%s' not found", provision.Spec.ResponseTemplateRef)
 		}
 	}
 
 	// Validate configMaps
-	for _, cm := range deploy.Spec.ConfigMaps {
+	for _, cm := range provision.Spec.ConfigMaps {
 		if _, err := c.k8sClient.GetConfigMap(ctx, cm); err != nil {
 			return fmt.Errorf("ConfigMap '%s' not found", cm)
 		}
 	}
 
 	// Validate secrets
-	for _, secret := range deploy.Spec.Secrets {
+	for _, secret := range provision.Spec.Secrets {
 		if _, err := c.k8sClient.GetSecret(ctx, secret); err != nil {
 			return fmt.Errorf("Secret '%s' not found", secret)
 		}
@@ -215,12 +215,12 @@ func (c *Controller) validateDeployRefs(ctx context.Context, deploy *k8s.Deploy)
 }
 
 // RenderTemplate renders a template with merged values from ConfigMaps and Secrets
-func (c *Controller) RenderTemplate(ctx context.Context, deploy *k8s.Deploy, templateContent string) (string, error) {
+func (c *Controller) RenderTemplate(ctx context.Context, provision *k8s.Provision, templateContent string) (string, error) {
 	// Build template data by merging ConfigMaps, then Secrets
 	data := make(map[string]interface{})
 
 	// Merge ConfigMaps in order
-	for _, cmName := range deploy.Spec.ConfigMaps {
+	for _, cmName := range provision.Spec.ConfigMaps {
 		cm, err := c.k8sClient.GetConfigMap(ctx, cmName)
 		if err != nil {
 			return "", fmt.Errorf("ConfigMap '%s' not found", cmName)
@@ -231,7 +231,7 @@ func (c *Controller) RenderTemplate(ctx context.Context, deploy *k8s.Deploy, tem
 	}
 
 	// Merge Secrets in order (override ConfigMaps)
-	for _, secretName := range deploy.Spec.Secrets {
+	for _, secretName := range provision.Spec.Secrets {
 		secret, err := c.k8sClient.GetSecret(ctx, secretName)
 		if err != nil {
 			return "", fmt.Errorf("Secret '%s' not found", secretName)
@@ -244,8 +244,8 @@ func (c *Controller) RenderTemplate(ctx context.Context, deploy *k8s.Deploy, tem
 	// Add system variables
 	data["Host"] = c.host
 	data["Port"] = c.port
-	data["Hostname"] = deploy.Spec.MachineRef
-	data["Target"] = deploy.Spec.BootTargetRef
+	data["Hostname"] = provision.Spec.MachineRef
+	data["Target"] = provision.Spec.BootTargetRef
 
 	// Parse and execute template
 	tmpl, err := template.New("response").Option("missingkey=error").Parse(templateContent)

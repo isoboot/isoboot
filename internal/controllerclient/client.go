@@ -15,9 +15,9 @@ var ErrNotFound = errors.New("not found")
 
 // BootInfo returned by controller
 type BootInfo struct {
-	MachineName string
-	DeployName  string
-	Target      string
+	MachineName   string
+	ProvisionName string
+	Target        string
 }
 
 // Client communicates with the isoboot-controller via gRPC
@@ -48,7 +48,7 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-// GetPendingBoot returns boot info for a MAC with pending deploy, or nil if none
+// GetPendingBoot returns boot info for a MAC with pending provision, or nil if none
 func (c *Client) GetPendingBoot(ctx context.Context, mac string) (*BootInfo, error) {
 	resp, err := c.client.GetPendingBoot(ctx, &pb.GetPendingBootRequest{Mac: mac})
 	if err != nil {
@@ -60,13 +60,13 @@ func (c *Client) GetPendingBoot(ctx context.Context, mac string) (*BootInfo, err
 	}
 
 	return &BootInfo{
-		MachineName: resp.MachineName,
-		DeployName:  resp.DeployName,
-		Target:      resp.Target,
+		MachineName:   resp.MachineName,
+		ProvisionName: resp.ProvisionName,
+		Target:        resp.Target,
 	}, nil
 }
 
-// MarkBootStarted marks a deploy as InProgress
+// MarkBootStarted marks a provision as InProgress
 func (c *Client) MarkBootStarted(ctx context.Context, mac string) error {
 	resp, err := c.client.MarkBootStarted(ctx, &pb.MarkBootStartedRequest{Mac: mac})
 	if err != nil {
@@ -80,7 +80,7 @@ func (c *Client) MarkBootStarted(ctx context.Context, mac string) error {
 	return nil
 }
 
-// MarkBootCompleted marks a deploy as Complete (by hostname)
+// MarkBootCompleted marks a provision as Complete (by hostname)
 func (c *Client) MarkBootCompleted(ctx context.Context, hostname string) error {
 	resp, err := c.client.MarkBootCompleted(ctx, &pb.MarkBootCompletedRequest{Hostname: hostname})
 	if err != nil {
@@ -136,7 +136,7 @@ func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInf
 	}, nil
 }
 
-// GetRenderedTemplate retrieves a rendered template file for a deploy
+// GetRenderedTemplate retrieves a rendered template file for a provision
 func (c *Client) GetRenderedTemplate(ctx context.Context, hostname, filename string) (string, error) {
 	resp, err := c.client.GetRenderedTemplate(ctx, &pb.GetRenderedTemplateRequest{
 		Hostname: hostname,

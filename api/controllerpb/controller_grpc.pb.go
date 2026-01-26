@@ -17,11 +17,11 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ControllerServiceClient interface {
-	// GetPendingBoot returns boot info for a MAC with pending deploy
+	// GetPendingBoot returns boot info for a MAC with pending provision
 	GetPendingBoot(ctx context.Context, in *GetPendingBootRequest, opts ...grpc.CallOption) (*GetPendingBootResponse, error)
-	// MarkBootStarted marks a deploy as InProgress
+	// MarkBootStarted marks a provision as InProgress
 	MarkBootStarted(ctx context.Context, in *MarkBootStartedRequest, opts ...grpc.CallOption) (*MarkBootStartedResponse, error)
-	// MarkBootCompleted marks a deploy as Complete
+	// MarkBootCompleted marks a provision as Complete
 	MarkBootCompleted(ctx context.Context, in *MarkBootCompletedRequest, opts ...grpc.CallOption) (*MarkBootCompletedResponse, error)
 	// GetTemplate retrieves a boot template from ConfigMap
 	GetTemplate(ctx context.Context, in *GetTemplateRequest, opts ...grpc.CallOption) (*GetTemplateResponse, error)
@@ -29,7 +29,7 @@ type ControllerServiceClient interface {
 	GetBootTarget(ctx context.Context, in *GetBootTargetRequest, opts ...grpc.CallOption) (*GetBootTargetResponse, error)
 	// GetResponseTemplate retrieves a ResponseTemplate by name
 	GetResponseTemplate(ctx context.Context, in *GetResponseTemplateRequest, opts ...grpc.CallOption) (*GetResponseTemplateResponse, error)
-	// GetRenderedTemplate renders a template file for a deploy
+	// GetRenderedTemplate renders a template file for a provision
 	GetRenderedTemplate(ctx context.Context, in *GetRenderedTemplateRequest, opts ...grpc.CallOption) (*GetRenderedTemplateResponse, error)
 }
 
@@ -108,11 +108,11 @@ func (c *controllerServiceClient) GetRenderedTemplate(ctx context.Context, in *G
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility
 type ControllerServiceServer interface {
-	// GetPendingBoot returns boot info for a MAC with pending deploy
+	// GetPendingBoot returns boot info for a MAC with pending provision
 	GetPendingBoot(context.Context, *GetPendingBootRequest) (*GetPendingBootResponse, error)
-	// MarkBootStarted marks a deploy as InProgress
+	// MarkBootStarted marks a provision as InProgress
 	MarkBootStarted(context.Context, *MarkBootStartedRequest) (*MarkBootStartedResponse, error)
-	// MarkBootCompleted marks a deploy as Complete
+	// MarkBootCompleted marks a provision as Complete
 	MarkBootCompleted(context.Context, *MarkBootCompletedRequest) (*MarkBootCompletedResponse, error)
 	// GetTemplate retrieves a boot template from ConfigMap
 	GetTemplate(context.Context, *GetTemplateRequest) (*GetTemplateResponse, error)
@@ -120,7 +120,7 @@ type ControllerServiceServer interface {
 	GetBootTarget(context.Context, *GetBootTargetRequest) (*GetBootTargetResponse, error)
 	// GetResponseTemplate retrieves a ResponseTemplate by name
 	GetResponseTemplate(context.Context, *GetResponseTemplateRequest) (*GetResponseTemplateResponse, error)
-	// GetRenderedTemplate renders a template file for a deploy
+	// GetRenderedTemplate renders a template file for a provision
 	GetRenderedTemplate(context.Context, *GetRenderedTemplateRequest) (*GetRenderedTemplateResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }

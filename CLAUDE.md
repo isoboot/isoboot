@@ -6,7 +6,7 @@ Go code repository for isoboot controller and HTTP server.
 
 This repo works alongside `isoboot-chart` (Helm chart with CRDs). Together they provide PXE boot infrastructure on Kubernetes.
 
-**Workflow**: Machine PXE boots → dnsmasq responds → iPXE loads → fetches boot script from isoboot-http → installer runs → fetches answer files from /answer/{hostname}/{filename} → completes via /api/deploy/{hostname}/complete
+**Workflow**: Machine PXE boots → dnsmasq responds → iPXE loads → fetches boot script from isoboot-http → installer runs → fetches answer files from /answer/{hostname}/{filename} → completes via /boot/done?id={machineName}
 
 ## Git Conventions
 
@@ -51,7 +51,7 @@ if err != nil {
 
 Available variables in ResponseTemplate (preseed/answer files):
 - `.Machine.metadata.name`, `.Machine.spec.mac`, etc.
-- `.Deploy.metadata.name`, `.Deploy.spec.target`, etc.
+- `.Provision.metadata.name`, `.Provision.spec.target`, etc.
 - `.ConfigMap.key` - values from referenced ConfigMaps
 - `.Secret.key` - values from referenced Secrets
 

@@ -92,9 +92,9 @@ func TestRenderTemplate_BasicVariables(t *testing.T) {
 		port: "8080",
 	}
 
-	deploy := &k8s.Deploy{
-		Name: "test-deploy",
-		Spec: k8s.DeploySpec{
+	provision := &k8s.Provision{
+		Name: "test-provision",
+		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm125",
 			BootTargetRef: "debian-13",
 		},
@@ -106,7 +106,7 @@ Hostname: {{ .Hostname }}
 BootTargetRef: {{ .Target }}`
 
 	ctx := context.Background()
-	result, err := ctrl.RenderTemplate(ctx, deploy, templateContent)
+	result, err := ctrl.RenderTemplate(ctx, provision, templateContent)
 	if err != nil {
 		t.Fatalf("RenderTemplate failed: %v", err)
 	}
@@ -127,9 +127,9 @@ func TestRenderTemplate_MissingKey(t *testing.T) {
 		port: "8080",
 	}
 
-	deploy := &k8s.Deploy{
-		Name: "test-deploy",
-		Spec: k8s.DeploySpec{
+	provision := &k8s.Provision{
+		Name: "test-provision",
+		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm125",
 			BootTargetRef: "debian-13",
 		},
@@ -139,7 +139,7 @@ func TestRenderTemplate_MissingKey(t *testing.T) {
 	templateContent := `Value: {{ .UndefinedVar }}`
 
 	ctx := context.Background()
-	_, err := ctrl.RenderTemplate(ctx, deploy, templateContent)
+	_, err := ctrl.RenderTemplate(ctx, provision, templateContent)
 	if err == nil {
 		t.Error("Expected error for missing key, got nil")
 	}
@@ -151,9 +151,9 @@ func TestRenderTemplate_InvalidSyntax(t *testing.T) {
 		port: "8080",
 	}
 
-	deploy := &k8s.Deploy{
-		Name: "test-deploy",
-		Spec: k8s.DeploySpec{
+	provision := &k8s.Provision{
+		Name: "test-provision",
+		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm125",
 			BootTargetRef: "debian-13",
 		},
@@ -163,7 +163,7 @@ func TestRenderTemplate_InvalidSyntax(t *testing.T) {
 	templateContent := `{{ .Host `
 
 	ctx := context.Background()
-	_, err := ctrl.RenderTemplate(ctx, deploy, templateContent)
+	_, err := ctrl.RenderTemplate(ctx, provision, templateContent)
 	if err == nil {
 		t.Error("Expected error for invalid syntax, got nil")
 	}
@@ -175,9 +175,9 @@ func TestRenderTemplate_PreseedExample(t *testing.T) {
 		port: "8080",
 	}
 
-	deploy := &k8s.Deploy{
-		Name: "test-deploy",
-		Spec: k8s.DeploySpec{
+	provision := &k8s.Provision{
+		Name: "test-provision",
+		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm125",
 			BootTargetRef: "debian-13",
 		},
@@ -188,7 +188,7 @@ d-i netcfg/get_hostname string {{ .Hostname }}
 d-i preseed/late_command string curl http://{{ .Host }}:{{ .Port }}/api/deploy/{{ .Hostname }}/complete -X POST`
 
 	ctx := context.Background()
-	result, err := ctrl.RenderTemplate(ctx, deploy, templateContent)
+	result, err := ctrl.RenderTemplate(ctx, provision, templateContent)
 	if err != nil {
 		t.Fatalf("RenderTemplate failed: %v", err)
 	}

@@ -22,10 +22,10 @@ var (
 		Version:  "v1alpha1",
 		Resource: "machines",
 	}
-	deployGVR = schema.GroupVersionResource{
+	provisionGVR = schema.GroupVersionResource{
 		Group:    "isoboot.io",
 		Version:  "v1alpha1",
-		Resource: "deploys",
+		Resource: "provisions",
 	}
 	diskImageGVR = schema.GroupVersionResource{
 		Group:    "isoboot.io",
@@ -50,14 +50,14 @@ type Machine struct {
 	MAC  string
 }
 
-// Deploy represents a Deploy CRD
-type Deploy struct {
+// Provision represents a Provision CRD
+type Provision struct {
 	Name   string
-	Spec   DeploySpec
-	Status DeployStatus
+	Spec   ProvisionSpec
+	Status ProvisionStatus
 }
 
-type DeploySpec struct {
+type ProvisionSpec struct {
 	MachineRef          string
 	BootTargetRef       string
 	ResponseTemplateRef string
@@ -65,7 +65,7 @@ type DeploySpec struct {
 	Secrets             []string
 }
 
-type DeployStatus struct {
+type ProvisionStatus struct {
 	Phase       string
 	Message     string
 	LastUpdated time.Time
@@ -294,38 +294,38 @@ func (c *Client) GetSecret(ctx context.Context, name string) (*corev1.Secret, er
 	return c.clientset.CoreV1().Secrets(c.namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
-// GetDeploy retrieves a Deploy by name
-func (c *Client) GetDeploy(ctx context.Context, name string) (*Deploy, error) {
-	obj, err := c.dynamicClient.Resource(deployGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
+// GetProvision retrieves a Provision by name
+func (c *Client) GetProvision(ctx context.Context, name string) (*Provision, error) {
+	obj, err := c.dynamicClient.Resource(provisionGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	return parseDeploy(obj)
+	return parseProvision(obj)
 }
 
-// ListDeploys lists all Deploys
-func (c *Client) ListDeploys(ctx context.Context) ([]*Deploy, error) {
-	list, err := c.dynamicClient.Resource(deployGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
+// ListProvisions lists all Provisions
+func (c *Client) ListProvisions(ctx context.Context) ([]*Provision, error) {
+	list, err := c.dynamicClient.Resource(provisionGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	var deploys []*Deploy
+	var provisions []*Provision
 	for _, item := range list.Items {
-		d, err := parseDeploy(&item)
+		p, err := parseProvision(&item)
 		if err != nil {
 			continue
 		}
-		deploys = append(deploys, d)
+		provisions = append(provisions, p)
 	}
-	return deploys, nil
+	return provisions, nil
 }
 
-func parseDeploy(obj *unstructured.Unstructured) (*Deploy, error) {
+func parseProvision(obj *unstructured.Unstructured) (*Provision, error) {
 	spec, ok := obj.Object["spec"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid deploy spec")
+		return nil, fmt.Errorf("invalid provision spec")
 	}
 
 	// Support both bootTargetRef (new) and target (legacy) for backward compatibility
@@ -334,9 +334,9 @@ func parseDeploy(obj *unstructured.Unstructured) (*Deploy, error) {
 		bootTargetRef = getString(spec, "target")
 	}
 
-	deploy := &Deploy{
+	provision := &Provision{
 		Name: obj.GetName(),
-		Spec: DeploySpec{
+		Spec: ProvisionSpec{
 			MachineRef:          getString(spec, "machineRef"),
 			BootTargetRef:       bootTargetRef,
 			ResponseTemplateRef: getString(spec, "responseTemplateRef"),
@@ -346,13 +346,13 @@ func parseDeploy(obj *unstructured.Unstructured) (*Deploy, error) {
 	}
 
 	if status, ok := obj.Object["status"].(map[string]interface{}); ok {
-		deploy.Status = DeployStatus{
+		provision.Status = ProvisionStatus{
 			Phase:   getString(status, "phase"),
 			Message: getString(status, "message"),
 		}
 	}
 
-	return deploy, nil
+	return provision, nil
 }
 
 func getString(m map[string]interface{}, key string) string {
@@ -413,10 +413,10 @@ func normalizeMAC(mac string) string {
 	return strings.ToLower(mac)
 }
 
-// FindDeployByMAC finds a Deploy that references a Machine with the given MAC address
+// FindProvisionByMAC finds a Provision that references a Machine with the given MAC address
 // MAC must be dash-separated (e.g., aa-bb-cc-dd-ee-ff)
 // phase filters by status phase (empty string matches any phase)
-func (c *Client) FindDeployByMAC(ctx context.Context, mac string, phase string) (*Deploy, error) {
+func (c *Client) FindProvisionByMAC(ctx context.Context, mac string, phase string) (*Provision, error) {
 	normalizedMAC := normalizeMAC(mac)
 	if normalizedMAC == "" {
 		return nil, nil // Invalid MAC format (contains colons)
@@ -442,66 +442,66 @@ func (c *Client) FindDeployByMAC(ctx context.Context, mac string, phase string) 
 		return nil, nil // No machine with this MAC
 	}
 
-	// Find deploy referencing this machine with matching phase
-	deploys, err := c.ListDeploys(ctx)
+	// Find provision referencing this machine with matching phase
+	provisions, err := c.ListProvisions(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list deploys: %w", err)
+		return nil, fmt.Errorf("list provisions: %w", err)
 	}
 
-	for _, d := range deploys {
-		if d.Spec.MachineRef == machineName {
+	for _, p := range provisions {
+		if p.Spec.MachineRef == machineName {
 			// Filter by phase if specified
 			if phase != "" {
 				// Empty status.phase is treated as "Pending"
-				deployPhase := d.Status.Phase
-				if deployPhase == "" {
-					deployPhase = "Pending"
+				provisionPhase := p.Status.Phase
+				if provisionPhase == "" {
+					provisionPhase = "Pending"
 				}
-				if deployPhase != phase {
+				if provisionPhase != phase {
 					continue
 				}
 			}
-			return d, nil
+			return p, nil
 		}
 	}
 
-	return nil, nil // No matching deploy for this machine
+	return nil, nil // No matching provision for this machine
 }
 
-// FindDeployByHostname finds a Deploy that references the given hostname (machine name)
+// FindProvisionByHostname finds a Provision that references the given hostname (machine name)
 // phase filters by status phase (empty string matches any phase)
-func (c *Client) FindDeployByHostname(ctx context.Context, hostname string, phase string) (*Deploy, error) {
-	// Find deploy referencing this machine (hostname = machine name) with matching phase
-	deploys, err := c.ListDeploys(ctx)
+func (c *Client) FindProvisionByHostname(ctx context.Context, hostname string, phase string) (*Provision, error) {
+	// Find provision referencing this machine (hostname = machine name) with matching phase
+	provisions, err := c.ListProvisions(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list deploys: %w", err)
+		return nil, fmt.Errorf("list provisions: %w", err)
 	}
 
-	for _, d := range deploys {
-		if d.Spec.MachineRef == hostname {
+	for _, p := range provisions {
+		if p.Spec.MachineRef == hostname {
 			// Filter by phase if specified
 			if phase != "" {
 				// Empty status.phase is treated as "Pending"
-				deployPhase := d.Status.Phase
-				if deployPhase == "" {
-					deployPhase = "Pending"
+				provisionPhase := p.Status.Phase
+				if provisionPhase == "" {
+					provisionPhase = "Pending"
 				}
-				if deployPhase != phase {
+				if provisionPhase != phase {
 					continue
 				}
 			}
-			return d, nil
+			return p, nil
 		}
 	}
 
-	return nil, nil // No matching deploy for this hostname
+	return nil, nil // No matching provision for this hostname
 }
 
-// UpdateDeployStatus updates the status of a Deploy
-func (c *Client) UpdateDeployStatus(ctx context.Context, name, phase, message string) error {
-	obj, err := c.dynamicClient.Resource(deployGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
+// UpdateProvisionStatus updates the status of a Provision
+func (c *Client) UpdateProvisionStatus(ctx context.Context, name, phase, message string) error {
+	obj, err := c.dynamicClient.Resource(provisionGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("get deploy: %w", err)
+		return fmt.Errorf("get provision: %w", err)
 	}
 
 	status := map[string]interface{}{
@@ -511,7 +511,7 @@ func (c *Client) UpdateDeployStatus(ctx context.Context, name, phase, message st
 	}
 	obj.Object["status"] = status
 
-	_, err = c.dynamicClient.Resource(deployGVR).Namespace(c.namespace).UpdateStatus(ctx, obj, metav1.UpdateOptions{})
+	_, err = c.dynamicClient.Resource(provisionGVR).Namespace(c.namespace).UpdateStatus(ctx, obj, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
