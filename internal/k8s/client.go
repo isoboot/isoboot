@@ -90,8 +90,8 @@ type DiskImageStatus struct {
 // DiskImageVerification represents verification status for a file
 type DiskImageVerification struct {
 	FileSizeMatch string // pending, processing, verified, failed
-	DigestSha512  string // pending, processing, verified, failed, not_found
 	DigestSha256  string // pending, processing, verified, failed, not_found
+	DigestSha512  string // pending, processing, verified, failed, not_found
 	DigestMd5     string // pending, processing, verified, failed, not_found
 }
 
@@ -221,16 +221,16 @@ func parseDiskImage(obj *unstructured.Unstructured) (*DiskImage, error) {
 		if isoStatus, ok := status["iso"].(map[string]interface{}); ok {
 			di.Status.ISO = &DiskImageVerification{
 				FileSizeMatch: getString(isoStatus, "fileSizeMatch"),
-				DigestSha512:  getString(isoStatus, "digestSha512"),
 				DigestSha256:  getString(isoStatus, "digestSha256"),
+				DigestSha512:  getString(isoStatus, "digestSha512"),
 				DigestMd5:     getString(isoStatus, "digestMd5"),
 			}
 		}
 		if fwStatus, ok := status["firmware"].(map[string]interface{}); ok {
 			di.Status.Firmware = &DiskImageVerification{
 				FileSizeMatch: getString(fwStatus, "fileSizeMatch"),
-				DigestSha512:  getString(fwStatus, "digestSha512"),
 				DigestSha256:  getString(fwStatus, "digestSha256"),
+				DigestSha512:  getString(fwStatus, "digestSha512"),
 				DigestMd5:     getString(fwStatus, "digestMd5"),
 			}
 		}
@@ -555,8 +555,8 @@ func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status 
 	if status.ISO != nil {
 		statusMap["iso"] = map[string]interface{}{
 			"fileSizeMatch": status.ISO.FileSizeMatch,
-			"digestSha512":  status.ISO.DigestSha512,
 			"digestSha256":  status.ISO.DigestSha256,
+			"digestSha512":  status.ISO.DigestSha512,
 			"digestMd5":     status.ISO.DigestMd5,
 		}
 	}
@@ -564,8 +564,8 @@ func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status 
 	if status.Firmware != nil {
 		statusMap["firmware"] = map[string]interface{}{
 			"fileSizeMatch": status.Firmware.FileSizeMatch,
-			"digestSha512":  status.Firmware.DigestSha512,
 			"digestSha256":  status.Firmware.DigestSha256,
+			"digestSha512":  status.Firmware.DigestSha512,
 			"digestMd5":     status.Firmware.DigestMd5,
 		}
 	}
