@@ -120,13 +120,25 @@ func (cw *ConfigWatcher) GetTarget(name string) (TargetConfig, bool) {
 	return t, ok
 }
 
+// safePathSegment normalizes a value so it can be safely used as a single
+// directory component in a path. It strips any leading path elements and
+// rejects special values that could lead to directory traversal.
+func safePathSegment(name string) string {
+	base := filepath.Base(name)
+	if base == "." || base == ".." {
+		return ""
+	}
+	return base
+}
+
 // DiskImageName returns the DiskImage name to use for file paths
 // If DiskImageRef is set, use it; otherwise default to target name
+// The return value is sanitized to prevent directory traversal attacks
 func (t TargetConfig) DiskImageName(targetName string) string {
 	if t.DiskImageRef != "" {
-		return t.DiskImageRef
+		return safePathSegment(t.DiskImageRef)
 	}
-	return targetName
+	return safePathSegment(targetName)
 }
 
 // ISOPathWithFilename returns the path to the ISO file with explicit filename

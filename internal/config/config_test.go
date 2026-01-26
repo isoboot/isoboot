@@ -149,3 +149,64 @@ func TestFirmwarePath(t *testing.T) {
 		t.Errorf("Expected %s, got %s", expected, path)
 	}
 }
+
+func TestDiskImageName(t *testing.T) {
+	tests := []struct {
+		name       string
+		config     TargetConfig
+		targetName string
+		expected   string
+	}{
+		{
+			name:       "uses DiskImageRef when set",
+			config:     TargetConfig{DiskImageRef: "shared-debian"},
+			targetName: "debian-13",
+			expected:   "shared-debian",
+		},
+		{
+			name:       "falls back to target name when DiskImageRef empty",
+			config:     TargetConfig{},
+			targetName: "debian-13",
+			expected:   "debian-13",
+		},
+		{
+			name:       "sanitizes path traversal in DiskImageRef",
+			config:     TargetConfig{DiskImageRef: "../../../etc/passwd"},
+			targetName: "debian-13",
+			expected:   "passwd",
+		},
+		{
+			name:       "sanitizes path traversal in target name",
+			config:     TargetConfig{},
+			targetName: "../../../etc/passwd",
+			expected:   "passwd",
+		},
+		{
+			name:       "rejects dot-dot as DiskImageRef",
+			config:     TargetConfig{DiskImageRef: ".."},
+			targetName: "debian-13",
+			expected:   "",
+		},
+		{
+			name:       "rejects single dot as DiskImageRef",
+			config:     TargetConfig{DiskImageRef: "."},
+			targetName: "debian-13",
+			expected:   "",
+		},
+		{
+			name:       "strips leading slashes from DiskImageRef",
+			config:     TargetConfig{DiskImageRef: "/absolute/path/image"},
+			targetName: "debian-13",
+			expected:   "image",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.config.DiskImageName(tt.targetName)
+			if result != tt.expected {
+				t.Errorf("DiskImageName(%q) = %q, want %q", tt.targetName, result, tt.expected)
+			}
+		})
+	}
+}
