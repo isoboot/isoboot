@@ -209,7 +209,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	}
 
 	// Create parent directory with restricted permissions
-	if err := os.MkdirAll(filepath.Dir(destPath), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create directory: %w", err)
 	}
