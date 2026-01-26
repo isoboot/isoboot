@@ -173,7 +173,7 @@ func TestVerifyExistingFile(t *testing.T) {
 	// Create a test file with known content
 	testContent := []byte("test file content for verification")
 	testFile := filepath.Join(tmpDir, "test.iso")
-	if err := os.WriteFile(testFile, testContent, 0600); err != nil {
+	if err := os.WriteFile(testFile, testContent, 0o600); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 

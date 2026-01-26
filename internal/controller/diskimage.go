@@ -20,8 +20,8 @@ import (
 	"github.com/isoboot/isoboot/internal/k8s"
 )
 
-// downloadRequestTimeout is the timeout for individual HTTP download requests.
-const downloadRequestTimeout = 30 * time.Minute
+// downloadRequestTimeout is the timeout for the entire download operation.
+const downloadRequestTimeout = 15 * time.Minute
 
 // checksumDiscoveryTimeout is the timeout for fetching checksum files.
 const checksumDiscoveryTimeout = 30 * time.Second
@@ -78,6 +78,7 @@ func (c *Controller) reconcileDiskImage(ctx context.Context, di *k8s.DiskImage) 
 		if _, alreadyRunning := c.activeDownloads.LoadOrStore(di.Name, true); alreadyRunning {
 			return
 		}
+		// Pass parent context so downloads can be cancelled during shutdown
 		go c.downloadDiskImage(ctx, di)
 	}
 }
@@ -337,8 +338,10 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 	}
 
 	// If no checksums discovered, size match alone is sufficient (skip expensive hashing)
+	// If no checksums available, size-only verification is less secure but still useful
+	// for detecting incomplete downloads. Log a warning for visibility.
 	if len(checksums) == 0 {
-		log.Printf("Controller: existing file %s size verified (no checksums available)", filename)
+		log.Printf("Controller: WARNING: existing file %s verified by size only (no checksums available)", filename)
 		return &k8s.DiskImageVerification{
 			FileSizeMatch: "verified",
 			DigestSha256:  "not_found",
