@@ -526,7 +526,7 @@ func (c *Client) ListDiskImages(ctx context.Context) ([]*DiskImage, error) {
 	for _, item := range list.Items {
 		di, err := parseDiskImage(&item)
 		if err != nil {
-			log.Printf("k8s: failed to parse DiskImage %s: %v", item.GetName(), err)
+			log.Printf("k8s: failed to parse DiskImage %s (skipping): %v", item.GetName(), err)
 			continue
 		}
 		diskImages = append(diskImages, di)
