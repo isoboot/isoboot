@@ -175,6 +175,36 @@ func TestDiskImageName(t *testing.T) {
 			targetName: "default-target",
 			expected:   "custom-image",
 		},
+		{
+			name:       "prevents path traversal with ..",
+			config:     TargetConfig{DiskImageRef: "../../../etc/passwd"},
+			targetName: "debian-13",
+			expected:   "passwd",
+		},
+		{
+			name:       "prevents path traversal with absolute path",
+			config:     TargetConfig{DiskImageRef: "/etc/passwd"},
+			targetName: "debian-13",
+			expected:   "passwd",
+		},
+		{
+			name:       "prevents path traversal in target name",
+			config:     TargetConfig{},
+			targetName: "../../../etc/shadow",
+			expected:   "shadow",
+		},
+		{
+			name:       "returns empty for lone ..",
+			config:     TargetConfig{DiskImageRef: ".."},
+			targetName: "debian-13",
+			expected:   "",
+		},
+		{
+			name:       "returns empty for lone .",
+			config:     TargetConfig{DiskImageRef: "."},
+			targetName: "debian-13",
+			expected:   "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -184,5 +214,54 @@ func TestDiskImageName(t *testing.T) {
 				t.Errorf("DiskImageName(%q) = %q, want %q", tt.targetName, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestDiskImageRef_YAMLUnmarshal(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "config-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	configContent := `targets:
+  debian-13:
+    iso: "https://example.com/debian.iso"
+    diskImageRef: "shared-debian-image"
+  ubuntu-24:
+    iso: "https://example.com/ubuntu.iso"
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	cw, err := NewConfigWatcher(configPath)
+	if err != nil {
+		t.Fatalf("Failed to create config watcher: %v", err)
+	}
+
+	// Test that diskImageRef is properly unmarshaled
+	debianTarget, ok := cw.GetTarget("debian-13")
+	if !ok {
+		t.Fatal("Expected debian-13 target")
+	}
+	if debianTarget.DiskImageRef != "shared-debian-image" {
+		t.Errorf("DiskImageRef = %q, want %q", debianTarget.DiskImageRef, "shared-debian-image")
+	}
+	if debianTarget.DiskImageName("debian-13") != "shared-debian-image" {
+		t.Errorf("DiskImageName() = %q, want %q", debianTarget.DiskImageName("debian-13"), "shared-debian-image")
+	}
+
+	// Test that missing diskImageRef falls back to target name
+	ubuntuTarget, ok := cw.GetTarget("ubuntu-24")
+	if !ok {
+		t.Fatal("Expected ubuntu-24 target")
+	}
+	if ubuntuTarget.DiskImageRef != "" {
+		t.Errorf("DiskImageRef = %q, want empty", ubuntuTarget.DiskImageRef)
+	}
+	if ubuntuTarget.DiskImageName("ubuntu-24") != "ubuntu-24" {
+		t.Errorf("DiskImageName() = %q, want %q", ubuntuTarget.DiskImageName("ubuntu-24"), "ubuntu-24")
 	}
 }
