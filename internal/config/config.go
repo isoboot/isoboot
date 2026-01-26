@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,8 +11,9 @@ import (
 )
 
 type TargetConfig struct {
-	ISO      string `json:"iso" yaml:"iso"`
-	Firmware string `json:"firmware,omitempty" yaml:"firmware,omitempty"`
+	ISO          string `json:"iso" yaml:"iso"`
+	Firmware     string `json:"firmware,omitempty" yaml:"firmware,omitempty"`
+	DiskImageRef string `json:"diskImageRef,omitempty" yaml:"diskImageRef,omitempty"`
 }
 
 type Config struct {
@@ -119,17 +121,76 @@ func (cw *ConfigWatcher) GetTarget(name string) (TargetConfig, bool) {
 	return t, ok
 }
 
-// ISOPathWithFilename returns the path to the ISO file with explicit filename
-func ISOPathWithFilename(basePath, target, filename string) string {
-	return filepath.Join(basePath, target, filename)
+// safePathSegment normalizes a value so it can be safely used as a single
+// directory component in a path. It strips any leading path elements and
+// rejects special values that could lead to directory traversal or null byte
+// injection.
+func safePathSegment(name string) string {
+	// Reject strings containing null bytes (potential null byte injection)
+	if strings.Contains(name, "\x00") {
+		return ""
+	}
+	base := filepath.Base(name)
+	if base == "." || base == ".." {
+		return ""
+	}
+	return base
 }
 
-// FirmwarePath returns the path to the firmware file for a target
-func FirmwarePath(basePath, target string) string {
-	return filepath.Join(basePath, target, "firmware", "firmware.cpio.gz")
+// safeDiskImageDir returns a sanitized disk image directory name, falling back
+// to "default" if the name is empty or invalid. This prevents path collapsing
+// when used with filepath.Join.
+func safeDiskImageDir(name string) string {
+	if sanitized := safePathSegment(name); sanitized != "" {
+		return sanitized
+	}
+	return "default"
 }
 
-// InitrdOrigPath returns the path to the original initrd extracted from ISO
-func InitrdOrigPath(basePath, target string) string {
-	return filepath.Join(basePath, target, "initrd.gz.orig")
+// safeFilename returns a sanitized filename, falling back to "file" if the
+// name is empty or invalid. This prevents path collapsing when used with
+// filepath.Join.
+func safeFilename(name string) string {
+	if sanitized := safePathSegment(name); sanitized != "" {
+		return sanitized
+	}
+	return "file"
+}
+
+// DiskImageName returns the DiskImage name to use for file paths.
+// If DiskImageRef is set, use it; otherwise default to target name.
+// The result is sanitized to prevent path traversal attacks and will never be empty.
+func (t TargetConfig) DiskImageName(targetName string) string {
+	if t.DiskImageRef != "" {
+		if name := safePathSegment(t.DiskImageRef); name != "" {
+			return name
+		}
+	}
+
+	if name := safePathSegment(targetName); name != "" {
+		return name
+	}
+
+	// Final fallback to avoid collapsing directory structure when both
+	// DiskImageRef and targetName are invalid (e.g., "." or "..").
+	return "default"
+}
+
+// ISOPathWithFilename returns the path to the ISO file with explicit filename.
+// Both diskImageName and filename are sanitized to prevent path traversal and
+// will never be empty.
+func ISOPathWithFilename(basePath, diskImageName, filename string) string {
+	return filepath.Join(basePath, safeDiskImageDir(diskImageName), safeFilename(filename))
+}
+
+// FirmwarePath returns the path to the firmware file for a DiskImage.
+// The diskImageName is sanitized to prevent path traversal and will never be empty.
+func FirmwarePath(basePath, diskImageName string) string {
+	return filepath.Join(basePath, safeDiskImageDir(diskImageName), "firmware", "firmware.cpio.gz")
+}
+
+// InitrdOrigPath returns the path to the original initrd extracted from ISO.
+// The diskImageName is sanitized to prevent path traversal and will never be empty.
+func InitrdOrigPath(basePath, diskImageName string) string {
+	return filepath.Join(basePath, safeDiskImageDir(diskImageName), "initrd.gz.orig")
 }
