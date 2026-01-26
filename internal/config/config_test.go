@@ -238,7 +238,7 @@ func TestDiskImageName(t *testing.T) {
 		},
 		{
 			name:       "falls back to target name for lone ..",
-			config:     TargetConfig{DiskImageRef: ".."},
+			config:     TargetConfig{DiskImageRef: ".."}, // safePathSegment("..") returns "", triggering fallback
 			targetName: "debian-13",
 			expected:   "debian-13",
 		},
@@ -334,9 +334,9 @@ func TestPathFunctions_WithMaliciousDiskImageRef(t *testing.T) {
 		},
 		{
 			name:         "null byte injection in DiskImageRef",
-			diskImageRef: "valid\x00malicious", // \x00 is a null byte to test injection protection
+			diskImageRef: "valid\x00malicious", // \x00 is a null byte; safePathSegment detects it and returns ""
 			targetName:   "debian-13",
-			wantDir:      "debian-13", // falls back to target name
+			wantDir:      "debian-13", // DiskImageName sees the rejected segment and falls back to target name
 		},
 		{
 			name:         "lone .. in DiskImageRef",
