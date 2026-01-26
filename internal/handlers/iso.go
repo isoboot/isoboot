@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -65,8 +66,12 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// This gRPC call is made per-request, consistent with other handlers (boot, answer).
 	bootTarget, err := h.controllerClient.GetBootTarget(r.Context(), target)
 	if err != nil {
-		log.Printf("iso: failed to get BootTarget %s: %v", target, err)
-		http.Error(w, "failed to resolve boot target", http.StatusBadGateway)
+		if errors.Is(err, controllerclient.ErrNotFound) {
+			http.Error(w, fmt.Sprintf("boot target not found: %s", target), http.StatusNotFound)
+		} else {
+			log.Printf("iso: failed to get BootTarget %s: %v", target, err)
+			http.Error(w, "failed to resolve boot target", http.StatusBadGateway)
+		}
 		return
 	}
 
@@ -86,16 +91,9 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this path should have firmware merged.
 	// Firmware is only merged when includeFirmwarePath is explicitly set.
-	if bootTarget.IncludeFirmwarePath != "" {
-		firmwarePath := bootTarget.IncludeFirmwarePath
-		if !strings.HasPrefix(firmwarePath, "/") {
-			firmwarePath = "/" + firmwarePath
-		}
-		requestPath := "/" + filePath
-		if requestPath == firmwarePath {
-			h.serveFileWithFirmware(w, r, diskImageDir, isoFilename, filePath, targetConfig)
-			return
-		}
+	if shouldMergeFirmware(filePath, bootTarget.IncludeFirmwarePath) {
+		h.serveFileWithFirmware(w, r, diskImageDir, isoFilename, filePath, targetConfig)
+		return
 	}
 
 	// Serve from ISO
@@ -245,6 +243,21 @@ func (h *ISOHandler) serveFileWithFirmware(w http.ResponseWriter, r *http.Reques
 			}
 		}
 	}
+}
+
+// shouldMergeFirmware returns true if the requested file path matches the
+// configured includeFirmwarePath. Both paths are normalized with a leading slash.
+// Returns false if includeFirmwarePath is empty (firmware merging disabled).
+func shouldMergeFirmware(requestedFile, includeFirmwarePath string) bool {
+	if includeFirmwarePath == "" {
+		return false
+	}
+	// Normalize both paths to have leading slash
+	if !strings.HasPrefix(includeFirmwarePath, "/") {
+		includeFirmwarePath = "/" + includeFirmwarePath
+	}
+	requestPath := "/" + requestedFile
+	return requestPath == includeFirmwarePath
 }
 
 // RegisterRoutes registers ISO-related routes

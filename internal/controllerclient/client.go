@@ -2,12 +2,16 @@ package controllerclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// ErrNotFound is returned when a requested resource does not exist
+var ErrNotFound = errors.New("not found")
 
 // BootInfo returned by controller
 type BootInfo struct {
@@ -122,7 +126,7 @@ func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInf
 	}
 
 	if !resp.Found {
-		return nil, fmt.Errorf("boottarget not found: %s", name)
+		return nil, fmt.Errorf("boottarget %s: %w", name, ErrNotFound)
 	}
 
 	return &BootTargetInfo{
