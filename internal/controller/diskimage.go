@@ -401,16 +401,27 @@ func parseChecksumFile(r io.Reader) map[string]string {
 			continue
 		}
 
-		// Format: "hash  filename" or "hash *filename"
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			hash := parts[0]
-			filename := strings.TrimPrefix(parts[len(parts)-1], "*")
-			filename = strings.TrimPrefix(filename, "./")
-			result[filename] = hash
-			// Also store with path variations
-			result[filepath.Base(filename)] = hash
+		// Format: "hash  filename" (text mode) or "hash *filename" (binary mode)
+		var hash, filename string
+
+		if i := strings.Index(line, "  "); i != -1 {
+			// Text mode: "hash  filename"
+			hash = strings.TrimSpace(line[:i])
+			filename = strings.TrimSpace(line[i+2:])
+		} else if i := strings.Index(line, " *"); i != -1 {
+			// Binary mode: "hash *filename"
+			hash = strings.TrimSpace(line[:i])
+			filename = strings.TrimSpace(line[i+2:])
 		}
+
+		if hash == "" || filename == "" {
+			continue
+		}
+
+		filename = strings.TrimPrefix(filename, "./")
+		result[filename] = hash
+		// Also store with path variations
+		result[filepath.Base(filename)] = hash
 	}
 
 	return result
