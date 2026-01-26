@@ -49,9 +49,19 @@ if err != nil {
 }
 ```
 
-Available variables:
-- From ConfigMaps/Secrets: any key-value pairs
-- System vars: `Host`, `Port`, `Hostname`, `Target`
+Available variables in ResponseTemplate (preseed/answer files):
+- `.Machine.metadata.name`, `.Machine.spec.mac`, etc.
+- `.Deploy.metadata.name`, `.Deploy.spec.target`, etc.
+- `.ConfigMap.key` - values from referenced ConfigMaps
+- `.Secret.key` - values from referenced Secrets
+
+Available variables in BootTarget (iPXE scripts):
+- `.Host` - HTTP server host IP
+- `.Port` - HTTP server port
+- `.MachineName` - full machine name (e.g., "vm-01.lan")
+- `.Hostname` - first part before dot (e.g., "vm-01")
+- `.Domain` - everything after first dot (e.g., "lan")
+- `.BootTarget` - BootTarget resource name
 
 ### Error Handling in HTTP Handlers
 - Return 502 Bad Gateway for gRPC/transport errors

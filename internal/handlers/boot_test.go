@@ -126,3 +126,28 @@ func TestTemplateRendering(t *testing.T) {
 		t.Error("Expected hostname in output")
 	}
 }
+
+func TestSplitHostDomain(t *testing.T) {
+	tests := []struct {
+		name         string
+		wantHostname string
+		wantDomain   string
+	}{
+		{"abc.lan", "abc", "lan"},
+		{"web.example.com", "web", "example.com"},
+		{"server01", "server01", ""},
+		{"vm-deb-0099.internal.example.com", "vm-deb-0099", "internal.example.com"},
+		{"", "", ""},
+		{".domain", "", "domain"},
+	}
+
+	for _, tt := range tests {
+		hostname, domain := splitHostDomain(tt.name)
+		if hostname != tt.wantHostname {
+			t.Errorf("splitHostDomain(%q) hostname = %q, want %q", tt.name, hostname, tt.wantHostname)
+		}
+		if domain != tt.wantDomain {
+			t.Errorf("splitHostDomain(%q) domain = %q, want %q", tt.name, domain, tt.wantDomain)
+		}
+	}
+}
