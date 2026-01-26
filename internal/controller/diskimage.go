@@ -281,7 +281,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 
 	// Create temp file with restricted permissions
 	tmpPath := destPath + ".tmp"
-	tmpFile, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create temp file: %w", err)
@@ -452,8 +452,12 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 	return checksums
 }
 
-// parseChecksumFile parses a checksum file (SHA256SUMS format)
-// Returns an empty map if there's a scanner error (e.g., line too long, I/O error)
+// parseChecksumFile parses a checksum file (SHA256SUMS format).
+// Returns a map of filename to hash. Both full paths and base filenames are stored
+// as keys for flexible lookups. When multiple entries share the same base filename
+// (e.g., "dir1/file.iso" and "dir2/file.iso"), the first entry's hash is used for
+// the base filename key. Callers should prefer full path lookups when available.
+// Returns an empty map if there's a scanner error (e.g., line too long, I/O error).
 func parseChecksumFile(r io.Reader) map[string]string {
 	result := make(map[string]string)
 	scanner := bufio.NewScanner(r)
@@ -492,8 +496,9 @@ func parseChecksumFile(r io.Reader) map[string]string {
 		}
 	}
 
-	// If scanner encountered an error, return empty result to avoid partial data
-	if scanner.Err() != nil {
+	// If scanner encountered an error, log it and return empty result to avoid partial data
+	if err := scanner.Err(); err != nil {
+		log.Printf("Controller: error scanning checksum file: %v", err)
 		return make(map[string]string)
 	}
 
