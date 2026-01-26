@@ -257,8 +257,8 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		DigestSha512:  "pending",
 	}
 
-	// Create parent directory with restricted permissions
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
+	// Create parent directory with readable permissions for HTTP server
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create directory: %w", err)
 	}
@@ -319,9 +319,9 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		return result, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	// Create temp file with restricted permissions
+	// Create temp file with readable permissions for HTTP server
 	tmpPath := destPath + ".tmp"
-	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create temp file: %w", err)
