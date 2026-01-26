@@ -334,7 +334,7 @@ func TestPathFunctions_WithMaliciousDiskImageRef(t *testing.T) {
 		},
 		{
 			name:         "null byte injection in DiskImageRef",
-			diskImageRef: "valid\x00malicious",
+			diskImageRef: "valid\x00malicious", // \x00 is a null byte to test injection protection
 			targetName:   "debian-13",
 			wantDir:      "debian-13", // falls back to target name
 		},
