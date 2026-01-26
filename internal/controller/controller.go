@@ -130,9 +130,9 @@ func (c *Controller) validateDeployRefs(ctx context.Context, deploy *k8s.Deploy)
 		return fmt.Errorf("Machine '%s' not found", deploy.Spec.MachineRef)
 	}
 
-	// Validate target (BootTarget)
-	if _, err := c.k8sClient.GetBootTarget(ctx, deploy.Spec.Target); err != nil {
-		return fmt.Errorf("BootTarget '%s' not found", deploy.Spec.Target)
+	// Validate bootTargetRef (BootTarget)
+	if _, err := c.k8sClient.GetBootTarget(ctx, deploy.Spec.BootTargetRef); err != nil {
+		return fmt.Errorf("BootTarget '%s' not found", deploy.Spec.BootTargetRef)
 	}
 
 	// Validate responseTemplateRef
@@ -190,7 +190,7 @@ func (c *Controller) RenderTemplate(ctx context.Context, deploy *k8s.Deploy, tem
 	data["Host"] = c.host
 	data["Port"] = c.port
 	data["Hostname"] = deploy.Spec.MachineRef
-	data["Target"] = deploy.Spec.Target
+	data["Target"] = deploy.Spec.BootTargetRef
 
 	// Parse and execute template
 	tmpl, err := template.New("response").Option("missingkey=error").Parse(templateContent)
