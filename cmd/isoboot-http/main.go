@@ -92,7 +92,7 @@ func main() {
 	bootHandler.RegisterRoutes(mux)
 
 	// ISO content handlers
-	isoHandler := handlers.NewISOHandler(isoPath, configWatcher)
+	isoHandler := handlers.NewISOHandler(isoPath, configWatcher, ctrlClient)
 	isoHandler.RegisterRoutes(mux)
 
 	// Answer file handlers
