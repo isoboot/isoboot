@@ -352,12 +352,19 @@ func (c *Controller) discoverChecksums(fileURL string) map[string]map[string]str
 		{"MD5SUMS", "md5"},
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-
 	for _, dir := range dirs {
 		for _, cf := range checksumFiles {
 			checksumURL := fmt.Sprintf("%s://%s%s/%s", u.Scheme, u.Host, dir, cf.name)
-			resp, err := client.Get(checksumURL)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, checksumURL, nil)
+			if err != nil {
+				cancel()
+				continue
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			cancel()
 			if err != nil || resp.StatusCode != http.StatusOK {
 				if resp != nil {
 					resp.Body.Close()
