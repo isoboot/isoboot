@@ -12,7 +12,7 @@ service ControllerService {
   // MarkBootStarted marks a deploy as InProgress
   rpc MarkBootStarted(MarkBootStartedRequest) returns (MarkBootStartedResponse);
 
-  // MarkBootCompleted marks a deploy as Completed
+  // MarkBootCompleted marks a deploy as Complete
   rpc MarkBootCompleted(MarkBootCompletedRequest) returns (MarkBootCompletedResponse);
 
   // GetTemplate retrieves a boot template from ConfigMap

@@ -21,7 +21,7 @@ type ControllerServiceClient interface {
 	GetPendingBoot(ctx context.Context, in *GetPendingBootRequest, opts ...grpc.CallOption) (*GetPendingBootResponse, error)
 	// MarkBootStarted marks a deploy as InProgress
 	MarkBootStarted(ctx context.Context, in *MarkBootStartedRequest, opts ...grpc.CallOption) (*MarkBootStartedResponse, error)
-	// MarkBootCompleted marks a deploy as Completed
+	// MarkBootCompleted marks a deploy as Complete
 	MarkBootCompleted(ctx context.Context, in *MarkBootCompletedRequest, opts ...grpc.CallOption) (*MarkBootCompletedResponse, error)
 	// GetTemplate retrieves a boot template from ConfigMap
 	GetTemplate(ctx context.Context, in *GetTemplateRequest, opts ...grpc.CallOption) (*GetTemplateResponse, error)
@@ -112,7 +112,7 @@ type ControllerServiceServer interface {
 	GetPendingBoot(context.Context, *GetPendingBootRequest) (*GetPendingBootResponse, error)
 	// MarkBootStarted marks a deploy as InProgress
 	MarkBootStarted(context.Context, *MarkBootStartedRequest) (*MarkBootStartedResponse, error)
-	// MarkBootCompleted marks a deploy as Completed
+	// MarkBootCompleted marks a deploy as Complete
 	MarkBootCompleted(context.Context, *MarkBootCompletedRequest) (*MarkBootCompletedResponse, error)
 	// GetTemplate retrieves a boot template from ConfigMap
 	GetTemplate(context.Context, *GetTemplateRequest) (*GetTemplateResponse, error)
