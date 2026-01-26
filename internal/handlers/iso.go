@@ -50,7 +50,8 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate ISO filename matches config to prevent path traversal
+	// Validate requested ISO filename matches the configured ISO filename to prevent
+	// serving unauthorized ISO files within the ISO directory and potential disk abuse
 	expectedFilename := filepath.Base(targetConfig.ISO)
 	if isoFilename != expectedFilename {
 		http.Error(w, fmt.Sprintf("invalid ISO filename: expected %s", expectedFilename), http.StatusBadRequest)
@@ -128,7 +129,7 @@ func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Requ
 	// Check if firmware exists (downloaded by controller)
 	hasFirmware := false
 	if targetConfig.Firmware != "" {
-		if _, err := os.Stat(firmwarePath); err == nil {
+		if _, err := os.Stat(firmwarePath); !os.IsNotExist(err) {
 			hasFirmware = true
 		}
 	}
