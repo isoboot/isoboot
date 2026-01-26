@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -74,18 +75,24 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get BootTarget to check for includeFirmwarePath
+	// Get BootTarget to check for includeFirmwarePath.
+	// This gRPC call is made per-request, consistent with other handlers (boot, answer).
 	bootTarget, err := h.controllerClient.GetBootTarget(r.Context(), target)
 	if err != nil {
-		// Fall back to serving plain file if BootTarget lookup fails
+		log.Printf("iso: failed to get BootTarget %s, serving plain file: %v", target, err)
 		h.serveFileFromISO(w, isoPath, filePath)
 		return
 	}
 
-	// Check if this path matches includeFirmwarePath (with or without leading slash)
+	// Normalize paths for comparison: ensure both have leading slash
 	requestPath := "/" + filePath
-	if bootTarget.IncludeFirmwarePath != "" && requestPath == bootTarget.IncludeFirmwarePath {
-		h.serveInitrdWithFirmware(w, r, diskImageDir, isoFilename, targetConfig)
+	firmwarePath := bootTarget.IncludeFirmwarePath
+	if firmwarePath != "" && !strings.HasPrefix(firmwarePath, "/") {
+		firmwarePath = "/" + firmwarePath
+	}
+
+	if firmwarePath != "" && requestPath == firmwarePath {
+		h.serveFileWithFirmware(w, r, diskImageDir, isoFilename, filePath, targetConfig)
 		return
 	}
 
@@ -130,23 +137,23 @@ func (h *ISOHandler) serveFileFromISO(w http.ResponseWriter, isoPath, filePath s
 	}
 }
 
-// serveInitrdWithFirmware serves initrd.gz, merging with firmware if present
+// serveFileWithFirmware serves a file from the ISO, appending firmware if present.
 // Per https://wiki.debian.org/DebianInstaller/NetbootFirmware:
 // cat initrd.gz firmware.cpio.gz > combined.gz
-func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Request, diskImageDir, isoFilename string, targetConfig config.TargetConfig) {
+func (h *ISOHandler) serveFileWithFirmware(w http.ResponseWriter, r *http.Request, diskImageDir, isoFilename, filePath string, targetConfig config.TargetConfig) {
 	isoPath := config.ISOPathWithFilename(h.basePath, diskImageDir, isoFilename)
-	firmwarePath := config.FirmwarePath(h.basePath, diskImageDir)
+	firmwareFilePath := config.FirmwarePath(h.basePath, diskImageDir)
 
 	// Check if optional firmware (downloaded by the controller) exists for this disk image.
 	// If not present, hasFirmware remains false and the handler continues without firmware.
 	hasFirmware := false
 	if targetConfig.Firmware != "" {
-		if _, err := os.Stat(firmwarePath); err == nil {
+		if _, err := os.Stat(firmwareFilePath); err == nil {
 			hasFirmware = true
 		}
 	}
 
-	// Open ISO and get initrd.gz
+	// Open ISO and get the requested file
 	isoFile, err := iso.OpenISO9660(isoPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to open ISO: %v", err), http.StatusInternalServerError)
@@ -154,31 +161,31 @@ func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Requ
 	}
 	defer isoFile.Close()
 
-	initrdReader, initrdSize, err := isoFile.OpenFile("initrd.gz")
+	fileReader, fileSize, err := isoFile.OpenFile(filePath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("initrd.gz not found in ISO: %v", err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("file not found in ISO: %v", err), http.StatusNotFound)
 		return
 	}
-	defer initrdReader.Close()
+	defer fileReader.Close()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 
 	if hasFirmware {
 		// Get firmware size
-		firmwareInfo, err := os.Stat(firmwarePath)
+		firmwareInfo, err := os.Stat(firmwareFilePath)
 		if err != nil {
 			http.Error(w, "failed to stat firmware", http.StatusInternalServerError)
 			return
 		}
 
 		// Set combined content length
-		totalSize := initrdSize + firmwareInfo.Size()
+		totalSize := fileSize + firmwareInfo.Size()
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", totalSize))
 
-		// Stream initrd in chunks
+		// Stream file in chunks
 		buf := make([]byte, streamChunkSize)
 		for {
-			n, err := initrdReader.Read(buf)
+			n, err := fileReader.Read(buf)
 			if n > 0 {
 				if _, werr := w.Write(buf[:n]); werr != nil {
 					return
@@ -188,15 +195,15 @@ func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Requ
 				break
 			}
 			if err != nil {
-				fmt.Printf("Error streaming initrd: %v\n", err)
+				log.Printf("iso: error streaming file: %v", err)
 				return
 			}
 		}
 
 		// Stream firmware in chunks
-		firmwareFile, err := os.Open(firmwarePath)
+		firmwareFile, err := os.Open(firmwareFilePath)
 		if err != nil {
-			fmt.Printf("Error opening firmware: %v\n", err)
+			log.Printf("iso: error opening firmware: %v", err)
 			return
 		}
 		defer firmwareFile.Close()
@@ -212,17 +219,17 @@ func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Requ
 				break
 			}
 			if err != nil {
-				fmt.Printf("Error streaming firmware: %v\n", err)
+				log.Printf("iso: error streaming firmware: %v", err)
 				return
 			}
 		}
 	} else {
-		// No firmware, just serve initrd in chunks
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", initrdSize))
+		// No firmware, just serve file in chunks
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", fileSize))
 
 		buf := make([]byte, streamChunkSize)
 		for {
-			n, err := initrdReader.Read(buf)
+			n, err := fileReader.Read(buf)
 			if n > 0 {
 				if _, werr := w.Write(buf[:n]); werr != nil {
 					return
