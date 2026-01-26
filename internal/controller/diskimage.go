@@ -598,14 +598,43 @@ func formatHashMismatch(expected, actual string) string {
 	return "hash mismatch"
 }
 
+// urlMatchesChecksumPath checks if a URL path ends with a checksum file path.
+// E.g., URL "http://example.com/debian/dists/trixie/netboot/mini.iso"
+// matches checksum path "netboot/mini.iso" or "./netboot/mini.iso".
+func urlMatchesChecksumPath(fileURL, checksumPath string) bool {
+	u, err := url.Parse(fileURL)
+	if err != nil {
+		return false
+	}
+	urlPath := strings.TrimPrefix(u.Path, "/")
+	checksumPath = strings.TrimPrefix(checksumPath, "./")
+
+	return urlPath == checksumPath || strings.HasSuffix(urlPath, "/"+checksumPath)
+}
+
 // verifyChecksum verifies a hash against discovered checksums.
 // Returns "verified", "not_found", "multiple_matches", or "failed".
+// Uses fast path: first checks if actual hash exists in checksums (O(n) hash comparison),
+// then falls back to progressive path matching only for mismatches.
 func verifyChecksum(checksums map[string]map[string]string, hashType string, h hash.Hash, fileURL string) string {
 	typeChecksums, ok := checksums[hashType]
 	if !ok {
 		return "not_found"
 	}
 
+	actual := fmt.Sprintf("%x", h.Sum(nil))
+
+	// Fast path: check if actual hash exists in checksums
+	for path, hash := range typeChecksums {
+		if strings.EqualFold(hash, actual) {
+			// Verify URL ends with this path (security check)
+			if urlMatchesChecksumPath(fileURL, path) {
+				return "verified"
+			}
+		}
+	}
+
+	// Slow path: find expected hash by path matching to get good error message
 	expected, status := findChecksumByPath(typeChecksums, fileURL)
 	if status == "not_found" {
 		return "not_found"
@@ -613,11 +642,6 @@ func verifyChecksum(checksums map[string]map[string]string, hashType string, h h
 	if status == "multiple" {
 		log.Printf("Controller: %s multiple checksums match %s, cannot verify", hashType, fileURL)
 		return "multiple_matches"
-	}
-
-	actual := fmt.Sprintf("%x", h.Sum(nil))
-	if strings.EqualFold(actual, expected) {
-		return "verified"
 	}
 
 	log.Printf("Controller: %s checksum mismatch for %s: %s", hashType, fileURL, formatHashMismatch(expected, actual))

@@ -681,3 +681,65 @@ func TestFormatHashMismatch(t *testing.T) {
 		})
 	}
 }
+
+func TestUrlMatchesChecksumPath(t *testing.T) {
+	tests := []struct {
+		name         string
+		fileURL      string
+		checksumPath string
+		expected     bool
+	}{
+		{
+			name:         "exact match",
+			fileURL:      "http://example.com/mini.iso",
+			checksumPath: "mini.iso",
+			expected:     true,
+		},
+		{
+			name:         "suffix match",
+			fileURL:      "http://example.com/debian/dists/trixie/netboot/mini.iso",
+			checksumPath: "netboot/mini.iso",
+			expected:     true,
+		},
+		{
+			name:         "checksum path with ./",
+			fileURL:      "http://example.com/images/netboot/mini.iso",
+			checksumPath: "./netboot/mini.iso",
+			expected:     true,
+		},
+		{
+			name:         "full path match",
+			fileURL:      "http://example.com/netboot/mini.iso",
+			checksumPath: "netboot/mini.iso",
+			expected:     true,
+		},
+		{
+			name:         "no match - different filename",
+			fileURL:      "http://example.com/netboot/mini.iso",
+			checksumPath: "netboot/other.iso",
+			expected:     false,
+		},
+		{
+			name:         "no match - partial path overlap",
+			fileURL:      "http://example.com/netboot/mini.iso",
+			checksumPath: "boot/mini.iso",
+			expected:     false,
+		},
+		{
+			name:         "no match - filename substring",
+			fileURL:      "http://example.com/mini.iso",
+			checksumPath: "ini.iso",
+			expected:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := urlMatchesChecksumPath(tt.fileURL, tt.checksumPath)
+			if result != tt.expected {
+				t.Errorf("urlMatchesChecksumPath(%q, %q) = %v, want %v",
+					tt.fileURL, tt.checksumPath, result, tt.expected)
+			}
+		})
+	}
+}
