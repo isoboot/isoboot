@@ -205,19 +205,19 @@ func TestDiskImageName(t *testing.T) {
 			expected:   "custom-image",
 		},
 		{
-			name:       "prevents path traversal with ..",
+			name:       "extracts base name from path with parent directory traversal",
 			config:     TargetConfig{DiskImageRef: "../../../etc/passwd"},
 			targetName: "debian-13",
 			expected:   "passwd",
 		},
 		{
-			name:       "prevents path traversal with absolute path",
+			name:       "extracts base name from absolute path",
 			config:     TargetConfig{DiskImageRef: "/etc/passwd"},
 			targetName: "debian-13",
 			expected:   "passwd",
 		},
 		{
-			name:       "prevents path traversal in target name",
+			name:       "extracts base name from target name with parent directory traversal",
 			config:     TargetConfig{},
 			targetName: "../../../etc/shadow",
 			expected:   "shadow",
