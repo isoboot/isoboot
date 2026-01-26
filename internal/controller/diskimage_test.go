@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"crypto/md5"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -183,16 +182,11 @@ func TestVerifyExistingFile(t *testing.T) {
 	sha256Hash.Write(testContent)
 	expectedSha256 := fmt.Sprintf("%x", sha256Hash.Sum(nil))
 
-	md5Hash := md5.New()
-	md5Hash.Write(testContent)
-	expectedMd5 := fmt.Sprintf("%x", md5Hash.Sum(nil))
-
 	ctrl := &Controller{}
 
 	t.Run("valid file with matching checksums", func(t *testing.T) {
 		checksums := map[string]map[string]string{
 			"sha256": {"test.iso": expectedSha256},
-			"md5":    {"test.iso": expectedMd5},
 		}
 
 		result := ctrl.verifyExistingFile(testFile, int64(len(testContent)), checksums, "test.iso")
@@ -204,9 +198,6 @@ func TestVerifyExistingFile(t *testing.T) {
 		}
 		if result.DigestSha256 != "verified" {
 			t.Errorf("expected DigestSha256=verified, got %s", result.DigestSha256)
-		}
-		if result.DigestMd5 != "verified" {
-			t.Errorf("expected DigestMd5=verified, got %s", result.DigestMd5)
 		}
 	})
 
@@ -257,17 +248,12 @@ func TestDiscoverChecksums(t *testing.T) {
 		fmt.Fprintf(w, "abc123def456  mini.iso\n")
 	})
 
-	// MD5SUMS one level up
-	mux.HandleFunc("/MD5SUMS", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "789xyz  images/mini.iso\n")
-	})
-
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
 	ctrl := &Controller{}
 
-	t.Run("discovers checksums from multiple locations", func(t *testing.T) {
+	t.Run("discovers checksums from directory", func(t *testing.T) {
 		fileURL := server.URL + "/images/mini.iso"
 		checksums := ctrl.discoverChecksums(context.Background(), fileURL)
 
@@ -275,12 +261,6 @@ func TestDiscoverChecksums(t *testing.T) {
 			t.Error("expected sha256 checksums")
 		} else if hash, ok := sha256["mini.iso"]; !ok || hash != "abc123def456" {
 			t.Errorf("expected sha256 hash abc123def456, got %v", sha256)
-		}
-
-		if md5, ok := checksums["md5"]; !ok {
-			t.Error("expected md5 checksums")
-		} else if hash, ok := md5["mini.iso"]; !ok || hash != "789xyz" {
-			t.Errorf("expected md5 hash 789xyz, got %v", md5)
 		}
 	})
 

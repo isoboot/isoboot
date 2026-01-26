@@ -3,7 +3,6 @@ package controller
 import (
 	"bufio"
 	"context"
-	"crypto/md5"
 	"crypto/sha256"
 	"crypto/sha512"
 	"fmt"
@@ -47,17 +46,15 @@ func (c *Controller) reconcileDiskImage(ctx context.Context, di *k8s.DiskImage) 
 			Message: "Waiting for download",
 			ISO: &k8s.DiskImageVerification{
 				FileSizeMatch: "pending",
-				DigestSha512:  "pending",
 				DigestSha256:  "pending",
-				DigestMd5:     "pending",
+				DigestSha512:  "pending",
 			},
 		}
 		if di.Firmware != "" {
 			status.Firmware = &k8s.DiskImageVerification{
 				FileSizeMatch: "pending",
-				DigestSha512:  "pending",
 				DigestSha256:  "pending",
-				DigestMd5:     "pending",
+				DigestSha512:  "pending",
 			}
 		}
 		if err := c.k8sClient.UpdateDiskImageStatus(ctx, di.Name, status); err != nil {
@@ -101,17 +98,15 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 		Message:  "Starting download",
 		ISO: &k8s.DiskImageVerification{
 			FileSizeMatch: "processing",
-			DigestSha512:  "pending",
 			DigestSha256:  "pending",
-			DigestMd5:     "pending",
+			DigestSha512:  "pending",
 		},
 	}
 	if di.Firmware != "" {
 		status.Firmware = &k8s.DiskImageVerification{
 			FileSizeMatch: "pending",
-			DigestSha512:  "pending",
 			DigestSha256:  "pending",
-			DigestMd5:     "pending",
+			DigestSha512:  "pending",
 		}
 	}
 	if err := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); err != nil {
@@ -162,9 +157,8 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 		status.Message = "Downloading firmware"
 		status.Firmware = &k8s.DiskImageVerification{
 			FileSizeMatch: "processing",
-			DigestSha512:  "pending",
 			DigestSha256:  "pending",
-			DigestMd5:     "pending",
+			DigestSha512:  "pending",
 		}
 		if updateErr := c.k8sClient.UpdateDiskImageStatus(statusCtx, di.Name, status); updateErr != nil {
 			log.Printf("Controller: failed to update DiskImage %s firmware progress: %v", di.Name, updateErr)
@@ -207,9 +201,8 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath string) (*k8s.DiskImageVerification, error) {
 	result := &k8s.DiskImageVerification{
 		FileSizeMatch: "processing",
-		DigestSha512:  "pending",
 		DigestSha256:  "pending",
-		DigestMd5:     "pending",
+		DigestSha512:  "pending",
 	}
 
 	// Create parent directory
@@ -289,10 +282,9 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	defer os.Remove(tmpPath)
 
 	// Create hashers
-	sha512Hash := sha512.New()
 	sha256Hash := sha256.New()
-	md5Hash := md5.New()
-	multiWriter := io.MultiWriter(tmpFile, sha512Hash, sha256Hash, md5Hash)
+	sha512Hash := sha512.New()
+	multiWriter := io.MultiWriter(tmpFile, sha256Hash, sha512Hash)
 
 	// Download with progress
 	written, err := io.Copy(multiWriter, resp.Body)
@@ -310,12 +302,11 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	result.FileSizeMatch = "verified"
 
 	// Verify checksums
-	result.DigestSha512 = verifyChecksum(checksums, "sha512", sha512Hash, filename)
 	result.DigestSha256 = verifyChecksum(checksums, "sha256", sha256Hash, filename)
-	result.DigestMd5 = verifyChecksum(checksums, "md5", md5Hash, filename)
+	result.DigestSha512 = verifyChecksum(checksums, "sha512", sha512Hash, filename)
 
 	// If any checksum verification explicitly failed, don't persist the bad file
-	if result.DigestSha512 == "failed" || result.DigestSha256 == "failed" || result.DigestMd5 == "failed" {
+	if result.DigestSha256 == "failed" || result.DigestSha512 == "failed" {
 		return result, fmt.Errorf("checksum verification failed")
 	}
 
@@ -349,9 +340,8 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 		log.Printf("Controller: existing file %s size verified (no checksums available)", filename)
 		return &k8s.DiskImageVerification{
 			FileSizeMatch: "verified",
-			DigestSha512:  "not_found",
 			DigestSha256:  "not_found",
-			DigestMd5:     "not_found",
+			DigestSha512:  "not_found",
 		}
 	}
 
@@ -362,10 +352,9 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 	}
 	defer file.Close()
 
-	sha512Hash := sha512.New()
 	sha256Hash := sha256.New()
-	md5Hash := md5.New()
-	multiWriter := io.MultiWriter(sha512Hash, sha256Hash, md5Hash)
+	sha512Hash := sha512.New()
+	multiWriter := io.MultiWriter(sha256Hash, sha512Hash)
 
 	if _, err := io.Copy(multiWriter, file); err != nil {
 		return nil // Error reading file, need to download
@@ -374,13 +363,12 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 	// Verify checksums
 	result := &k8s.DiskImageVerification{
 		FileSizeMatch: "verified",
-		DigestSha512:  verifyChecksum(checksums, "sha512", sha512Hash, filename),
 		DigestSha256:  verifyChecksum(checksums, "sha256", sha256Hash, filename),
-		DigestMd5:     verifyChecksum(checksums, "md5", md5Hash, filename),
+		DigestSha512:  verifyChecksum(checksums, "sha512", sha512Hash, filename),
 	}
 
 	// If any checksum verification failed, need to re-download
-	if result.DigestSha512 == "failed" || result.DigestSha256 == "failed" || result.DigestMd5 == "failed" {
+	if result.DigestSha256 == "failed" || result.DigestSha512 == "failed" {
 		log.Printf("Controller: existing file %s checksum mismatch, will re-download", filename)
 		return nil
 	}
@@ -417,9 +405,8 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) map[
 		name     string
 		hashType string
 	}{
-		{"SHA512SUMS", "sha512"},
 		{"SHA256SUMS", "sha256"},
-		{"MD5SUMS", "md5"},
+		{"SHA512SUMS", "sha512"},
 	}
 
 	for _, dir := range dirs {
