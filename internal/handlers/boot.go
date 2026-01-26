@@ -33,7 +33,19 @@ type TemplateData struct {
 	Host       string
 	Port       string
 	Hostname   string
+	Domain     string
 	BootTarget string
+}
+
+// splitHostDomain splits a machine name into hostname and domain.
+// "abc.lan" -> ("abc", "lan")
+// "www.usa.gov" -> ("www", "usa.gov")
+// "server01" -> ("server01", "")
+func splitHostDomain(name string) (hostname, domain string) {
+	if idx := strings.Index(name, "."); idx != -1 {
+		return name[:idx], name[idx+1:]
+	}
+	return name, ""
 }
 
 func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.Template, error) {
@@ -121,10 +133,12 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	hostname, domain := splitHostDomain(bootInfo.MachineName)
 	data := TemplateData{
 		Host:       h.host,
 		Port:       h.port,
-		Hostname:   bootInfo.MachineName,
+		Hostname:   hostname,
+		Domain:     domain,
 		BootTarget: bootInfo.Target,
 	}
 
