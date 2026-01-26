@@ -27,10 +27,11 @@ const downloadRequestTimeout = 15 * time.Minute
 const checksumDiscoveryTimeout = 30 * time.Second
 
 // hashDisplayChars is the number of hex characters to show from the start/end
-// of a hash when displaying mismatches. Requires minHashLenForDisplay * 2 chars.
+// of a hash when displaying mismatches.
 const hashDisplayChars = 4
 
 // minHashLenForDisplay is the minimum hash length to use partial display.
+// Must be at least 2*hashDisplayChars to safely show prefix and suffix.
 // Hashes shorter than this show the full value instead.
 const minHashLenForDisplay = 8
 

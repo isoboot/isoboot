@@ -568,7 +568,7 @@ func TestFilenameFromURL(t *testing.T) {
 }
 
 func TestParseChecksumFileDuplicateBaseFilenames(t *testing.T) {
-	// Test that all full paths are stored (exact relative path matching uses these)
+	// Tests that all full paths are stored (exact relative path matching uses these)
 	input := `abc123  dir1/file.iso
 def456  dir2/file.iso
 ghi789  dir3/file.iso`
