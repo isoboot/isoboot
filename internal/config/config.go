@@ -10,8 +10,9 @@ import (
 )
 
 type TargetConfig struct {
-	ISO      string `json:"iso" yaml:"iso"`
-	Firmware string `json:"firmware,omitempty" yaml:"firmware,omitempty"`
+	ISO          string `json:"iso" yaml:"iso"`
+	Firmware     string `json:"firmware,omitempty" yaml:"firmware,omitempty"`
+	DiskImageRef string `json:"diskImageRef,omitempty" yaml:"diskImageRef,omitempty"` // DiskImage name for file paths (defaults to target name)
 }
 
 type Config struct {
@@ -119,17 +120,26 @@ func (cw *ConfigWatcher) GetTarget(name string) (TargetConfig, bool) {
 	return t, ok
 }
 
-// ISOPathWithFilename returns the path to the ISO file with explicit filename
-func ISOPathWithFilename(basePath, target, filename string) string {
-	return filepath.Join(basePath, target, filename)
+// DiskImageName returns the DiskImage name to use for file paths
+// If DiskImageRef is set, use it; otherwise default to target name
+func (t TargetConfig) DiskImageName(targetName string) string {
+	if t.DiskImageRef != "" {
+		return t.DiskImageRef
+	}
+	return targetName
 }
 
-// FirmwarePath returns the path to the firmware file for a target
-func FirmwarePath(basePath, target string) string {
-	return filepath.Join(basePath, target, "firmware", "firmware.cpio.gz")
+// ISOPathWithFilename returns the path to the ISO file with explicit filename
+func ISOPathWithFilename(basePath, diskImageName, filename string) string {
+	return filepath.Join(basePath, diskImageName, filename)
+}
+
+// FirmwarePath returns the path to the firmware file for a DiskImage
+func FirmwarePath(basePath, diskImageName string) string {
+	return filepath.Join(basePath, diskImageName, "firmware", "firmware.cpio.gz")
 }
 
 // InitrdOrigPath returns the path to the original initrd extracted from ISO
-func InitrdOrigPath(basePath, target string) string {
-	return filepath.Join(basePath, target, "initrd.gz.orig")
+func InitrdOrigPath(basePath, diskImageName string) string {
+	return filepath.Join(basePath, diskImageName, "initrd.gz.orig")
 }
