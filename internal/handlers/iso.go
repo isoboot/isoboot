@@ -57,11 +57,11 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get DiskImage name for file paths (may differ from target name when DiskImageRef is set)
-	diskImageName := targetConfig.DiskImageName(target)
+	// Get DiskImage directory name for file path construction (may differ from target name when DiskImageRef is set)
+	diskImageDir := targetConfig.DiskImageName(target)
 
 	// Check if ISO exists (downloaded by controller)
-	isoPath := config.ISOPathWithFilename(h.basePath, diskImageName, isoFilename)
+	isoPath := config.ISOPathWithFilename(h.basePath, diskImageDir, isoFilename)
 	if _, err := os.Stat(isoPath); err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "ISO file not found", http.StatusNotFound)
@@ -73,7 +73,7 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this is initrd.gz and we have firmware
 	if filePath == "initrd.gz" {
-		h.serveInitrdWithFirmware(w, r, diskImageName, isoFilename, targetConfig)
+		h.serveInitrdWithFirmware(w, r, diskImageDir, isoFilename, targetConfig)
 		return
 	}
 
@@ -121,9 +121,9 @@ func (h *ISOHandler) serveFileFromISO(w http.ResponseWriter, isoPath, filePath s
 // serveInitrdWithFirmware serves initrd.gz, merging with firmware if present
 // Per https://wiki.debian.org/DebianInstaller/NetbootFirmware:
 // cat initrd.gz firmware.cpio.gz > combined.gz
-func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Request, diskImageName, isoFilename string, targetConfig config.TargetConfig) {
-	isoPath := config.ISOPathWithFilename(h.basePath, diskImageName, isoFilename)
-	firmwarePath := config.FirmwarePath(h.basePath, diskImageName)
+func (h *ISOHandler) serveInitrdWithFirmware(w http.ResponseWriter, r *http.Request, diskImageDir, isoFilename string, targetConfig config.TargetConfig) {
+	isoPath := config.ISOPathWithFilename(h.basePath, diskImageDir, isoFilename)
+	firmwarePath := config.FirmwarePath(h.basePath, diskImageDir)
 
 	// Check if optional firmware (downloaded by the controller) exists for this disk image.
 	// If not present, hasFirmware remains false and the handler continues without firmware.
