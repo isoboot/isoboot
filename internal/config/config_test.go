@@ -194,16 +194,22 @@ func TestDiskImageName(t *testing.T) {
 			expected:   "shadow",
 		},
 		{
-			name:       "returns empty for lone ..",
+			name:       "falls back to target name for lone ..",
 			config:     TargetConfig{DiskImageRef: ".."},
 			targetName: "debian-13",
-			expected:   "",
+			expected:   "debian-13",
 		},
 		{
-			name:       "returns empty for lone .",
+			name:       "falls back to target name for lone .",
 			config:     TargetConfig{DiskImageRef: "."},
 			targetName: "debian-13",
-			expected:   "",
+			expected:   "debian-13",
+		},
+		{
+			name:       "falls back to default when both are invalid",
+			config:     TargetConfig{DiskImageRef: ".."},
+			targetName: "..",
+			expected:   "default",
 		},
 	}
 

@@ -131,27 +131,39 @@ func safePathSegment(name string) string {
 	return base
 }
 
-// DiskImageName returns the DiskImage name to use for file paths
-// If DiskImageRef is set, use it; otherwise default to target name
-// The result is sanitized to prevent path traversal attacks
+// DiskImageName returns the DiskImage name to use for file paths.
+// If DiskImageRef is set, use it; otherwise default to target name.
+// The result is sanitized to prevent path traversal attacks and will never be empty.
 func (t TargetConfig) DiskImageName(targetName string) string {
 	if t.DiskImageRef != "" {
-		return safePathSegment(t.DiskImageRef)
+		if name := safePathSegment(t.DiskImageRef); name != "" {
+			return name
+		}
 	}
-	return safePathSegment(targetName)
+
+	if name := safePathSegment(targetName); name != "" {
+		return name
+	}
+
+	// Final fallback to avoid collapsing directory structure when both
+	// DiskImageRef and targetName are invalid (e.g., "." or "..").
+	return "default"
 }
 
-// ISOPathWithFilename returns the path to the ISO file with explicit filename
+// ISOPathWithFilename returns the path to the ISO file with explicit filename.
+// The diskImageName is sanitized to prevent path traversal.
 func ISOPathWithFilename(basePath, diskImageName, filename string) string {
-	return filepath.Join(basePath, diskImageName, filename)
+	return filepath.Join(basePath, safePathSegment(diskImageName), safePathSegment(filename))
 }
 
-// FirmwarePath returns the path to the firmware file for a DiskImage
+// FirmwarePath returns the path to the firmware file for a DiskImage.
+// The diskImageName is sanitized to prevent path traversal.
 func FirmwarePath(basePath, diskImageName string) string {
-	return filepath.Join(basePath, diskImageName, "firmware", "firmware.cpio.gz")
+	return filepath.Join(basePath, safePathSegment(diskImageName), "firmware", "firmware.cpio.gz")
 }
 
-// InitrdOrigPath returns the path to the original initrd extracted from ISO
+// InitrdOrigPath returns the path to the original initrd extracted from ISO.
+// The diskImageName is sanitized to prevent path traversal.
 func InitrdOrigPath(basePath, diskImageName string) string {
-	return filepath.Join(basePath, diskImageName, "initrd.gz.orig")
+	return filepath.Join(basePath, safePathSegment(diskImageName), "initrd.gz.orig")
 }
