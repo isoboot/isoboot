@@ -14,8 +14,8 @@ import (
 	"github.com/isoboot/isoboot/internal/k8s"
 )
 
-// validMachineId validates systemd machine-id format (exactly 32 hex characters)
-var validMachineId = regexp.MustCompile(`^[0-9a-fA-F]{32}$`)
+// validMachineId validates systemd machine-id format (exactly 32 lowercase hex characters)
+var validMachineId = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 // templateFuncs provides custom functions for templates
 var templateFuncs = template.FuncMap{

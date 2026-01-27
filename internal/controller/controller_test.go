@@ -268,8 +268,8 @@ func TestValidMachineId(t *testing.T) {
 		valid bool
 	}{
 		{"valid 32 hex lowercase", "0123456789abcdef0123456789abcdef", true},
-		{"valid 32 hex uppercase", "0123456789ABCDEF0123456789ABCDEF", true},
-		{"valid 32 hex mixed case", "0123456789AbCdEf0123456789aBcDeF", true},
+		{"uppercase rejected", "0123456789ABCDEF0123456789ABCDEF", false},
+		{"mixed case rejected", "0123456789AbCdEf0123456789aBcDeF", false},
 		{"too short 31 chars", "0123456789abcdef0123456789abcde", false},
 		{"too long 33 chars", "0123456789abcdef0123456789abcdef0", false},
 		{"contains non-hex g", "0123456789abcdefg123456789abcdef", false},
