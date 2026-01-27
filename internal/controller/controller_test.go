@@ -232,6 +232,35 @@ func TestRenderTemplate_B64EncInTemplate(t *testing.T) {
 	}
 }
 
+func TestRenderTemplate_HasKey(t *testing.T) {
+	ctrl := &Controller{
+		host: "192.168.1.100",
+		port: "8080",
+	}
+
+	provision := &k8s.Provision{
+		Name: "test-provision",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm125",
+			BootTargetRef: "debian-13",
+		},
+	}
+
+	// Test hasKey with existing and non-existing keys
+	templateContent := `{{ if hasKey . "Host" }}host={{ .Host }}{{ end }}|{{ if hasKey . "NonExistent" }}found{{ else }}not-found{{ end }}`
+
+	ctx := context.Background()
+	result, err := ctrl.RenderTemplate(ctx, provision, templateContent)
+	if err != nil {
+		t.Fatalf("RenderTemplate failed: %v", err)
+	}
+
+	expected := "host=192.168.1.100|not-found"
+	if result != expected {
+		t.Errorf("Expected: %s\nGot: %s", expected, result)
+	}
+}
+
 func TestValidMachineId(t *testing.T) {
 	tests := []struct {
 		name  string

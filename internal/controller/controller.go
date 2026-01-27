@@ -22,6 +22,10 @@ var templateFuncs = template.FuncMap{
 	"b64enc": func(s string) string {
 		return base64.StdEncoding.EncodeToString([]byte(s))
 	},
+	"hasKey": func(m map[string]interface{}, key string) bool {
+		_, ok := m[key]
+		return ok
+	},
 }
 
 const (

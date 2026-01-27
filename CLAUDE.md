@@ -49,6 +49,10 @@ if err != nil {
 }
 ```
 
+Custom template functions (Helm/sprig-style):
+- `b64enc` - base64 encode a string: `{{ .Password | b64enc }}`
+- `hasKey` - check if key exists in map: `{{ if hasKey . "ssh_host_ed25519_key_pub" }}...{{ end }}`
+
 Available variables in ResponseTemplate (preseed/answer files):
 - `.Host` - HTTP server host IP
 - `.Port` - HTTP server port
