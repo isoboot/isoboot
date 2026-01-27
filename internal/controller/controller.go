@@ -270,7 +270,8 @@ func (c *Controller) RenderTemplate(ctx context.Context, provision *k8s.Provisio
 	data["Hostname"] = provision.Spec.MachineRef
 	data["Target"] = provision.Spec.BootTargetRef
 
-	// Add MachineId from Machine if present
+	// Add MachineId from Machine (empty string if not set, so templates can reference it safely)
+	data["MachineId"] = ""
 	if c.k8sClient != nil {
 		machine, err := c.k8sClient.GetMachine(ctx, provision.Spec.MachineRef)
 		if err == nil && machine.MachineId != "" {
