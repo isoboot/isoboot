@@ -8,11 +8,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/isoboot/isoboot/internal/controllerclient"
 	"github.com/isoboot/isoboot/internal/iso"
 )
+
+// validDiskImageRef matches alphanumeric, dash, underscore, with optional dot-separated segments.
+// This prevents path traversal by rejecting ".." (dots must have chars between them).
+var validDiskImageRef = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 
 const streamChunkSize = 1024 * 1024 // 1MB chunks for streaming
 
@@ -61,18 +66,10 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Use diskImageRef from BootTarget for file path construction
 	diskImageRef := bootTarget.DiskImageRef
 
-	// Security: only allow alphanumeric, dash, underscore, and dot in diskImageRef
-	// This prevents path traversal even if the value comes from a CRD
-	for _, r := range diskImageRef {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.') {
-			log.Printf("iso: invalid diskImageRef %q contains disallowed character", diskImageRef)
-			http.Error(w, "invalid disk image reference", http.StatusBadRequest)
-			return
-		}
-	}
-	// Also reject ".." even though it's now covered by the loop (belt and suspenders)
-	if strings.Contains(diskImageRef, "..") {
-		log.Printf("iso: invalid diskImageRef %q contains path traversal", diskImageRef)
+	// Security: validate diskImageRef against allowlist pattern
+	// This prevents path traversal by rejecting ".." (dots must have chars between them)
+	if !validDiskImageRef.MatchString(diskImageRef) {
+		log.Printf("iso: invalid diskImageRef %q", diskImageRef)
 		http.Error(w, "invalid disk image reference", http.StatusBadRequest)
 		return
 	}
