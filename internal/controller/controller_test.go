@@ -231,3 +231,30 @@ func TestRenderTemplate_B64EncInTemplate(t *testing.T) {
 		t.Errorf("Expected: %s\nGot: %s", expected, result)
 	}
 }
+
+func TestValidMachineId(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		valid bool
+	}{
+		{"valid 32 hex lowercase", "0123456789abcdef0123456789abcdef", true},
+		{"valid 32 hex uppercase", "0123456789ABCDEF0123456789ABCDEF", true},
+		{"valid 32 hex mixed case", "0123456789AbCdEf0123456789aBcDeF", true},
+		{"too short 31 chars", "0123456789abcdef0123456789abcde", false},
+		{"too long 33 chars", "0123456789abcdef0123456789abcdef0", false},
+		{"contains non-hex g", "0123456789abcdefg123456789abcdef", false},
+		{"contains dash", "01234567-89ab-cdef-0123-456789abcdef", false},
+		{"empty string", "", false},
+		{"spaces", "0123456789abcdef 123456789abcdef", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validMachineId.MatchString(tt.input)
+			if got != tt.valid {
+				t.Errorf("validMachineId.MatchString(%q) = %v, want %v", tt.input, got, tt.valid)
+			}
+		})
+	}
+}

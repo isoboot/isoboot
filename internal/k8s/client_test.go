@@ -467,6 +467,96 @@ func TestParseBootTarget(t *testing.T) {
 	}
 }
 
+func TestParseMachine(t *testing.T) {
+	tests := []struct {
+		name        string
+		obj         *unstructured.Unstructured
+		expected    *Machine
+		expectError bool
+	}{
+		{
+			name: "valid Machine with machineId",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "vm-01.lan"},
+					"spec": map[string]interface{}{
+						"mac":       "AA-BB-CC-DD-EE-FF",
+						"machineId": "0123456789abcdef0123456789abcdef",
+					},
+				},
+			},
+			expected: &Machine{
+				Name:      "vm-01.lan",
+				MAC:       "aa-bb-cc-dd-ee-ff", // lowercase
+				MachineId: "0123456789abcdef0123456789abcdef",
+			},
+			expectError: false,
+		},
+		{
+			name: "valid Machine without machineId",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "vm-02.lan"},
+					"spec": map[string]interface{}{
+						"mac": "11-22-33-44-55-66",
+					},
+				},
+			},
+			expected: &Machine{
+				Name:      "vm-02.lan",
+				MAC:       "11-22-33-44-55-66",
+				MachineId: "",
+			},
+			expectError: false,
+		},
+		{
+			name: "missing mac returns error",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "no-mac"},
+					"spec":     map[string]interface{}{},
+				},
+			},
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name: "missing spec returns error",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "no-spec"},
+				},
+			},
+			expected:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseMachine(tt.obj)
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if result.Name != tt.expected.Name {
+				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
+			}
+			if result.MAC != tt.expected.MAC {
+				t.Errorf("MAC = %q, want %q", result.MAC, tt.expected.MAC)
+			}
+			if result.MachineId != tt.expected.MachineId {
+				t.Errorf("MachineId = %q, want %q", result.MachineId, tt.expected.MachineId)
+			}
+		})
+	}
+}
+
 func TestParseDiskImage(t *testing.T) {
 	tests := []struct {
 		name        string
