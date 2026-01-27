@@ -49,11 +49,16 @@ if err != nil {
 }
 ```
 
+Custom template functions (Helm/sprig-style):
+- `b64enc` - base64 encode a string: `{{ .Password | b64enc }}`
+- `hasKey` - check if key exists in map: `{{ if hasKey . "ssh_host_ed25519_key_pub" }}...{{ end }}`
+
 Available variables in ResponseTemplate (preseed/answer files):
 - `.Host` - HTTP server host IP
 - `.Port` - HTTP server port
 - `.Hostname` - machine reference from Provision
 - `.Target` - boot target reference from Provision
+- `.MachineId` - systemd machine-id from Machine (use `hasKey` to check if set)
 - `.key` - values merged from referenced ConfigMaps and Secrets (flat namespace)
 - `.ssh_host_*_key_pub` - auto-derived public keys for SSH host keys in secrets
 
