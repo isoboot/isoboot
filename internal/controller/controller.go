@@ -241,6 +241,11 @@ func (c *Controller) RenderTemplate(ctx context.Context, provision *k8s.Provisio
 		}
 	}
 
+	// Derive SSH public keys from private keys in secrets
+	if err := DeriveSSHPublicKeys(data); err != nil {
+		return "", fmt.Errorf("derive SSH public keys: %w", err)
+	}
+
 	// Add system variables
 	data["Host"] = c.host
 	data["Port"] = c.port
