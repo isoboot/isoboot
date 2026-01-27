@@ -78,6 +78,9 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Construct ISO path
+	// Note: isoFilename is not validated against a specific value because all files
+	// in the disk image directory are extracted by the controller from the configured
+	// DiskImage. Any file present is legitimate to serve (kernel, initrd, firmware, etc).
 	isoPath := filepath.Join(h.basePath, diskImageRef, isoFilename)
 
 	// Security: ensure path doesn't escape diskImage directory (prevent path traversal)
