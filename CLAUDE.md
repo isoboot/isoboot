@@ -50,10 +50,12 @@ if err != nil {
 ```
 
 Available variables in ResponseTemplate (preseed/answer files):
-- `.Machine.metadata.name`, `.Machine.spec.mac`, etc.
-- `.Provision.metadata.name`, `.Provision.spec.target`, etc.
-- `.ConfigMap.key` - values from referenced ConfigMaps
-- `.Secret.key` - values from referenced Secrets
+- `.Host` - HTTP server host IP
+- `.Port` - HTTP server port
+- `.Hostname` - machine reference from Provision
+- `.Target` - boot target reference from Provision
+- `.key` - values merged from referenced ConfigMaps and Secrets (flat namespace)
+- `.ssh_host_*_key_pub` - auto-derived public keys for SSH host keys in secrets
 
 Available variables in BootTarget (iPXE scripts):
 - `.Host` - HTTP server host IP
