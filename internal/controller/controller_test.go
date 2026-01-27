@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -199,5 +200,47 @@ d-i preseed/late_command string curl http://192.168.1.100:8080/api/deploy/vm125/
 
 	if result != expected {
 		t.Errorf("Expected:\n%s\n\nGot:\n%s", expected, result)
+	}
+}
+
+func TestRenderTemplate_B64Enc(t *testing.T) {
+	// Test the b64enc function directly
+	input := "secret123"
+	expected := base64.StdEncoding.EncodeToString([]byte(input))
+
+	fn := templateFuncs["b64enc"].(func(string) string)
+	result := fn(input)
+
+	if result != expected {
+		t.Errorf("b64enc: expected %s, got %s", expected, result)
+	}
+}
+
+func TestRenderTemplate_B64EncInTemplate(t *testing.T) {
+	ctrl := &Controller{
+		host: "192.168.1.100",
+		port: "8080",
+	}
+
+	provision := &k8s.Provision{
+		Name: "test-provision",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm125",
+			BootTargetRef: "debian-13",
+		},
+	}
+
+	// Test b64enc with system variable
+	templateContent := `encoded: {{ .Hostname | b64enc }}`
+
+	ctx := context.Background()
+	result, err := ctrl.RenderTemplate(ctx, provision, templateContent)
+	if err != nil {
+		t.Fatalf("RenderTemplate failed: %v", err)
+	}
+
+	expected := "encoded: " + base64.StdEncoding.EncodeToString([]byte("vm125"))
+	if result != expected {
+		t.Errorf("Expected: %s\nGot: %s", expected, result)
 	}
 }
