@@ -50,6 +50,7 @@ message MarkBootStartedResponse {
 
 message MarkBootCompletedRequest {
   string hostname = 1;
+  string ip = 2;  // IP address of the machine that sent the completion request
 }
 
 message MarkBootCompletedResponse {

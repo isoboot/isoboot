@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"text/template"
@@ -174,7 +175,14 @@ func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.ctrlClient.MarkBootCompleted(ctx, id); err != nil {
+	// Extract client IP from RemoteAddr (handles both IPv4 and IPv6)
+	// We use RemoteAddr directly since isoboot-http uses hostNetwork with no proxy
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr // fallback if no port present
+	}
+
+	if err := h.ctrlClient.MarkBootCompleted(ctx, id, ip); err != nil {
 		log.Printf("Error marking boot completed for %s: %v", id, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)

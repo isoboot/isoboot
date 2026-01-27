@@ -98,7 +98,7 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 	if err := c.validateProvisionRefs(ctx, provision); err != nil {
 		if provision.Status.Phase != "ConfigError" || provision.Status.Message != err.Error() {
 			log.Printf("Controller: config error for %s: %v", provision.Name, err)
-			if updateErr := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "ConfigError", err.Error()); updateErr != nil {
+			if updateErr := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "ConfigError", err.Error(), ""); updateErr != nil {
 				log.Printf("Controller: failed to set ConfigError for %s: %v", provision.Name, updateErr)
 			}
 		}
@@ -110,7 +110,7 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 	if !diskImageReady {
 		if provision.Status.Phase != "WaitingForDiskImage" || provision.Status.Message != diskImageMsg {
 			log.Printf("Controller: %s waiting for DiskImage: %s", provision.Name, diskImageMsg)
-			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "WaitingForDiskImage", diskImageMsg); err != nil {
+			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "WaitingForDiskImage", diskImageMsg, ""); err != nil {
 				log.Printf("Controller: failed to set WaitingForDiskImage for %s: %v", provision.Name, err)
 			}
 		}
@@ -120,7 +120,7 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 	// If previously in ConfigError or WaitingForDiskImage but now valid, reset to Pending
 	if provision.Status.Phase == "ConfigError" || provision.Status.Phase == "WaitingForDiskImage" {
 		log.Printf("Controller: %s now ready, setting to Pending", provision.Name)
-		if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Pending", "Ready for boot"); err != nil {
+		if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Pending", "Ready for boot", ""); err != nil {
 			log.Printf("Controller: failed to reset %s to Pending: %v", provision.Name, err)
 		}
 		return
@@ -129,7 +129,7 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 	// Initialize empty status to Pending
 	if provision.Status.Phase == "" {
 		log.Printf("Controller: initializing %s status to Pending", provision.Name)
-		if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Pending", "Initialized by controller"); err != nil {
+		if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Pending", "Initialized by controller", ""); err != nil {
 			log.Printf("Controller: failed to set Pending for %s: %v", provision.Name, err)
 		}
 		return
@@ -140,7 +140,7 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 		age := time.Since(provision.Status.LastUpdated)
 		if age > inProgressTimeout {
 			log.Printf("Controller: timing out %s (InProgress for %s)", provision.Name, age)
-			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Failed", "Timed out waiting for completion"); err != nil {
+			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Failed", "Timed out waiting for completion", ""); err != nil {
 				log.Printf("Controller: failed to set Failed for %s: %v", provision.Name, err)
 			}
 		}

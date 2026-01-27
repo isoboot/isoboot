@@ -55,7 +55,7 @@ func (s *GRPCServer) MarkBootStarted(ctx context.Context, req *pb.MarkBootStarte
 		return &pb.MarkBootStartedResponse{Success: false, Error: "no pending provision"}, nil
 	}
 
-	if err := s.ctrl.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "InProgress", "Boot script served"); err != nil {
+	if err := s.ctrl.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "InProgress", "Boot script served", ""); err != nil {
 		log.Printf("gRPC: error updating provision %s: %v", provision.Name, err)
 		return &pb.MarkBootStartedResponse{Success: false, Error: err.Error()}, nil
 	}
@@ -78,12 +78,12 @@ func (s *GRPCServer) MarkBootCompleted(ctx context.Context, req *pb.MarkBootComp
 		return &pb.MarkBootCompletedResponse{Success: false, Error: "no in-progress provision"}, nil
 	}
 
-	if err := s.ctrl.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Complete", "Installation completed"); err != nil {
+	if err := s.ctrl.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Complete", "Installation completed", req.Ip); err != nil {
 		log.Printf("gRPC: error updating provision %s: %v", provision.Name, err)
 		return &pb.MarkBootCompletedResponse{Success: false, Error: err.Error()}, nil
 	}
 
-	log.Printf("gRPC: marked %s as Complete", provision.Name)
+	log.Printf("gRPC: marked %s as Complete (IP: %s)", provision.Name, req.Ip)
 	return &pb.MarkBootCompletedResponse{Success: true}, nil
 }
 
