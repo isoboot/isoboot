@@ -174,7 +174,13 @@ func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.ctrlClient.MarkBootCompleted(ctx, id); err != nil {
+	// Extract client IP (strip port from RemoteAddr)
+	ip := r.RemoteAddr
+	if idx := strings.LastIndex(ip, ":"); idx != -1 {
+		ip = ip[:idx]
+	}
+
+	if err := h.ctrlClient.MarkBootCompleted(ctx, id, ip); err != nil {
 		log.Printf("Error marking boot completed for %s: %v", id, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)

@@ -81,8 +81,8 @@ func (c *Client) MarkBootStarted(ctx context.Context, mac string) error {
 }
 
 // MarkBootCompleted marks a provision as Complete (by hostname)
-func (c *Client) MarkBootCompleted(ctx context.Context, hostname string) error {
-	resp, err := c.client.MarkBootCompleted(ctx, &pb.MarkBootCompletedRequest{Hostname: hostname})
+func (c *Client) MarkBootCompleted(ctx context.Context, hostname, ip string) error {
+	resp, err := c.client.MarkBootCompleted(ctx, &pb.MarkBootCompletedRequest{Hostname: hostname, Ip: ip})
 	if err != nil {
 		return fmt.Errorf("grpc call: %w", err)
 	}

@@ -69,6 +69,7 @@ type ProvisionStatus struct {
 	Phase       string
 	Message     string
 	LastUpdated time.Time
+	IP          string
 }
 
 // DiskImage represents a DiskImage CRD
@@ -349,6 +350,7 @@ func parseProvision(obj *unstructured.Unstructured) (*Provision, error) {
 		provision.Status = ProvisionStatus{
 			Phase:   getString(status, "phase"),
 			Message: getString(status, "message"),
+			IP:      getString(status, "ip"),
 		}
 	}
 
@@ -497,8 +499,9 @@ func (c *Client) FindProvisionByHostname(ctx context.Context, hostname string, p
 	return nil, nil // No matching provision for this hostname
 }
 
-// UpdateProvisionStatus updates the status of a Provision
-func (c *Client) UpdateProvisionStatus(ctx context.Context, name, phase, message string) error {
+// UpdateProvisionStatus updates the status of a Provision.
+// Pass empty string for ip to leave the existing IP unchanged.
+func (c *Client) UpdateProvisionStatus(ctx context.Context, name, phase, message, ip string) error {
 	obj, err := c.dynamicClient.Resource(provisionGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("get provision: %w", err)
@@ -508,6 +511,9 @@ func (c *Client) UpdateProvisionStatus(ctx context.Context, name, phase, message
 		"phase":       phase,
 		"message":     message,
 		"lastUpdated": time.Now().UTC().Format(time.RFC3339),
+	}
+	if ip != "" {
+		status["ip"] = ip
 	}
 	obj.Object["status"] = status
 
