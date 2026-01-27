@@ -65,9 +65,9 @@ func derivePublicKey(privateKeyPEM string) (string, error) {
 		pubKey, err = ssh.NewPublicKey(&key.PublicKey)
 	case *ecdsa.PrivateKey:
 		pubKey, err = ssh.NewPublicKey(&key.PublicKey)
-	case ed25519.PrivateKey:
-		pubKey, err = ssh.NewPublicKey(key.Public())
 	case *ed25519.PrivateKey:
+		pubKey, err = ssh.NewPublicKey(key.Public())
+	case ed25519.PrivateKey:
 		pubKey, err = ssh.NewPublicKey(key.Public())
 	default:
 		return "", fmt.Errorf("unsupported key type: %T", privateKey)
