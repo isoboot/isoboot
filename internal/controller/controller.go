@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"sync"
@@ -11,6 +12,13 @@ import (
 
 	"github.com/isoboot/isoboot/internal/k8s"
 )
+
+// templateFuncs provides custom functions for templates
+var templateFuncs = template.FuncMap{
+	"b64enc": func(s string) string {
+		return base64.StdEncoding.EncodeToString([]byte(s))
+	},
+}
 
 const (
 	reconcileInterval = 10 * time.Second
@@ -253,7 +261,7 @@ func (c *Controller) RenderTemplate(ctx context.Context, provision *k8s.Provisio
 	data["Target"] = provision.Spec.BootTargetRef
 
 	// Parse and execute template
-	tmpl, err := template.New("response").Option("missingkey=error").Parse(templateContent)
+	tmpl, err := template.New("response").Funcs(templateFuncs).Option("missingkey=error").Parse(templateContent)
 	if err != nil {
 		return "", fmt.Errorf("parse template: %w", err)
 	}

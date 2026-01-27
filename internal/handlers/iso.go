@@ -8,11 +8,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/isoboot/isoboot/internal/controllerclient"
 	"github.com/isoboot/isoboot/internal/iso"
 )
+
+// validDiskImageRef matches alphanumeric, dash, underscore, with optional dot-separated segments.
+// This prevents path traversal by rejecting ".." (dots must have chars between them).
+var validDiskImageRef = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 
 const streamChunkSize = 1024 * 1024 // 1MB chunks for streaming
 
@@ -61,7 +66,18 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Use diskImageRef from BootTarget for file path construction
 	diskImageRef := bootTarget.DiskImageRef
 
+	// Security: validate diskImageRef against allowlist pattern
+	// This prevents path traversal by rejecting ".." (dots must have chars between them)
+	if !validDiskImageRef.MatchString(diskImageRef) {
+		log.Printf("iso: invalid diskImageRef %q", diskImageRef)
+		http.Error(w, "invalid disk image reference", http.StatusBadRequest)
+		return
+	}
+
 	// Construct ISO path
+	// Note: isoFilename is not validated against a specific value because all files
+	// in the disk image directory are extracted by the controller from the configured
+	// DiskImage. Any file present is legitimate to serve (kernel, initrd, firmware, etc).
 	isoPath := filepath.Join(h.basePath, diskImageRef, isoFilename)
 
 	// Security: ensure path doesn't escape diskImage directory (prevent path traversal)

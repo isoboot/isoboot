@@ -507,6 +507,15 @@ func (c *Client) UpdateProvisionStatus(ctx context.Context, name, phase, message
 		return fmt.Errorf("get provision: %w", err)
 	}
 
+	// Preserve existing IP if not provided
+	if ip == "" {
+		if existingStatus, ok := obj.Object["status"].(map[string]interface{}); ok {
+			if existingIP, ok := existingStatus["ip"].(string); ok {
+				ip = existingIP
+			}
+		}
+	}
+
 	status := map[string]interface{}{
 		"phase":       phase,
 		"message":     message,
