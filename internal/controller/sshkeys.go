@@ -60,6 +60,10 @@ func derivePublicKey(privateKeyPEM string) (string, error) {
 	// Extract the public key based on key type
 	var pubKey ssh.PublicKey
 
+	// ParseRawPrivateKey returns different types based on format:
+	// - OpenSSH format (ssh-keygen): *ed25519.PrivateKey (pointer)
+	// - PKCS8 format: ed25519.PrivateKey (value)
+	// See https://github.com/golang/go/issues/51974
 	switch key := privateKey.(type) {
 	case *rsa.PrivateKey:
 		pubKey, err = ssh.NewPublicKey(&key.PublicKey)
