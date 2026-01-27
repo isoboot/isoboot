@@ -203,19 +203,6 @@ d-i preseed/late_command string curl http://192.168.1.100:8080/api/deploy/vm125/
 	}
 }
 
-func TestRenderTemplate_B64Enc(t *testing.T) {
-	// Test the b64enc function directly
-	input := "secret123"
-	expected := base64.StdEncoding.EncodeToString([]byte(input))
-
-	fn := templateFuncs["b64enc"].(func(string) string)
-	result := fn(input)
-
-	if result != expected {
-		t.Errorf("b64enc: expected %s, got %s", expected, result)
-	}
-}
-
 func TestRenderTemplate_B64EncInTemplate(t *testing.T) {
 	ctrl := &Controller{
 		host: "192.168.1.100",
