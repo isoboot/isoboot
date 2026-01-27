@@ -61,6 +61,13 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Use diskImageRef from BootTarget for file path construction
 	diskImageRef := bootTarget.DiskImageRef
 
+	// Security: reject diskImageRef containing path separators or traversal sequences
+	if strings.ContainsAny(diskImageRef, "/\\") || strings.Contains(diskImageRef, "..") {
+		log.Printf("iso: invalid diskImageRef %q contains path separator or traversal", diskImageRef)
+		http.Error(w, "invalid disk image reference", http.StatusBadRequest)
+		return
+	}
+
 	// Construct ISO path
 	isoPath := filepath.Join(h.basePath, diskImageRef, isoFilename)
 
