@@ -339,6 +339,10 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to stat iso", http.StatusInternalServerError)
 		return
 	}
+	if !fileInfo.Mode().IsRegular() {
+		http.Error(w, "iso not found", http.StatusNotFound)
+		return
+	}
 
 	// 7. Open file for streaming
 	file, err := os.Open(isoPath)
