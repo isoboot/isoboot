@@ -89,7 +89,7 @@ message GetResponseTemplateResponse {
 }
 
 message GetRenderedTemplateRequest {
-  string hostname = 1;
+  string provision_name = 1;
   string filename = 2;
 }
 
