@@ -896,8 +896,8 @@ func TestDownloadDiskImage_NoISOBasePath(t *testing.T) {
 	}
 
 	ctrl := &Controller{
-		k8sClient:  fake,
-		httpClient: http.DefaultClient,
+		k8sClient:   fake,
+		httpClient:  http.DefaultClient,
 		isoBasePath: "", // not configured
 	}
 
@@ -931,8 +931,8 @@ func TestDownloadDiskImage_InvalidISOURL(t *testing.T) {
 
 	ctrl := &Controller{
 		k8sClient:   fake,
-		httpClient:   http.DefaultClient,
-		isoBasePath:  tmpDir,
+		httpClient:  http.DefaultClient,
+		isoBasePath: tmpDir,
 	}
 
 	di := fake.diskImages["test-iso"]
@@ -984,8 +984,8 @@ func TestDownloadDiskImage_SuccessfulDownload(t *testing.T) {
 
 	ctrl := &Controller{
 		k8sClient:   fake,
-		httpClient:   mockHTTP,
-		isoBasePath:  tmpDir,
+		httpClient:  mockHTTP,
+		isoBasePath: tmpDir,
 	}
 
 	di := fake.diskImages["test-iso"]
@@ -1054,8 +1054,8 @@ func TestDownloadDiskImage_WithFirmware(t *testing.T) {
 
 	ctrl := &Controller{
 		k8sClient:   fake,
-		httpClient:   mockHTTP,
-		isoBasePath:  tmpDir,
+		httpClient:  mockHTTP,
+		isoBasePath: tmpDir,
 	}
 
 	di := fake.diskImages["test-iso"]
@@ -1111,8 +1111,8 @@ func TestDownloadDiskImage_HTTPError(t *testing.T) {
 
 	ctrl := &Controller{
 		k8sClient:   fake,
-		httpClient:   mockHTTP,
-		isoBasePath:  tmpDir,
+		httpClient:  mockHTTP,
+		isoBasePath: tmpDir,
 	}
 
 	di := fake.diskImages["test-iso"]
@@ -1161,8 +1161,8 @@ func TestDownloadDiskImage_FirmwareFailsAfterISOSuccess(t *testing.T) {
 
 	ctrl := &Controller{
 		k8sClient:   fake,
-		httpClient:   mockHTTP,
-		isoBasePath:  tmpDir,
+		httpClient:  mockHTTP,
+		isoBasePath: tmpDir,
 	}
 
 	di := fake.diskImages["test-iso"]
@@ -1207,8 +1207,8 @@ func TestDownloadDiskImage_ConnectionError(t *testing.T) {
 
 	ctrl := &Controller{
 		k8sClient:   fake,
-		httpClient:   mockHTTP,
-		isoBasePath:  tmpDir,
+		httpClient:  mockHTTP,
+		isoBasePath: tmpDir,
 	}
 
 	di := fake.diskImages["test-iso"]
@@ -1225,4 +1225,3 @@ func TestDownloadDiskImage_ConnectionError(t *testing.T) {
 		t.Errorf("expected message about ISO download failure, got %q", status.Message)
 	}
 }
-
