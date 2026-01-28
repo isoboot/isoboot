@@ -339,6 +339,7 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 	if n, err := io.CopyBuffer(w, file, buf); err != nil {
 		// Suppress EPIPE/ECONNRESET - these are expected when clients disconnect mid-download
 		// (e.g., installer restarts, user cancels). Other errors (disk I/O, etc.) are logged.
+		// Note: These are Unix-specific; this code runs in Linux containers.
 		if !errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
 			log.Printf("iso: error streaming %s: copied %d of %d bytes: %v", isoPath, n, fileInfo.Size(), err)
 		}

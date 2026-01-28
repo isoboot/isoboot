@@ -163,15 +163,15 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get DiskImage for the filename
-	diskImageFile := ""
-	if diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage); err != nil {
-		if errors.Is(err, controllerclient.ErrNotFound) {
-			log.Printf("DiskImage %s not found for BootTarget %s", bootTarget.DiskImage, pendingProvision.BootTargetRef)
-		} else {
-			log.Printf("Error loading DiskImage %s for BootTarget %s: %v", bootTarget.DiskImage, pendingProvision.BootTargetRef, err)
-		}
-	} else {
+	// Get DiskImage for the filename (optional - not all templates use it)
+	var diskImageFile string
+	diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage)
+	switch {
+	case err != nil && errors.Is(err, controllerclient.ErrNotFound):
+		log.Printf("DiskImage %s not found for BootTarget %s", bootTarget.DiskImage, pendingProvision.BootTargetRef)
+	case err != nil:
+		log.Printf("Error loading DiskImage %s for BootTarget %s: %v", bootTarget.DiskImage, pendingProvision.BootTargetRef, err)
+	default:
 		diskImageFile = diskImageInfo.DiskImageFile
 	}
 
