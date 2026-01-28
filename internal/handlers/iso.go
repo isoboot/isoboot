@@ -336,13 +336,17 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 
 	// 9. Stream in chunks (1MB, don't load entire ISO into memory)
 	buf := make([]byte, streamChunkSize)
-	if n, err := io.CopyBuffer(w, file, buf); err != nil {
+	n, err := io.CopyBuffer(w, file, buf)
+	if err != nil {
 		// Suppress EPIPE/ECONNRESET - these are expected when clients disconnect mid-download
 		// (e.g., installer restarts, user cancels). Other errors (disk I/O, etc.) are logged.
 		// Note: These are Unix-specific; this code runs in Linux containers.
 		if !errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
 			log.Printf("iso: error streaming %s: copied %d of %d bytes: %v", isoPath, n, fileInfo.Size(), err)
 		}
+	} else if n != fileInfo.Size() {
+		// Unexpected short transfer without error (e.g., file truncated during streaming)
+		log.Printf("iso: incomplete stream %s: copied %d of %d bytes", isoPath, n, fileInfo.Size())
 	}
 }
 
