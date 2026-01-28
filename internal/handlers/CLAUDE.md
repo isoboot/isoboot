@@ -7,7 +7,7 @@ HTTP handlers for isoboot-http server.
 ### BootHandler (boot.go)
 - `GET /boot/boot.ipxe` - Initial iPXE script (chains to conditional-boot)
 - `GET /boot/conditional-boot?mac=xx-xx-xx-xx-xx-xx` - Returns BootTarget template if Provision exists, 404 otherwise
-- `GET /boot/done?id={machineName}` - Marks Provision as completed (call from preseed late_command)
+- `GET /boot/done?mac={mac}` - Marks Provision as completed (call from preseed late_command with `{{ .MAC }}`)
 
 Template variables: Host, Port, MachineName, Hostname, Domain, BootTarget, ProvisionName
 
