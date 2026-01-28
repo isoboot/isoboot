@@ -130,6 +130,8 @@ func (s *GRPCServer) GetDiskImage(ctx context.Context, req *pb.GetDiskImageReque
 		return &pb.GetDiskImageResponse{Found: false}, nil
 	}
 
+	// Extract filename from ISO URL using path.Base (not filepath.Base)
+	// since di.ISO is a URL, not a filesystem path
 	diskImageFile := ""
 	if di.ISO != "" {
 		diskImageFile = path.Base(di.ISO)

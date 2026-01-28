@@ -300,7 +300,7 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 	// 4. Validate diskImageFile - no path traversal
 	if strings.Contains(diskImageFile, "/") || strings.Contains(diskImageFile, "..") ||
 		strings.HasPrefix(diskImageFile, ".") {
-		http.Error(w, "invalid iso file", http.StatusBadRequest)
+		http.Error(w, "invalid disk image file", http.StatusBadRequest)
 		return
 	}
 

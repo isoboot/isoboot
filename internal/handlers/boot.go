@@ -164,7 +164,9 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 
 	// 4.5 Get DiskImage for the filename
 	diskImageFile := ""
-	if diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage); err == nil {
+	if diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage); err != nil {
+		log.Printf("Error loading DiskImage %s for BootTarget %s: %v", bootTarget.DiskImage, pendingProvision.BootTargetRef, err)
+	} else {
 		diskImageFile = diskImageInfo.DiskImageFile
 	}
 
