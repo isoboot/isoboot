@@ -67,8 +67,9 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Use diskImage from BootTarget for file path construction
 	diskImage := bootTarget.DiskImage
 
-	// Security: validate diskImage name format
-	// Note: ".." is already rejected by pathTraversalMiddleware
+	// Security: validate diskImage name format.
+	// diskImage is sourced from the BootTarget (via gRPC), not the HTTP path,
+	// so it is not validated by pathTraversalMiddleware; this regex guards it.
 	if !validDiskImageRef.MatchString(diskImage) {
 		log.Printf("iso: invalid diskImage %q", diskImage)
 		http.Error(w, "invalid disk image reference", http.StatusBadRequest)
@@ -264,6 +265,17 @@ func shouldMergeFirmware(requestedFile, includeFirmwarePath string) bool {
 	return requestPath == includeFirmwarePath
 }
 
+// isPrintableASCII returns true if s contains only printable ASCII characters (0x20-0x7E).
+// Used to reject control characters (e.g., CR/LF) that could cause header injection.
+func isPrintableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7E {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 // ServeISODownload serves full ISO files for download
 // Path format: /iso/download/{bootTarget}/{diskImageFile}
 // Example: /iso/download/ubuntu-24/ubuntu-24.04.1-live-server-amd64.iso
@@ -280,10 +292,11 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 	bootTargetName := parts[0]
 	diskImageFile := parts[1]
 
-	// 2. Validate diskImageFile early - must be a plain filename (no directory components)
-	// This check runs before gRPC to avoid unnecessary calls on invalid input.
-	// Note: ".." is already rejected by pathTraversalMiddleware
-	if diskImageFile == "." || strings.ContainsAny(diskImageFile, "/\\") {
+	// 2. Validate diskImageFile early - must be a safe plain filename.
+	// Rejects directory components, control characters (header injection via CR/LF),
+	// and the special "." name. Runs before gRPC to avoid unnecessary calls.
+	// Note: ".." is already rejected by pathTraversalMiddleware.
+	if diskImageFile == "." || strings.ContainsAny(diskImageFile, "/\\") || !isPrintableASCII(diskImageFile) {
 		http.Error(w, "invalid disk image file", http.StatusBadRequest)
 		return
 	}
