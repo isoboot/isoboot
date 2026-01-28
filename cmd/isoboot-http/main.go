@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/isoboot/isoboot/internal/controllerclient"
@@ -20,6 +21,25 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// pathTraversalMiddleware rejects requests with path traversal attempts.
+// Defense-in-depth: handlers must still perform their own containment validation.
+func pathTraversalMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Normalize path: handle backslashes
+		normalizedPath := strings.ReplaceAll(r.URL.Path, "\\", "/")
+
+		// Reject if any path segment is ".."
+		for _, segment := range strings.Split(normalizedPath, "/") {
+			if segment == ".." {
+				log.Printf("blocked path traversal: path=%q remote_addr=%s", r.URL.Path, r.RemoteAddr)
+				http.Error(w, "invalid path", http.StatusBadRequest)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // loggingMiddleware logs requests with status code
@@ -94,7 +114,11 @@ func main() {
 	log.Printf("ISO path: %s", isoPath)
 	log.Printf("Templates ConfigMap: %s", templatesConfigMap)
 
-	if err := http.ListenAndServe(addr, loggingMiddleware(mux)); err != nil {
+	var handler http.Handler = mux
+	handler = pathTraversalMiddleware(handler)
+	handler = loggingMiddleware(handler)
+
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
