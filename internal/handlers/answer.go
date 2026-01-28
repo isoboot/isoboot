@@ -127,14 +127,14 @@ func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add MAC address from Machine
-	mac, err := h.ctrlClient.GetMachine(ctx, provision.MachineRef)
+	macAddress, err := h.ctrlClient.GetMachine(ctx, provision.MachineRef)
 	if err != nil {
 		log.Printf("Error getting machine %s: %v", provision.MachineRef, err)
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
-	if mac != "" {
-		data["MAC"] = mac
+	if macAddress != "" {
+		data["MAC"] = macAddress
 	}
 
 	// 6. Render template
