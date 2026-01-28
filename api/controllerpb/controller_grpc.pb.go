@@ -23,8 +23,8 @@ type ControllerServiceClient interface {
 	MarkBootStarted(ctx context.Context, in *MarkBootStartedRequest, opts ...grpc.CallOption) (*MarkBootStartedResponse, error)
 	// MarkBootCompleted marks a provision as Complete
 	MarkBootCompleted(ctx context.Context, in *MarkBootCompletedRequest, opts ...grpc.CallOption) (*MarkBootCompletedResponse, error)
-	// GetTemplate retrieves a boot template from ConfigMap
-	GetTemplate(ctx context.Context, in *GetTemplateRequest, opts ...grpc.CallOption) (*GetTemplateResponse, error)
+	// GetConfigMapValue retrieves a value from a ConfigMap by key
+	GetConfigMapValue(ctx context.Context, in *GetConfigMapValueRequest, opts ...grpc.CallOption) (*GetConfigMapValueResponse, error)
 	// GetBootTarget retrieves a BootTarget by name
 	GetBootTarget(ctx context.Context, in *GetBootTargetRequest, opts ...grpc.CallOption) (*GetBootTargetResponse, error)
 	// GetResponseTemplate retrieves a ResponseTemplate by name
@@ -68,9 +68,9 @@ func (c *controllerServiceClient) MarkBootCompleted(ctx context.Context, in *Mar
 	return out, nil
 }
 
-func (c *controllerServiceClient) GetTemplate(ctx context.Context, in *GetTemplateRequest, opts ...grpc.CallOption) (*GetTemplateResponse, error) {
-	out := new(GetTemplateResponse)
-	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetTemplate", in, out, opts...)
+func (c *controllerServiceClient) GetConfigMapValue(ctx context.Context, in *GetConfigMapValueRequest, opts ...grpc.CallOption) (*GetConfigMapValueResponse, error) {
+	out := new(GetConfigMapValueResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetConfigMapValue", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -114,8 +114,8 @@ type ControllerServiceServer interface {
 	MarkBootStarted(context.Context, *MarkBootStartedRequest) (*MarkBootStartedResponse, error)
 	// MarkBootCompleted marks a provision as Complete
 	MarkBootCompleted(context.Context, *MarkBootCompletedRequest) (*MarkBootCompletedResponse, error)
-	// GetTemplate retrieves a boot template from ConfigMap
-	GetTemplate(context.Context, *GetTemplateRequest) (*GetTemplateResponse, error)
+	// GetConfigMapValue retrieves a value from a ConfigMap by key
+	GetConfigMapValue(context.Context, *GetConfigMapValueRequest) (*GetConfigMapValueResponse, error)
 	// GetBootTarget retrieves a BootTarget by name
 	GetBootTarget(context.Context, *GetBootTargetRequest) (*GetBootTargetResponse, error)
 	// GetResponseTemplate retrieves a ResponseTemplate by name
@@ -138,8 +138,8 @@ func (UnimplementedControllerServiceServer) MarkBootStarted(context.Context, *Ma
 func (UnimplementedControllerServiceServer) MarkBootCompleted(context.Context, *MarkBootCompletedRequest) (*MarkBootCompletedResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkBootCompleted not implemented")
 }
-func (UnimplementedControllerServiceServer) GetTemplate(context.Context, *GetTemplateRequest) (*GetTemplateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetTemplate not implemented")
+func (UnimplementedControllerServiceServer) GetConfigMapValue(context.Context, *GetConfigMapValueRequest) (*GetConfigMapValueResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetConfigMapValue not implemented")
 }
 func (UnimplementedControllerServiceServer) GetBootTarget(context.Context, *GetBootTargetRequest) (*GetBootTargetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBootTarget not implemented")
@@ -217,20 +217,20 @@ func _ControllerService_MarkBootCompleted_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_GetTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTemplateRequest)
+func _ControllerService_GetConfigMapValue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetConfigMapValueRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).GetTemplate(ctx, in)
+		return srv.(ControllerServiceServer).GetConfigMapValue(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/isoboot.controller.v1.ControllerService/GetTemplate",
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetConfigMapValue",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).GetTemplate(ctx, req.(*GetTemplateRequest))
+		return srv.(ControllerServiceServer).GetConfigMapValue(ctx, req.(*GetConfigMapValueRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -306,8 +306,8 @@ var _ControllerService_serviceDesc = grpc.ServiceDesc{
 			Handler:    _ControllerService_MarkBootCompleted_Handler,
 		},
 		{
-			MethodName: "GetTemplate",
-			Handler:    _ControllerService_GetTemplate_Handler,
+			MethodName: "GetConfigMapValue",
+			Handler:    _ControllerService_GetConfigMapValue_Handler,
 		},
 		{
 			MethodName: "GetBootTarget",

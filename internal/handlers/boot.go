@@ -52,11 +52,11 @@ func splitHostDomain(name string) (hostname, domain string) {
 }
 
 func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.Template, error) {
-	content, err := h.ctrlClient.GetTemplate(ctx, name, h.configMap)
+	value, err := h.ctrlClient.GetConfigMapValue(ctx, h.configMap, name)
 	if err != nil {
 		return nil, err
 	}
-	return template.New(name).Parse(content)
+	return template.New(name).Parse(value)
 }
 
 // ServeBootIPXE serves the initial boot.ipxe script

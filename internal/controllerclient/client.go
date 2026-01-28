@@ -94,21 +94,21 @@ func (c *Client) MarkBootCompleted(ctx context.Context, hostname, ip string) err
 	return nil
 }
 
-// GetTemplate retrieves a template from the controller (ConfigMap)
-func (c *Client) GetTemplate(ctx context.Context, name, configMap string) (string, error) {
-	resp, err := c.client.GetTemplate(ctx, &pb.GetTemplateRequest{
-		Name:      name,
-		Configmap: configMap,
+// GetConfigMapValue retrieves a value from a ConfigMap by key
+func (c *Client) GetConfigMapValue(ctx context.Context, configMapName, key string) (string, error) {
+	resp, err := c.client.GetConfigMapValue(ctx, &pb.GetConfigMapValueRequest{
+		ConfigmapName: configMapName,
+		Key:           key,
 	})
 	if err != nil {
 		return "", fmt.Errorf("grpc call: %w", err)
 	}
 
 	if !resp.Found {
-		return "", fmt.Errorf("template not found: %s", name)
+		return "", fmt.Errorf("configmap key not found: %s/%s", configMapName, key)
 	}
 
-	return resp.Content, nil
+	return resp.Value, nil
 }
 
 // BootTargetInfo returned by GetBootTarget
