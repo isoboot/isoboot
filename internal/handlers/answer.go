@@ -118,6 +118,7 @@ func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
 	// Add system variables
 	data["Host"] = h.host
 	data["Port"] = h.port
+	data["ProvisionName"] = provisionName
 	data["Hostname"] = provision.MachineRef
 	data["Target"] = provision.BootTargetRef
 

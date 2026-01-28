@@ -151,6 +151,7 @@ type ProvisionInfo struct {
 	ConfigMaps          []string
 	Secrets             []string
 	MachineId           string
+	Status              string
 }
 
 // GetProvision retrieves a Provision by name
@@ -171,6 +172,7 @@ func (c *Client) GetProvision(ctx context.Context, name string) (*ProvisionInfo,
 		ConfigMaps:          resp.ConfigMaps,
 		Secrets:             resp.Secrets,
 		MachineId:           resp.MachineId,
+		Status:              resp.Status,
 	}, nil
 }
 

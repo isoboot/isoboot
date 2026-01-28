@@ -111,6 +111,7 @@ message GetProvisionResponse {
   repeated string config_maps = 5;
   repeated string secrets = 6;
   string machine_id = 7;  // Optional systemd machine-id
+  string status = 8;      // Current provision status
 }
 
 message GetConfigMapsRequest {

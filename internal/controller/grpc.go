@@ -137,6 +137,7 @@ func (s *GRPCServer) GetProvision(ctx context.Context, req *pb.GetProvisionReque
 		ConfigMaps:          provision.Spec.ConfigMaps,
 		Secrets:             provision.Spec.Secrets,
 		MachineId:           provision.Spec.MachineId,
+		Status:              provision.Status.Phase,
 	}, nil
 }
 

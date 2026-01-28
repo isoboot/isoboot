@@ -201,12 +201,12 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 }
 
 // ServeBootDone marks a provision as completed
-// GET /boot/done?id={machineName}
+// GET /boot/done?provisionName={provisionName}
 func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	id := r.URL.Query().Get("id")
-	if id == "" {
+	provisionName := r.URL.Query().Get("provisionName")
+	if provisionName == "" {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -219,34 +219,26 @@ func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 		ip = r.RemoteAddr // fallback if no port present
 	}
 
-	// id is machineName - find InProgress provision for this machine
-	provisions, err := h.ctrlClient.GetProvisionsByMachine(ctx, id)
+	// Direct lookup by provision name
+	provision, err := h.ctrlClient.GetProvision(ctx, provisionName)
 	if err != nil {
-		log.Printf("Error getting provisions for machine %s: %v", id, err)
-		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	// Find InProgress provision
-	var inProgressProvision *controllerclient.ProvisionSummary
-	for i := range provisions {
-		if provisions[i].Status == "InProgress" {
-			inProgressProvision = &provisions[i]
-			break
-		}
-	}
-
-	if inProgressProvision == nil {
-		log.Printf("No InProgress provision found for machine %s", id)
+		log.Printf("Error getting provision %s: %v", provisionName, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
+	// Verify provision is InProgress
+	if provision.Status != "InProgress" {
+		log.Printf("Provision %s is not InProgress (status: %s)", provisionName, provision.Status)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusConflict)
+		return
+	}
+
 	// Update provision status to Complete
-	if err := h.ctrlClient.UpdateProvisionStatus(ctx, inProgressProvision.Name, "Complete", "Installation completed", ip); err != nil {
-		log.Printf("Error marking boot completed for %s: %v", inProgressProvision.Name, err)
+	if err := h.ctrlClient.UpdateProvisionStatus(ctx, provisionName, "Complete", "Installation completed", ip); err != nil {
+		log.Printf("Error marking boot completed for %s: %v", provisionName, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
