@@ -6,7 +6,7 @@ Go code repository for isoboot controller and HTTP server.
 
 This repo works alongside `isoboot-chart` (Helm chart with CRDs). Together they provide PXE boot infrastructure on Kubernetes.
 
-**Workflow**: Machine PXE boots → dnsmasq responds → iPXE loads → fetches boot script from isoboot-http → installer runs → fetches answer files from /answer/{hostname}/{filename} → completes via /boot/done?id={machineName}
+**Workflow**: Machine PXE boots → dnsmasq responds → iPXE loads → fetches boot script from isoboot-http → installer runs → fetches answer files from /answer/{provisionName}/{filename} → completes via /boot/done?id={machineName}
 
 ## Git Conventions
 
@@ -69,6 +69,7 @@ Available variables in BootTarget (iPXE scripts):
 - `.Hostname` - first part before dot (e.g., "vm-01")
 - `.Domain` - everything after first dot (e.g., "lan")
 - `.BootTarget` - BootTarget resource name
+- `.ProvisionName` - Provision resource name (use for answer file URLs)
 
 ### Error Handling in HTTP Handlers
 - Return 502 Bad Gateway for gRPC/transport errors
