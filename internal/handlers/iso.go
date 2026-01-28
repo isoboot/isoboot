@@ -294,6 +294,7 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, controllerclient.ErrNotFound) {
 			http.Error(w, "boot target not found", http.StatusNotFound)
 		} else {
+			log.Printf("iso: failed to get BootTarget %s: %v", bootTargetName, err)
 			http.Error(w, "failed to resolve boot target", http.StatusBadGateway)
 		}
 		return
@@ -334,10 +335,16 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// 8. Set headers and stream
+	// 8. Set headers
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", diskImageFile))
+
+	// Short-circuit HEAD requests - avoid reading the entire ISO just to discard the body
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 
 	// 9. Stream in chunks (1MB, don't load entire ISO into memory)
