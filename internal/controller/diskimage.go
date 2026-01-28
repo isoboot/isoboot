@@ -270,7 +270,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	var expectedSize int64 // 0 means size unknown (HEAD unavailable or unsupported)
 	headReq, err := http.NewRequestWithContext(ctx, http.MethodHead, fileURL, nil)
 	if err != nil {
-		log.Printf("Controller: failed to create HEAD request for %s: %v, proceeding without size check", fileURL, err)
+		log.Printf("Controller: HEAD request creation failed for %s: %v, proceeding without size check", fileURL, err)
 	} else {
 		headResp, err := http.DefaultClient.Do(headReq)
 		if err != nil {
