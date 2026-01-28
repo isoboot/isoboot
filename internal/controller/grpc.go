@@ -115,7 +115,7 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 
 	return &pb.GetBootTargetResponse{
 		Found:               true,
-		DiskImageRef:        bt.DiskImageRef,
+		DiskImage:           bt.DiskImageRef,
 		Template:            bt.Template,
 		IncludeFirmwarePath: bt.IncludeFirmwarePath,
 	}, nil
@@ -193,5 +193,25 @@ func (s *GRPCServer) GetSecrets(ctx context.Context, req *pb.GetSecretsRequest) 
 	return &pb.GetSecretsResponse{
 		Found: true,
 		Data:  data,
+	}, nil
+}
+
+// GetDiskImage retrieves a DiskImage by name
+func (s *GRPCServer) GetDiskImage(ctx context.Context, req *pb.GetDiskImageRequest) (*pb.GetDiskImageResponse, error) {
+	di, err := s.ctrl.k8sClient.GetDiskImage(ctx, req.Name)
+	if err != nil {
+		log.Printf("gRPC: error getting diskimage %s: %v", req.Name, err)
+		return &pb.GetDiskImageResponse{Found: false}, nil
+	}
+
+	filename, err := filenameFromURL(di.ISO)
+	if err != nil {
+		log.Printf("gRPC: error extracting filename from DiskImage %s ISO URL: %v", req.Name, err)
+		return &pb.GetDiskImageResponse{Found: false}, nil
+	}
+
+	return &pb.GetDiskImageResponse{
+		Found:       true,
+		IsoFilename: filename,
 	}, nil
 }

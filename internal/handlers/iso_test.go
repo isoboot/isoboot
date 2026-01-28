@@ -87,7 +87,7 @@ func TestServeISOContent_InvalidDiskImageRef(t *testing.T) {
 	mock := &mockISOClient{
 		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
 			return &controllerclient.BootTargetInfo{
-				DiskImageRef: "../etc/passwd",
+				DiskImage: "../etc/passwd",
 			}, nil
 		},
 	}
