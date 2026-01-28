@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -165,7 +166,11 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	// 4.5 Get DiskImage for the filename
 	diskImageFile := ""
 	if diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage); err != nil {
-		log.Printf("Error loading DiskImage %s for BootTarget %s: %v", bootTarget.DiskImage, pendingProvision.BootTargetRef, err)
+		if errors.Is(err, controllerclient.ErrNotFound) {
+			log.Printf("DiskImage %s not found for BootTarget %s", bootTarget.DiskImage, pendingProvision.BootTargetRef)
+		} else {
+			log.Printf("Error loading DiskImage %s for BootTarget %s: %v", bootTarget.DiskImage, pendingProvision.BootTargetRef, err)
+		}
 	} else {
 		diskImageFile = diskImageInfo.DiskImageFile
 	}

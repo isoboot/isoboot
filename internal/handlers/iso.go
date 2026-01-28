@@ -335,7 +335,9 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 
 	// 9. Stream in chunks (1MB, don't load entire ISO into memory)
 	buf := make([]byte, streamChunkSize)
-	io.CopyBuffer(w, file, buf)
+	if n, err := io.CopyBuffer(w, file, buf); err != nil {
+		log.Printf("iso: error streaming %s: copied %d of %d bytes: %v", isoPath, n, fileInfo.Size(), err)
+	}
 }
 
 // RegisterRoutes registers ISO-related routes
