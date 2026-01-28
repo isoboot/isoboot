@@ -196,15 +196,14 @@ func checkDiskImageStatus(diskImage *k8s.DiskImage) (bool, string) {
 
 // validateProvisionRefs checks that all referenced resources exist and have valid configuration
 func (c *Controller) validateProvisionRefs(ctx context.Context, provision *k8s.Provision) error {
-	// Validate machineRef and its configuration
-	machine, err := c.k8sClient.GetMachine(ctx, provision.Spec.MachineRef)
-	if err != nil {
+	// Validate machineRef exists
+	if _, err := c.k8sClient.GetMachine(ctx, provision.Spec.MachineRef); err != nil {
 		return fmt.Errorf("Machine '%s' not found", provision.Spec.MachineRef)
 	}
 
-	// Validate machineId format if present
-	if machine.MachineId != "" && !validMachineId.MatchString(machine.MachineId) {
-		return fmt.Errorf("Machine '%s' has invalid machineId: must be exactly 32 hex characters", provision.Spec.MachineRef)
+	// Validate machineId format if present on Provision
+	if provision.Spec.MachineId != "" && !validMachineId.MatchString(provision.Spec.MachineId) {
+		return fmt.Errorf("Provision '%s' has invalid machineId: must be exactly 32 hex characters", provision.Name)
 	}
 
 	// Validate bootTargetRef (BootTarget)
@@ -274,12 +273,9 @@ func (c *Controller) RenderTemplate(ctx context.Context, provision *k8s.Provisio
 	data["Hostname"] = provision.Spec.MachineRef
 	data["Target"] = provision.Spec.BootTargetRef
 
-	// Add MachineId from Machine if set (use hasKey in templates to check)
-	if c.k8sClient != nil {
-		machine, err := c.k8sClient.GetMachine(ctx, provision.Spec.MachineRef)
-		if err == nil && machine.MachineId != "" {
-			data["MachineId"] = machine.MachineId
-		}
+	// Add MachineId from Provision if set (use hasKey in templates to check)
+	if provision.Spec.MachineId != "" {
+		data["MachineId"] = provision.Spec.MachineId
 	}
 
 	// Parse and execute template

@@ -46,9 +46,8 @@ var (
 
 // Machine represents a Machine CRD
 type Machine struct {
-	Name      string
-	MAC       string
-	MachineId string // Optional systemd machine-id (32 hex chars)
+	Name string
+	MAC  string
 }
 
 // Provision represents a Provision CRD
@@ -64,6 +63,7 @@ type ProvisionSpec struct {
 	ResponseTemplateRef string
 	ConfigMaps          []string
 	Secrets             []string
+	MachineId           string // Optional systemd machine-id (32 hex chars)
 }
 
 type ProvisionStatus struct {
@@ -187,9 +187,8 @@ func parseMachine(obj *unstructured.Unstructured) (*Machine, error) {
 	}
 
 	return &Machine{
-		Name:      obj.GetName(),
-		MAC:       strings.ToLower(mac),
-		MachineId: getString(spec, "machineId"),
+		Name: obj.GetName(),
+		MAC:  strings.ToLower(mac),
 	}, nil
 }
 
@@ -345,6 +344,7 @@ func parseProvision(obj *unstructured.Unstructured) (*Provision, error) {
 			ResponseTemplateRef: getString(spec, "responseTemplateRef"),
 			ConfigMaps:          getStringSlice(spec, "configMaps"),
 			Secrets:             getStringSlice(spec, "secrets"),
+			MachineId:           getString(spec, "machineId"),
 		},
 	}
 

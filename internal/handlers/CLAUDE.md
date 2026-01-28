@@ -9,14 +9,14 @@ HTTP handlers for isoboot-http server.
 - `GET /boot/conditional-boot?mac=xx-xx-xx-xx-xx-xx` - Returns BootTarget template if Provision exists, 404 otherwise
 - `GET /boot/done?id={machineName}` - Marks Provision as completed (call from preseed late_command)
 
-Template variables: Host, Port, MachineName, Hostname, Domain, BootTarget
+Template variables: Host, Port, MachineName, Hostname, Domain, BootTarget, ProvisionName
 
 ### ISOHandler (iso.go)
 - `GET /iso/content/{bootTarget}/{isoFile}/{path...}` - Serves extracted ISO contents
 - Firmware merging: If BootTarget has `includeFirmwarePath` and path matches, appends firmware.cpio.gz
 
 ### AnswerHandler (answer.go)
-- `GET /answer/{machineName}/{filename}` - Serves rendered ResponseTemplate files
+- `GET /answer/{provisionName}/{filename}` - Serves rendered ResponseTemplate files
 
 ## Error Handling
 
