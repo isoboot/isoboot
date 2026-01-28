@@ -137,10 +137,10 @@ func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInf
 }
 
 // GetRenderedTemplate retrieves a rendered template file for a provision
-func (c *Client) GetRenderedTemplate(ctx context.Context, hostname, filename string) (string, error) {
+func (c *Client) GetRenderedTemplate(ctx context.Context, provisionName, filename string) (string, error) {
 	resp, err := c.client.GetRenderedTemplate(ctx, &pb.GetRenderedTemplateRequest{
-		Hostname: hostname,
-		Filename: filename,
+		ProvisionName: provisionName,
+		Filename:      filename,
 	})
 	if err != nil {
 		return "", fmt.Errorf("grpc call: %w", err)
