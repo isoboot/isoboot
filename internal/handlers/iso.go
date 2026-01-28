@@ -300,7 +300,7 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Validate diskImageFile - must be a plain filename (no directory components)
 	// Note: ".." is already rejected by pathTraversalMiddleware
-	if strings.ContainsAny(diskImageFile, "/\\") || strings.HasPrefix(diskImageFile, ".") {
+	if diskImageFile == "." || strings.ContainsAny(diskImageFile, "/\\") {
 		http.Error(w, "invalid disk image file", http.StatusBadRequest)
 		return
 	}
@@ -337,7 +337,8 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 	// 9. Stream in chunks (1MB, don't load entire ISO into memory)
 	buf := make([]byte, streamChunkSize)
 	if n, err := io.CopyBuffer(w, file, buf); err != nil {
-		// Suppress broken pipe / connection reset - expected on client disconnect
+		// Suppress EPIPE/ECONNRESET - these are expected when clients disconnect mid-download
+		// (e.g., installer restarts, user cancels). Other errors (disk I/O, etc.) are logged.
 		if !errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
 			log.Printf("iso: error streaming %s: copied %d of %d bytes: %v", isoPath, n, fileInfo.Size(), err)
 		}
