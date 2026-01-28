@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/isoboot/isoboot/internal/controllerclient"
 	"github.com/isoboot/isoboot/internal/iso"
@@ -269,7 +270,130 @@ func shouldMergeFirmware(requestedFile, includeFirmwarePath string) bool {
 	return requestPath == includeFirmwarePath
 }
 
+// isPrintableASCII returns true if s contains only printable ASCII characters (0x20-0x7E).
+// Used to reject control characters (e.g., CR/LF) that could cause header injection.
+func isPrintableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7E {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+// ServeISODownload serves full ISO files for download
+// Path format: /iso/download/{bootTarget}/{diskImageFile}
+// Example: /iso/download/ubuntu-24/ubuntu-24.04.1-live-server-amd64.iso
+func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
+	// Only allow GET and HEAD
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := r.Context()
+
+	// 1. Parse path: /iso/download/{bootTarget}/{diskImageFile}
+	path := strings.TrimPrefix(r.URL.Path, "/iso/download/")
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	bootTargetName := parts[0]
+	diskImageFile := parts[1]
+
+	// 2. Validate diskImageFile early - must be a safe plain filename.
+	// Rejects directory components, control characters (header injection via CR/LF),
+	// and the special "." name. Runs before gRPC to avoid unnecessary calls.
+	// Note: ".." is already rejected by pathTraversalMiddleware.
+	if diskImageFile == "." || strings.ContainsAny(diskImageFile, "/\\") || !isPrintableASCII(diskImageFile) {
+		http.Error(w, "invalid disk image file", http.StatusBadRequest)
+		return
+	}
+
+	// 3. Get BootTarget → disk image name
+	bootTarget, err := h.controllerClient.GetBootTarget(ctx, bootTargetName)
+	if err != nil {
+		if errors.Is(err, controllerclient.ErrNotFound) {
+			http.Error(w, "boot target not found", http.StatusNotFound)
+		} else {
+			log.Printf("iso: failed to get BootTarget %s: %v", bootTargetName, err)
+			http.Error(w, "failed to resolve boot target", http.StatusBadGateway)
+		}
+		return
+	}
+	diskImage := bootTarget.DiskImage
+
+	// 4. Validate diskImage (reuse existing regex)
+	if !validDiskImageRef.MatchString(diskImage) {
+		http.Error(w, "invalid disk image", http.StatusBadRequest)
+		return
+	}
+
+	// 5. Construct path and verify containment
+	diskImageDir := filepath.Join(h.basePath, diskImage)
+	isoPath := filepath.Join(diskImageDir, diskImageFile)
+	if !strings.HasPrefix(isoPath, diskImageDir+string(os.PathSeparator)) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	// 6. Get file info for Content-Length
+	fileInfo, err := os.Stat(isoPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "iso not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("iso: error stating %s: %v", isoPath, err)
+		http.Error(w, "failed to stat iso", http.StatusInternalServerError)
+		return
+	}
+	if !fileInfo.Mode().IsRegular() {
+		http.Error(w, "iso not found", http.StatusNotFound)
+		return
+	}
+
+	// 7. Open file for streaming
+	file, err := os.Open(isoPath)
+	if err != nil {
+		http.Error(w, "failed to open iso", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	// 8. Set headers
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", diskImageFile))
+
+	// Short-circuit HEAD requests - avoid reading the entire ISO just to discard the body
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+
+	// 9. Stream in chunks (1MB, don't load entire ISO into memory)
+	buf := make([]byte, streamChunkSize)
+	n, err := io.CopyBuffer(w, file, buf)
+	if err != nil {
+		// Best-effort suppression of EPIPE/ECONNRESET - expected when clients disconnect
+		// mid-download (e.g., installer restarts, user cancels). These are Unix-specific
+		// syscall errors; this code runs in Linux containers. Other errors are logged.
+		if !errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
+			log.Printf("iso: error streaming %s: copied %d of %d bytes: %v", isoPath, n, fileInfo.Size(), err)
+		}
+	} else if n != fileInfo.Size() {
+		// Unexpected short transfer without error (e.g., file truncated during streaming)
+		log.Printf("iso: incomplete stream %s: copied %d of %d bytes", isoPath, n, fileInfo.Size())
+	}
+}
+
 // RegisterRoutes registers ISO-related routes
 func (h *ISOHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/iso/content/", h.ServeISOContent)
+	mux.HandleFunc("/iso/download/", h.ServeISODownload)
 }
