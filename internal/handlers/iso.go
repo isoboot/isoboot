@@ -17,7 +17,7 @@ import (
 )
 
 // validDiskImageRef matches alphanumeric, dash, underscore, with optional dot-separated segments.
-// Examples: "ubuntu-24", "debian-13.0", "rocky_9"
+// Examples: "ubuntu-24", "Debian-13.0", "rocky_9"
 var validDiskImageRef = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 
 const streamChunkSize = 1024 * 1024 // 1MB chunks for streaming

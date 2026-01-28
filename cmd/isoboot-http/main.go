@@ -33,8 +33,8 @@ func pathTraversalMiddleware(next http.Handler) http.Handler {
 		cleanPath := path.Clean(normalizedPath)
 
 		// Reject if cleaned path contains parent-directory traversal
-		if cleanPath == ".." ||
-			strings.HasPrefix(cleanPath, "../") ||
+		// Note: URL paths start with "/", so path.Clean won't return bare ".."
+		if strings.HasPrefix(cleanPath, "../") ||
 			strings.HasPrefix(cleanPath, "/../") ||
 			strings.Contains(cleanPath, "/../") {
 			http.Error(w, "invalid path", http.StatusBadRequest)
