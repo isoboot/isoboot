@@ -275,7 +275,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	if err != nil {
 		log.Printf("Controller: size check request creation failed for %s: %v, proceeding without size check", fileURL, err)
 	} else {
-		sizeResp, err := http.DefaultClient.Do(sizeReq)
+		sizeResp, err := c.httpClient.Do(sizeReq)
 		if err != nil {
 			log.Printf("Controller: size check request failed for %s: %v, proceeding without size check", fileURL, err)
 		} else {
@@ -309,7 +309,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("create GET request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(getReq)
+	resp, err := c.httpClient.Do(getReq)
 	if err != nil {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("GET request: %w", err)
@@ -488,7 +488,7 @@ func (c *Controller) discoverChecksums(ctx context.Context, fileURL string) []ch
 					return nil
 				}
 
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := c.httpClient.Do(req)
 				if err != nil || resp.StatusCode != http.StatusOK {
 					if resp != nil {
 						resp.Body.Close()
