@@ -279,7 +279,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		if err != nil {
 			log.Printf("Controller: size check request failed for %s: %v, proceeding without size check", fileURL, err)
 		} else {
-			// Close immediately without reading body - aborts the transfer
+			// Close body without reading content - aborts the transfer after headers are received
 			sizeResp.Body.Close()
 			if sizeResp.StatusCode >= 200 && sizeResp.StatusCode < 300 {
 				if sizeResp.ContentLength > 0 {
