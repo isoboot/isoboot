@@ -64,6 +64,7 @@ type ProvisionSpec struct {
 	ResponseTemplateRef string
 	ConfigMaps          []string
 	Secrets             []string
+	MachineId           string // Optional systemd machine-id (32 hex chars)
 }
 
 type ProvisionStatus struct {
@@ -345,6 +346,7 @@ func parseProvision(obj *unstructured.Unstructured) (*Provision, error) {
 			ResponseTemplateRef: getString(spec, "responseTemplateRef"),
 			ConfigMaps:          getStringSlice(spec, "configMaps"),
 			Secrets:             getStringSlice(spec, "secrets"),
+			MachineId:           getString(spec, "machineId"),
 		},
 	}
 
