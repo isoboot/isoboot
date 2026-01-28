@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/isoboot/isoboot/internal/k8s"
 )
@@ -109,5 +111,327 @@ func TestValidMachineId(t *testing.T) {
 				t.Errorf("validMachineId.MatchString(%q) = %v, want %v", tt.input, got, tt.valid)
 			}
 		})
+	}
+}
+
+func TestReconcileProvision_InitializePending(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+		},
+		Status: k8s.ProvisionStatus{Phase: ""},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+	fake.diskImages["debian-iso"] = &k8s.DiskImage{
+		Name:   "debian-iso",
+		Status: k8s.DiskImageStatus{Phase: "Complete"},
+	}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, ok := fake.getProvisionStatus("prov-1")
+	if !ok {
+		t.Fatal("expected provision status to be set")
+	}
+	if s.Phase != "Pending" {
+		t.Errorf("expected phase Pending, got %q", s.Phase)
+	}
+}
+
+func TestReconcileProvision_ConfigError_MissingMachine(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "missing-machine",
+			BootTargetRef: "debian-13",
+		},
+		Status: k8s.ProvisionStatus{Phase: "Pending"},
+	}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, ok := fake.getProvisionStatus("prov-1")
+	if !ok {
+		t.Fatal("expected provision status to be set")
+	}
+	if s.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	}
+	if !strings.Contains(s.Message, "Machine") {
+		t.Errorf("expected message about Machine, got %q", s.Message)
+	}
+}
+
+func TestReconcileProvision_ConfigError_MissingBootTarget(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "missing-bt",
+		},
+		Status: k8s.ProvisionStatus{Phase: "Pending"},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, _ := fake.getProvisionStatus("prov-1")
+	if s.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	}
+	if !strings.Contains(s.Message, "BootTarget") {
+		t.Errorf("expected message about BootTarget, got %q", s.Message)
+	}
+}
+
+func TestReconcileProvision_ConfigError_InvalidMachineId(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+			MachineId:     "INVALID-UPPERCASE",
+		},
+		Status: k8s.ProvisionStatus{Phase: "Pending"},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, _ := fake.getProvisionStatus("prov-1")
+	if s.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	}
+	if !strings.Contains(s.Message, "machineId") {
+		t.Errorf("expected message about machineId, got %q", s.Message)
+	}
+}
+
+func TestReconcileProvision_ConfigError_MissingConfigMap(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+			ConfigMaps:    []string{"missing-cm"},
+		},
+		Status: k8s.ProvisionStatus{Phase: "Pending"},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, _ := fake.getProvisionStatus("prov-1")
+	if s.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	}
+	if !strings.Contains(s.Message, "ConfigMap") {
+		t.Errorf("expected message about ConfigMap, got %q", s.Message)
+	}
+}
+
+func TestReconcileProvision_ConfigError_MissingSecret(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+			Secrets:       []string{"missing-secret"},
+		},
+		Status: k8s.ProvisionStatus{Phase: "Pending"},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, _ := fake.getProvisionStatus("prov-1")
+	if s.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	}
+	if !strings.Contains(s.Message, "Secret") {
+		t.Errorf("expected message about Secret, got %q", s.Message)
+	}
+}
+
+func TestReconcileProvision_WaitingForDiskImage(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+		},
+		Status: k8s.ProvisionStatus{Phase: "Pending"},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+	fake.diskImages["debian-iso"] = &k8s.DiskImage{
+		Name:   "debian-iso",
+		Status: k8s.DiskImageStatus{Phase: "Downloading", Progress: 42},
+	}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, _ := fake.getProvisionStatus("prov-1")
+	if s.Phase != "WaitingForDiskImage" {
+		t.Errorf("expected phase WaitingForDiskImage, got %q", s.Phase)
+	}
+}
+
+func TestReconcileProvision_ConfigErrorRecovery(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+		},
+		Status: k8s.ProvisionStatus{Phase: "ConfigError", Message: "old error"},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+	fake.diskImages["debian-iso"] = &k8s.DiskImage{
+		Name:   "debian-iso",
+		Status: k8s.DiskImageStatus{Phase: "Complete"},
+	}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, _ := fake.getProvisionStatus("prov-1")
+	if s.Phase != "Pending" {
+		t.Errorf("expected recovery to Pending, got %q", s.Phase)
+	}
+}
+
+func TestReconcileProvision_TimeoutInProgress(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+		},
+		Status: k8s.ProvisionStatus{
+			Phase:       "InProgress",
+			LastUpdated: time.Now().Add(-31 * time.Minute),
+		},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+	fake.diskImages["debian-iso"] = &k8s.DiskImage{
+		Name:   "debian-iso",
+		Status: k8s.DiskImageStatus{Phase: "Complete"},
+	}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, _ := fake.getProvisionStatus("prov-1")
+	if s.Phase != "Failed" {
+		t.Errorf("expected phase Failed (timeout), got %q", s.Phase)
+	}
+	if !strings.Contains(s.Message, "Timed out") {
+		t.Errorf("expected timeout message, got %q", s.Message)
+	}
+}
+
+func TestReconcileProvision_InProgressNotTimedOut(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+		},
+		Status: k8s.ProvisionStatus{
+			Phase:       "InProgress",
+			LastUpdated: time.Now().Add(-5 * time.Minute),
+		},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+	fake.diskImages["debian-iso"] = &k8s.DiskImage{
+		Name:   "debian-iso",
+		Status: k8s.DiskImageStatus{Phase: "Complete"},
+	}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	// Should NOT have updated the status (still within timeout)
+	if _, ok := fake.getProvisionStatus("prov-1"); ok {
+		t.Error("expected no status update for non-timed-out InProgress provision")
+	}
+}
+
+func TestReconcileProvision_CompleteIsNoop(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+		},
+		Status: k8s.ProvisionStatus{Phase: "Complete"},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+	fake.diskImages["debian-iso"] = &k8s.DiskImage{
+		Name:   "debian-iso",
+		Status: k8s.DiskImageStatus{Phase: "Complete"},
+	}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	// Complete provisions should not trigger any status update
+	if _, ok := fake.getProvisionStatus("prov-1"); ok {
+		t.Error("expected no status update for Complete provision")
+	}
+}
+
+func TestValidateProvisionRefs_AllValid(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
+	fake.responseTemplates["preseed"] = &k8s.ResponseTemplate{Name: "preseed", Files: map[string]string{"preseed.cfg": "content"}}
+	fake.configMaps["net-cfg"] = newConfigMap("net-cfg", map[string]string{"gateway": "10.0.0.1"})
+	fake.secrets["ssh-keys"] = newSecret("ssh-keys", map[string][]byte{"key": []byte("data")})
+
+	ctrl := New(fake)
+	provision := &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:          "vm-01",
+			BootTargetRef:       "debian-13",
+			ResponseTemplateRef: "preseed",
+			ConfigMaps:          []string{"net-cfg"},
+			Secrets:             []string{"ssh-keys"},
+		},
+	}
+
+	err := ctrl.validateProvisionRefs(context.Background(), provision)
+	if err != nil {
+		t.Errorf("expected no error for valid refs, got %v", err)
 	}
 }
