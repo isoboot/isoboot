@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/isoboot/isoboot/internal/controllerclient"
 	"github.com/isoboot/isoboot/internal/iso"
@@ -297,8 +298,10 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Validate diskImageFile - no path traversal
-	if strings.Contains(diskImageFile, "/") || strings.Contains(diskImageFile, "..") ||
+	// 4. Validate diskImageFile - no path traversal, no directory components
+	cleanDiskImageFile := filepath.Clean(diskImageFile)
+	if cleanDiskImageFile != diskImageFile ||
+		strings.ContainsAny(diskImageFile, string(os.PathSeparator)+"\\") ||
 		strings.HasPrefix(diskImageFile, ".") {
 		http.Error(w, "invalid disk image file", http.StatusBadRequest)
 		return
@@ -336,7 +339,10 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 	// 9. Stream in chunks (1MB, don't load entire ISO into memory)
 	buf := make([]byte, streamChunkSize)
 	if n, err := io.CopyBuffer(w, file, buf); err != nil {
-		log.Printf("iso: error streaming %s: copied %d of %d bytes: %v", isoPath, n, fileInfo.Size(), err)
+		// Suppress broken pipe / connection reset - expected on client disconnect
+		if !errors.Is(err, syscall.EPIPE) && !errors.Is(err, syscall.ECONNRESET) {
+			log.Printf("iso: error streaming %s: copied %d of %d bytes: %v", isoPath, n, fileInfo.Size(), err)
+		}
 	}
 }
 
