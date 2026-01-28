@@ -87,22 +87,22 @@ func (s *GRPCServer) MarkBootCompleted(ctx context.Context, req *pb.MarkBootComp
 	return &pb.MarkBootCompletedResponse{Success: true}, nil
 }
 
-// GetTemplate retrieves a boot template from ConfigMap
-func (s *GRPCServer) GetTemplate(ctx context.Context, req *pb.GetTemplateRequest) (*pb.GetTemplateResponse, error) {
-	cm, err := s.ctrl.k8sClient.GetConfigMap(ctx, req.Configmap)
+// GetConfigMapValue retrieves a value from a ConfigMap by key
+func (s *GRPCServer) GetConfigMapValue(ctx context.Context, req *pb.GetConfigMapValueRequest) (*pb.GetConfigMapValueResponse, error) {
+	cm, err := s.ctrl.k8sClient.GetConfigMap(ctx, req.ConfigmapName)
 	if err != nil {
-		log.Printf("gRPC: error getting configmap %s: %v", req.Configmap, err)
-		return &pb.GetTemplateResponse{Found: false}, nil
+		log.Printf("gRPC: error getting configmap %s: %v", req.ConfigmapName, err)
+		return &pb.GetConfigMapValueResponse{Found: false}, nil
 	}
 
-	content, ok := cm.Data[req.Name]
+	value, ok := cm.Data[req.Key]
 	if !ok {
-		return &pb.GetTemplateResponse{Found: false}, nil
+		return &pb.GetConfigMapValueResponse{Found: false}, nil
 	}
 
-	return &pb.GetTemplateResponse{
-		Found:   true,
-		Content: content,
+	return &pb.GetConfigMapValueResponse{
+		Found: true,
+		Value: value,
 	}, nil
 }
 

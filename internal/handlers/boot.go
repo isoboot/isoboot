@@ -52,7 +52,7 @@ func splitHostDomain(name string) (hostname, domain string) {
 }
 
 func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.Template, error) {
-	content, err := h.ctrlClient.GetTemplate(ctx, name, h.configMap)
+	content, err := h.ctrlClient.GetConfigMapValue(ctx, h.configMap, name)
 	if err != nil {
 		return nil, err
 	}
