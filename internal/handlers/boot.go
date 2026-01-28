@@ -16,14 +16,16 @@ import (
 type BootHandler struct {
 	host       string
 	port       string
+	proxyPort  string
 	ctrlClient *controllerclient.Client
 	configMap  string
 }
 
-func NewBootHandler(host, port string, ctrlClient *controllerclient.Client, configMap string) *BootHandler {
+func NewBootHandler(host, port, proxyPort string, ctrlClient *controllerclient.Client, configMap string) *BootHandler {
 	return &BootHandler{
 		host:       host,
 		port:       port,
+		proxyPort:  proxyPort,
 		ctrlClient: ctrlClient,
 		configMap:  configMap,
 	}
@@ -33,6 +35,7 @@ func NewBootHandler(host, port string, ctrlClient *controllerclient.Client, conf
 type TemplateData struct {
 	Host          string
 	Port          string
+	ProxyPort     string // Squid proxy port for mirror/http/proxy
 	MachineName   string // Full machine name (e.g., "vm-deb-0099.lan")
 	Hostname      string // First part before dot (e.g., "vm-deb-0099")
 	Domain        string // Everything after first dot (e.g., "lan")
@@ -71,8 +74,9 @@ func (h *BootHandler) ServeBootIPXE(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := TemplateData{
-		Host: h.host,
-		Port: h.port,
+		Host:      h.host,
+		Port:      h.port,
+		ProxyPort: h.proxyPort,
 	}
 
 	var buf bytes.Buffer
@@ -170,6 +174,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	data := TemplateData{
 		Host:          h.host,
 		Port:          h.port,
+		ProxyPort:     h.proxyPort,
 		MachineName:   machineName,
 		Hostname:      hostname,
 		Domain:        domain,

@@ -77,7 +77,7 @@ func main() {
 	})
 
 	// Boot handlers
-	bootHandler := handlers.NewBootHandler(host, port, ctrlClient, templatesConfigMap)
+	bootHandler := handlers.NewBootHandler(host, port, proxyPort, ctrlClient, templatesConfigMap)
 	bootHandler.RegisterRoutes(mux)
 
 	// ISO content handlers
