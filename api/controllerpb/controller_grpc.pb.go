@@ -17,12 +17,12 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ControllerServiceClient interface {
-	// GetPendingBoot returns boot info for a MAC with pending provision
-	GetPendingBoot(ctx context.Context, in *GetPendingBootRequest, opts ...grpc.CallOption) (*GetPendingBootResponse, error)
-	// MarkBootStarted marks a provision as InProgress
-	MarkBootStarted(ctx context.Context, in *MarkBootStartedRequest, opts ...grpc.CallOption) (*MarkBootStartedResponse, error)
-	// MarkBootCompleted marks a provision as Complete
-	MarkBootCompleted(ctx context.Context, in *MarkBootCompletedRequest, opts ...grpc.CallOption) (*MarkBootCompletedResponse, error)
+	// GetMachineByMAC retrieves a Machine by MAC address
+	GetMachineByMAC(ctx context.Context, in *GetMachineByMACRequest, opts ...grpc.CallOption) (*GetMachineByMACResponse, error)
+	// GetProvisionsByMachine retrieves all Provisions referencing a Machine
+	GetProvisionsByMachine(ctx context.Context, in *GetProvisionsByMachineRequest, opts ...grpc.CallOption) (*GetProvisionsByMachineResponse, error)
+	// UpdateProvisionStatus updates a Provision's status
+	UpdateProvisionStatus(ctx context.Context, in *UpdateProvisionStatusRequest, opts ...grpc.CallOption) (*UpdateProvisionStatusResponse, error)
 	// GetConfigMapValue retrieves a value from a ConfigMap by key
 	GetConfigMapValue(ctx context.Context, in *GetConfigMapValueRequest, opts ...grpc.CallOption) (*GetConfigMapValueResponse, error)
 	// GetBootTarget retrieves a BootTarget by name
@@ -45,27 +45,27 @@ func NewControllerServiceClient(cc grpc.ClientConnInterface) ControllerServiceCl
 	return &controllerServiceClient{cc}
 }
 
-func (c *controllerServiceClient) GetPendingBoot(ctx context.Context, in *GetPendingBootRequest, opts ...grpc.CallOption) (*GetPendingBootResponse, error) {
-	out := new(GetPendingBootResponse)
-	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetPendingBoot", in, out, opts...)
+func (c *controllerServiceClient) GetMachineByMAC(ctx context.Context, in *GetMachineByMACRequest, opts ...grpc.CallOption) (*GetMachineByMACResponse, error) {
+	out := new(GetMachineByMACResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetMachineByMAC", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerServiceClient) MarkBootStarted(ctx context.Context, in *MarkBootStartedRequest, opts ...grpc.CallOption) (*MarkBootStartedResponse, error) {
-	out := new(MarkBootStartedResponse)
-	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/MarkBootStarted", in, out, opts...)
+func (c *controllerServiceClient) GetProvisionsByMachine(ctx context.Context, in *GetProvisionsByMachineRequest, opts ...grpc.CallOption) (*GetProvisionsByMachineResponse, error) {
+	out := new(GetProvisionsByMachineResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetProvisionsByMachine", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerServiceClient) MarkBootCompleted(ctx context.Context, in *MarkBootCompletedRequest, opts ...grpc.CallOption) (*MarkBootCompletedResponse, error) {
-	out := new(MarkBootCompletedResponse)
-	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/MarkBootCompleted", in, out, opts...)
+func (c *controllerServiceClient) UpdateProvisionStatus(ctx context.Context, in *UpdateProvisionStatusRequest, opts ...grpc.CallOption) (*UpdateProvisionStatusResponse, error) {
+	out := new(UpdateProvisionStatusResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/UpdateProvisionStatus", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -130,12 +130,12 @@ func (c *controllerServiceClient) GetSecrets(ctx context.Context, in *GetSecrets
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility
 type ControllerServiceServer interface {
-	// GetPendingBoot returns boot info for a MAC with pending provision
-	GetPendingBoot(context.Context, *GetPendingBootRequest) (*GetPendingBootResponse, error)
-	// MarkBootStarted marks a provision as InProgress
-	MarkBootStarted(context.Context, *MarkBootStartedRequest) (*MarkBootStartedResponse, error)
-	// MarkBootCompleted marks a provision as Complete
-	MarkBootCompleted(context.Context, *MarkBootCompletedRequest) (*MarkBootCompletedResponse, error)
+	// GetMachineByMAC retrieves a Machine by MAC address
+	GetMachineByMAC(context.Context, *GetMachineByMACRequest) (*GetMachineByMACResponse, error)
+	// GetProvisionsByMachine retrieves all Provisions referencing a Machine
+	GetProvisionsByMachine(context.Context, *GetProvisionsByMachineRequest) (*GetProvisionsByMachineResponse, error)
+	// UpdateProvisionStatus updates a Provision's status
+	UpdateProvisionStatus(context.Context, *UpdateProvisionStatusRequest) (*UpdateProvisionStatusResponse, error)
 	// GetConfigMapValue retrieves a value from a ConfigMap by key
 	GetConfigMapValue(context.Context, *GetConfigMapValueRequest) (*GetConfigMapValueResponse, error)
 	// GetBootTarget retrieves a BootTarget by name
@@ -155,14 +155,14 @@ type ControllerServiceServer interface {
 type UnimplementedControllerServiceServer struct {
 }
 
-func (UnimplementedControllerServiceServer) GetPendingBoot(context.Context, *GetPendingBootRequest) (*GetPendingBootResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPendingBoot not implemented")
+func (UnimplementedControllerServiceServer) GetMachineByMAC(context.Context, *GetMachineByMACRequest) (*GetMachineByMACResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMachineByMAC not implemented")
 }
-func (UnimplementedControllerServiceServer) MarkBootStarted(context.Context, *MarkBootStartedRequest) (*MarkBootStartedResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method MarkBootStarted not implemented")
+func (UnimplementedControllerServiceServer) GetProvisionsByMachine(context.Context, *GetProvisionsByMachineRequest) (*GetProvisionsByMachineResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProvisionsByMachine not implemented")
 }
-func (UnimplementedControllerServiceServer) MarkBootCompleted(context.Context, *MarkBootCompletedRequest) (*MarkBootCompletedResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method MarkBootCompleted not implemented")
+func (UnimplementedControllerServiceServer) UpdateProvisionStatus(context.Context, *UpdateProvisionStatusRequest) (*UpdateProvisionStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateProvisionStatus not implemented")
 }
 func (UnimplementedControllerServiceServer) GetConfigMapValue(context.Context, *GetConfigMapValueRequest) (*GetConfigMapValueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetConfigMapValue not implemented")
@@ -195,56 +195,56 @@ func RegisterControllerServiceServer(s *grpc.Server, srv ControllerServiceServer
 	s.RegisterService(&_ControllerService_serviceDesc, srv)
 }
 
-func _ControllerService_GetPendingBoot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPendingBootRequest)
+func _ControllerService_GetMachineByMAC_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMachineByMACRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).GetPendingBoot(ctx, in)
+		return srv.(ControllerServiceServer).GetMachineByMAC(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/isoboot.controller.v1.ControllerService/GetPendingBoot",
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetMachineByMAC",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).GetPendingBoot(ctx, req.(*GetPendingBootRequest))
+		return srv.(ControllerServiceServer).GetMachineByMAC(ctx, req.(*GetMachineByMACRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_MarkBootStarted_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MarkBootStartedRequest)
+func _ControllerService_GetProvisionsByMachine_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProvisionsByMachineRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).MarkBootStarted(ctx, in)
+		return srv.(ControllerServiceServer).GetProvisionsByMachine(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/isoboot.controller.v1.ControllerService/MarkBootStarted",
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetProvisionsByMachine",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).MarkBootStarted(ctx, req.(*MarkBootStartedRequest))
+		return srv.(ControllerServiceServer).GetProvisionsByMachine(ctx, req.(*GetProvisionsByMachineRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_MarkBootCompleted_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MarkBootCompletedRequest)
+func _ControllerService_UpdateProvisionStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateProvisionStatusRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).MarkBootCompleted(ctx, in)
+		return srv.(ControllerServiceServer).UpdateProvisionStatus(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/isoboot.controller.v1.ControllerService/MarkBootCompleted",
+		FullMethod: "/isoboot.controller.v1.ControllerService/UpdateProvisionStatus",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).MarkBootCompleted(ctx, req.(*MarkBootCompletedRequest))
+		return srv.(ControllerServiceServer).UpdateProvisionStatus(ctx, req.(*UpdateProvisionStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -362,16 +362,16 @@ var _ControllerService_serviceDesc = grpc.ServiceDesc{
 	HandlerType: (*ControllerServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "GetPendingBoot",
-			Handler:    _ControllerService_GetPendingBoot_Handler,
+			MethodName: "GetMachineByMAC",
+			Handler:    _ControllerService_GetMachineByMAC_Handler,
 		},
 		{
-			MethodName: "MarkBootStarted",
-			Handler:    _ControllerService_MarkBootStarted_Handler,
+			MethodName: "GetProvisionsByMachine",
+			Handler:    _ControllerService_GetProvisionsByMachine_Handler,
 		},
 		{
-			MethodName: "MarkBootCompleted",
-			Handler:    _ControllerService_MarkBootCompleted_Handler,
+			MethodName: "UpdateProvisionStatus",
+			Handler:    _ControllerService_UpdateProvisionStatus_Handler,
 		},
 		{
 			MethodName: "GetConfigMapValue",

@@ -19,72 +19,57 @@ func NewGRPCServer(ctrl *Controller) *GRPCServer {
 	return &GRPCServer{ctrl: ctrl}
 }
 
-// GetPendingBoot returns boot info for a MAC with pending provision
-func (s *GRPCServer) GetPendingBoot(ctx context.Context, req *pb.GetPendingBootRequest) (*pb.GetPendingBootResponse, error) {
+// GetMachineByMAC retrieves a Machine by MAC address
+func (s *GRPCServer) GetMachineByMAC(ctx context.Context, req *pb.GetMachineByMACRequest) (*pb.GetMachineByMACResponse, error) {
 	mac := strings.ToLower(req.Mac)
 
-	provision, err := s.ctrl.k8sClient.FindProvisionByMAC(ctx, mac, "Pending")
+	machine, err := s.ctrl.k8sClient.FindMachineByMAC(ctx, mac)
 	if err != nil {
-		log.Printf("gRPC: error finding provision for %s: %v", mac, err)
-		return &pb.GetPendingBootResponse{Found: false}, nil
+		log.Printf("gRPC: error finding machine for MAC %s: %v", mac, err)
+		return &pb.GetMachineByMACResponse{Found: false}, nil
 	}
 
-	if provision == nil {
-		return &pb.GetPendingBootResponse{Found: false}, nil
+	if machine == nil {
+		return &pb.GetMachineByMACResponse{Found: false}, nil
 	}
 
-	return &pb.GetPendingBootResponse{
-		Found:         true,
-		MachineName:   provision.Spec.MachineRef,
-		ProvisionName: provision.Name,
-		Target:        provision.Spec.BootTargetRef,
+	return &pb.GetMachineByMACResponse{
+		Found: true,
+		Name:  machine.Name,
 	}, nil
 }
 
-// MarkBootStarted marks a provision as InProgress
-func (s *GRPCServer) MarkBootStarted(ctx context.Context, req *pb.MarkBootStartedRequest) (*pb.MarkBootStartedResponse, error) {
-	mac := strings.ToLower(req.Mac)
-
-	provision, err := s.ctrl.k8sClient.FindProvisionByMAC(ctx, mac, "Pending")
+// GetProvisionsByMachine retrieves all Provisions referencing a Machine
+func (s *GRPCServer) GetProvisionsByMachine(ctx context.Context, req *pb.GetProvisionsByMachineRequest) (*pb.GetProvisionsByMachineResponse, error) {
+	provisions, err := s.ctrl.k8sClient.ListProvisionsByMachine(ctx, req.MachineName)
 	if err != nil {
-		log.Printf("gRPC: error finding provision for %s: %v", mac, err)
-		return &pb.MarkBootStartedResponse{Success: false, Error: err.Error()}, nil
+		log.Printf("gRPC: error listing provisions for machine %s: %v", req.MachineName, err)
+		return &pb.GetProvisionsByMachineResponse{}, nil
 	}
 
-	if provision == nil {
-		return &pb.MarkBootStartedResponse{Success: false, Error: "no pending provision"}, nil
+	var summaries []*pb.ProvisionSummary
+	for _, p := range provisions {
+		summaries = append(summaries, &pb.ProvisionSummary{
+			Name:          p.Name,
+			Status:        p.Status.Phase,
+			BootTargetRef: p.Spec.BootTargetRef,
+		})
 	}
 
-	if err := s.ctrl.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "InProgress", "Boot script served", ""); err != nil {
-		log.Printf("gRPC: error updating provision %s: %v", provision.Name, err)
-		return &pb.MarkBootStartedResponse{Success: false, Error: err.Error()}, nil
-	}
-
-	log.Printf("gRPC: marked %s as InProgress", provision.Name)
-	return &pb.MarkBootStartedResponse{Success: true}, nil
+	return &pb.GetProvisionsByMachineResponse{
+		Provisions: summaries,
+	}, nil
 }
 
-// MarkBootCompleted marks a provision as Complete (by hostname)
-func (s *GRPCServer) MarkBootCompleted(ctx context.Context, req *pb.MarkBootCompletedRequest) (*pb.MarkBootCompletedResponse, error) {
-	hostname := req.Hostname
-
-	provision, err := s.ctrl.k8sClient.FindProvisionByHostname(ctx, hostname, "InProgress")
-	if err != nil {
-		log.Printf("gRPC: error finding provision for %s: %v", hostname, err)
-		return &pb.MarkBootCompletedResponse{Success: false, Error: err.Error()}, nil
+// UpdateProvisionStatus updates a Provision's status
+func (s *GRPCServer) UpdateProvisionStatus(ctx context.Context, req *pb.UpdateProvisionStatusRequest) (*pb.UpdateProvisionStatusResponse, error) {
+	if err := s.ctrl.k8sClient.UpdateProvisionStatus(ctx, req.Name, req.Status, req.Message, req.Ip); err != nil {
+		log.Printf("gRPC: error updating provision %s status: %v", req.Name, err)
+		return &pb.UpdateProvisionStatusResponse{Success: false, Error: err.Error()}, nil
 	}
 
-	if provision == nil {
-		return &pb.MarkBootCompletedResponse{Success: false, Error: "no in-progress provision"}, nil
-	}
-
-	if err := s.ctrl.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Complete", "Installation completed", req.Ip); err != nil {
-		log.Printf("gRPC: error updating provision %s: %v", provision.Name, err)
-		return &pb.MarkBootCompletedResponse{Success: false, Error: err.Error()}, nil
-	}
-
-	log.Printf("gRPC: marked %s as Complete (IP: %s)", provision.Name, req.Ip)
-	return &pb.MarkBootCompletedResponse{Success: true}, nil
+	log.Printf("gRPC: updated %s to %s", req.Name, req.Status)
+	return &pb.UpdateProvisionStatusResponse{Success: true}, nil
 }
 
 // GetConfigMapValue retrieves a value from a ConfigMap by key

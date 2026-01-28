@@ -13,13 +13,6 @@ import (
 // ErrNotFound is returned when a requested resource does not exist
 var ErrNotFound = errors.New("not found")
 
-// BootInfo returned by controller
-type BootInfo struct {
-	MachineName   string
-	ProvisionName string
-	Target        string
-}
-
 // Client communicates with the isoboot-controller via gRPC
 type Client struct {
 	conn   *grpc.ClientConn
@@ -48,41 +41,55 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-// GetPendingBoot returns boot info for a MAC with pending provision, or nil if none
-func (c *Client) GetPendingBoot(ctx context.Context, mac string) (*BootInfo, error) {
-	resp, err := c.client.GetPendingBoot(ctx, &pb.GetPendingBootRequest{Mac: mac})
+// GetMachineByMAC retrieves a Machine by MAC address
+// Returns empty string if not found (not an error)
+func (c *Client) GetMachineByMAC(ctx context.Context, mac string) (string, error) {
+	resp, err := c.client.GetMachineByMAC(ctx, &pb.GetMachineByMACRequest{Mac: mac})
+	if err != nil {
+		return "", fmt.Errorf("grpc call: %w", err)
+	}
+
+	if !resp.Found {
+		return "", nil
+	}
+
+	return resp.Name, nil
+}
+
+// ProvisionSummary contains basic provision info
+type ProvisionSummary struct {
+	Name          string
+	Status        string
+	BootTargetRef string
+}
+
+// GetProvisionsByMachine retrieves all Provisions referencing a Machine
+func (c *Client) GetProvisionsByMachine(ctx context.Context, machineName string) ([]ProvisionSummary, error) {
+	resp, err := c.client.GetProvisionsByMachine(ctx, &pb.GetProvisionsByMachineRequest{MachineName: machineName})
 	if err != nil {
 		return nil, fmt.Errorf("grpc call: %w", err)
 	}
 
-	if !resp.Found {
-		return nil, nil
+	var result []ProvisionSummary
+	for _, p := range resp.Provisions {
+		result = append(result, ProvisionSummary{
+			Name:          p.Name,
+			Status:        p.Status,
+			BootTargetRef: p.BootTargetRef,
+		})
 	}
 
-	return &BootInfo{
-		MachineName:   resp.MachineName,
-		ProvisionName: resp.ProvisionName,
-		Target:        resp.Target,
-	}, nil
+	return result, nil
 }
 
-// MarkBootStarted marks a provision as InProgress
-func (c *Client) MarkBootStarted(ctx context.Context, mac string) error {
-	resp, err := c.client.MarkBootStarted(ctx, &pb.MarkBootStartedRequest{Mac: mac})
-	if err != nil {
-		return fmt.Errorf("grpc call: %w", err)
-	}
-
-	if !resp.Success {
-		return fmt.Errorf("controller error: %s", resp.Error)
-	}
-
-	return nil
-}
-
-// MarkBootCompleted marks a provision as Complete (by hostname)
-func (c *Client) MarkBootCompleted(ctx context.Context, hostname, ip string) error {
-	resp, err := c.client.MarkBootCompleted(ctx, &pb.MarkBootCompletedRequest{Hostname: hostname, Ip: ip})
+// UpdateProvisionStatus updates a Provision's status
+func (c *Client) UpdateProvisionStatus(ctx context.Context, name, status, message, ip string) error {
+	resp, err := c.client.UpdateProvisionStatus(ctx, &pb.UpdateProvisionStatusRequest{
+		Name:    name,
+		Status:  status,
+		Message: message,
+		Ip:      ip,
+	})
 	if err != nil {
 		return fmt.Errorf("grpc call: %w", err)
 	}

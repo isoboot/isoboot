@@ -4,16 +4,16 @@ package isoboot.controller.v1;
 
 option go_package = "github.com/isoboot/isoboot/api/controllerpb";
 
-// ControllerService handles provision lifecycle and template management
+// ControllerService provides primitive CRD access for isoboot resources
 service ControllerService {
-  // GetPendingBoot returns boot info for a MAC with pending provision
-  rpc GetPendingBoot(GetPendingBootRequest) returns (GetPendingBootResponse);
+  // GetMachineByMAC retrieves a Machine by MAC address
+  rpc GetMachineByMAC(GetMachineByMACRequest) returns (GetMachineByMACResponse);
 
-  // MarkBootStarted marks a provision as InProgress
-  rpc MarkBootStarted(MarkBootStartedRequest) returns (MarkBootStartedResponse);
+  // GetProvisionsByMachine retrieves all Provisions referencing a Machine
+  rpc GetProvisionsByMachine(GetProvisionsByMachineRequest) returns (GetProvisionsByMachineResponse);
 
-  // MarkBootCompleted marks a provision as Complete
-  rpc MarkBootCompleted(MarkBootCompletedRequest) returns (MarkBootCompletedResponse);
+  // UpdateProvisionStatus updates a Provision's status
+  rpc UpdateProvisionStatus(UpdateProvisionStatusRequest) returns (UpdateProvisionStatusResponse);
 
   // GetConfigMapValue retrieves a value from a ConfigMap by key
   rpc GetConfigMapValue(GetConfigMapValueRequest) returns (GetConfigMapValueResponse);
@@ -34,32 +34,37 @@ service ControllerService {
   rpc GetSecrets(GetSecretsRequest) returns (GetSecretsResponse);
 }
 
-message GetPendingBootRequest {
+message GetMachineByMACRequest {
   string mac = 1;
 }
 
-message GetPendingBootResponse {
+message GetMachineByMACResponse {
   bool found = 1;
-  string machine_name = 2;
-  string provision_name = 3;
-  string target = 4;
+  string name = 2;
 }
 
-message MarkBootStartedRequest {
-  string mac = 1;
+message GetProvisionsByMachineRequest {
+  string machine_name = 1;
 }
 
-message MarkBootStartedResponse {
-  bool success = 1;
-  string error = 2;
+message ProvisionSummary {
+  string name = 1;
+  string status = 2;
+  string boot_target_ref = 3;
 }
 
-message MarkBootCompletedRequest {
-  string hostname = 1;
-  string ip = 2;  // IP address of the machine that sent the completion request
+message GetProvisionsByMachineResponse {
+  repeated ProvisionSummary provisions = 1;
 }
 
-message MarkBootCompletedResponse {
+message UpdateProvisionStatusRequest {
+  string name = 1;
+  string status = 2;
+  string message = 3;
+  string ip = 4;  // Optional: IP address for completion tracking
+}
+
+message UpdateProvisionStatusResponse {
   bool success = 1;
   string error = 2;
 }

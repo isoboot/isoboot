@@ -501,6 +501,46 @@ func (c *Client) FindProvisionByHostname(ctx context.Context, hostname string, p
 	return nil, nil // No matching provision for this hostname
 }
 
+// FindMachineByMAC finds a Machine by MAC address
+// MAC must be dash-separated (e.g., aa-bb-cc-dd-ee-ff)
+func (c *Client) FindMachineByMAC(ctx context.Context, mac string) (*Machine, error) {
+	normalizedMAC := normalizeMAC(mac)
+	if normalizedMAC == "" {
+		return nil, nil // Invalid MAC format (contains colons)
+	}
+
+	machines, err := c.ListMachines(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list machines: %w", err)
+	}
+
+	for _, m := range machines {
+		machineMAC := normalizeMAC(m.MAC)
+		if machineMAC == normalizedMAC {
+			return m, nil
+		}
+	}
+
+	return nil, nil // No machine with this MAC
+}
+
+// ListProvisionsByMachine returns all Provisions referencing a Machine
+func (c *Client) ListProvisionsByMachine(ctx context.Context, machineRef string) ([]*Provision, error) {
+	provisions, err := c.ListProvisions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list provisions: %w", err)
+	}
+
+	var result []*Provision
+	for _, p := range provisions {
+		if p.Spec.MachineRef == machineRef {
+			result = append(result, p)
+		}
+	}
+
+	return result, nil
+}
+
 // UpdateProvisionStatus updates the status of a Provision.
 // Pass empty string for ip to leave the existing IP unchanged.
 func (c *Client) UpdateProvisionStatus(ctx context.Context, name, phase, message, ip string) error {
