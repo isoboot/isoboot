@@ -486,14 +486,13 @@ func TestParseMachine(t *testing.T) {
 				},
 			},
 			expected: &Machine{
-				Name:      "vm-01.lan",
-				MAC:       "aa-bb-cc-dd-ee-ff", // lowercase
-				MachineId: "0123456789abcdef0123456789abcdef",
+				Name: "vm-01.lan",
+				MAC:  "aa-bb-cc-dd-ee-ff", // lowercase
 			},
 			expectError: false,
 		},
 		{
-			name: "valid Machine without machineId",
+			name: "valid Machine simple",
 			obj: &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"metadata": map[string]interface{}{"name": "vm-02.lan"},
@@ -503,9 +502,8 @@ func TestParseMachine(t *testing.T) {
 				},
 			},
 			expected: &Machine{
-				Name:      "vm-02.lan",
-				MAC:       "11-22-33-44-55-66",
-				MachineId: "",
+				Name: "vm-02.lan",
+				MAC:  "11-22-33-44-55-66",
 			},
 			expectError: false,
 		},
@@ -549,9 +547,6 @@ func TestParseMachine(t *testing.T) {
 			}
 			if result.MAC != tt.expected.MAC {
 				t.Errorf("MAC = %q, want %q", result.MAC, tt.expected.MAC)
-			}
-			if result.MachineId != tt.expected.MachineId {
-				t.Errorf("MachineId = %q, want %q", result.MachineId, tt.expected.MachineId)
 			}
 		})
 	}
