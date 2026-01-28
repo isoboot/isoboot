@@ -1,14 +1,11 @@
 package controller
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"regexp"
 	"sync"
-	"text/template"
 	"time"
 
 	"github.com/isoboot/isoboot/internal/k8s"
@@ -17,17 +14,6 @@ import (
 // validMachineId validates systemd machine-id format (exactly 32 lowercase hex characters)
 var validMachineId = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
-// templateFuncs provides custom functions for templates
-var templateFuncs = template.FuncMap{
-	"b64enc": func(s string) string {
-		return base64.StdEncoding.EncodeToString([]byte(s))
-	},
-	"hasKey": func(m map[string]interface{}, key string) bool {
-		_, ok := m[key]
-		return ok
-	},
-}
-
 const (
 	reconcileInterval = 10 * time.Second
 	inProgressTimeout = 30 * time.Minute
@@ -35,11 +21,9 @@ const (
 
 // Controller watches Provision CRDs and manages their lifecycle
 type Controller struct {
-	k8sClient          *k8s.Client
-	stopCh             chan struct{}
-	host               string
-	port               string
-	isoBasePath        string
+	k8sClient                *k8s.Client
+	stopCh                   chan struct{}
+	isoBasePath              string
 	activeDiskImageDownloads sync.Map // tracks in-progress DiskImage downloads by name
 }
 
@@ -49,12 +33,6 @@ func New(k8sClient *k8s.Client) *Controller {
 		k8sClient: k8sClient,
 		stopCh:    make(chan struct{}),
 	}
-}
-
-// SetHostPort sets the host and port for template rendering
-func (c *Controller) SetHostPort(host, port string) {
-	c.host = host
-	c.port = port
 }
 
 // SetISOBasePath sets the base path for ISO storage
@@ -233,61 +211,4 @@ func (c *Controller) validateProvisionRefs(ctx context.Context, provision *k8s.P
 	}
 
 	return nil
-}
-
-// RenderTemplate renders a template with merged values from ConfigMaps and Secrets
-func (c *Controller) RenderTemplate(ctx context.Context, provision *k8s.Provision, templateContent string) (string, error) {
-	// Build template data by merging ConfigMaps, then Secrets
-	data := make(map[string]interface{})
-
-	// Merge ConfigMaps in order
-	for _, cmName := range provision.Spec.ConfigMaps {
-		cm, err := c.k8sClient.GetConfigMap(ctx, cmName)
-		if err != nil {
-			return "", fmt.Errorf("ConfigMap '%s' not found", cmName)
-		}
-		for k, v := range cm.Data {
-			data[k] = v
-		}
-	}
-
-	// Merge Secrets in order (override ConfigMaps)
-	for _, secretName := range provision.Spec.Secrets {
-		secret, err := c.k8sClient.GetSecret(ctx, secretName)
-		if err != nil {
-			return "", fmt.Errorf("Secret '%s' not found", secretName)
-		}
-		for k, v := range secret.Data {
-			data[k] = string(v)
-		}
-	}
-
-	// Derive SSH public keys from private keys in secrets
-	if err := DeriveSSHPublicKeys(data); err != nil {
-		return "", fmt.Errorf("derive SSH public keys: %w", err)
-	}
-
-	// Add system variables
-	data["Host"] = c.host
-	data["Port"] = c.port
-	data["Hostname"] = provision.Spec.MachineRef
-	data["Target"] = provision.Spec.BootTargetRef
-
-	// Add MachineId from Provision if set (use hasKey in templates to check)
-	if provision.Spec.MachineId != "" {
-		data["MachineId"] = provision.Spec.MachineId
-	}
-
-	// Parse and execute template
-	tmpl, err := template.New("response").Funcs(templateFuncs).Option("missingkey=error").Parse(templateContent)
-	if err != nil {
-		return "", fmt.Errorf("parse template: %w", err)
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("execute template: %w", err)
-	}
-
-	return buf.String(), nil
 }
