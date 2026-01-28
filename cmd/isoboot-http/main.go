@@ -24,13 +24,19 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-// pathTraversalMiddleware rejects requests with path traversal attempts
+// pathTraversalMiddleware rejects requests with path traversal attempts.
+// Defense-in-depth: handlers must still perform their own containment validation.
 func pathTraversalMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Reject paths containing ".." or where path.Clean changes the path
-		// (catches encoded variants since Go decodes URL before r.URL.Path)
-		cleanPath := path.Clean(r.URL.Path)
-		if strings.Contains(r.URL.Path, "..") || cleanPath != r.URL.Path {
+		// Normalize path: handle backslashes and clean
+		normalizedPath := strings.ReplaceAll(r.URL.Path, "\\", "/")
+		cleanPath := path.Clean(normalizedPath)
+
+		// Reject if cleaned path contains parent-directory traversal
+		if cleanPath == ".." ||
+			strings.HasPrefix(cleanPath, "../") ||
+			strings.HasPrefix(cleanPath, "/../") ||
+			strings.Contains(cleanPath, "/../") {
 			http.Error(w, "invalid path", http.StatusBadRequest)
 			return
 		}
