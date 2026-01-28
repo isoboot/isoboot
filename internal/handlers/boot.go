@@ -201,16 +201,19 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 }
 
 // ServeBootDone marks a provision as completed
-// GET /boot/done?id={machineName}
+// GET /boot/done?mac={mac}
 func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	id := r.URL.Query().Get("id")
-	if id == "" {
+	mac := r.URL.Query().Get("mac")
+	if mac == "" {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	// MAC must be dash-separated (xx-xx-xx-xx-xx-xx)
+	mac = strings.ToLower(mac)
 
 	// Extract client IP from RemoteAddr (handles both IPv4 and IPv6)
 	// We use RemoteAddr directly since isoboot-http uses hostNetwork with no proxy
@@ -219,10 +222,26 @@ func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 		ip = r.RemoteAddr // fallback if no port present
 	}
 
-	// id is machineName - find InProgress provision for this machine
-	provisions, err := h.ctrlClient.GetProvisionsByMachine(ctx, id)
+	// Find machine by MAC
+	machineName, err := h.ctrlClient.GetMachineByMAC(ctx, mac)
 	if err != nil {
-		log.Printf("Error getting provisions for machine %s: %v", id, err)
+		log.Printf("Error getting machine for MAC %s: %v", mac, err)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if machineName == "" {
+		log.Printf("No machine found for MAC %s", mac)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// Find InProgress provision for this machine
+	provisions, err := h.ctrlClient.GetProvisionsByMachine(ctx, machineName)
+	if err != nil {
+		log.Printf("Error getting provisions for machine %s: %v", machineName, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -238,7 +257,7 @@ func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if inProgressProvision == nil {
-		log.Printf("No InProgress provision found for machine %s", id)
+		log.Printf("No InProgress provision found for MAC %s (machine %s)", mac, machineName)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusNotFound)
 		return

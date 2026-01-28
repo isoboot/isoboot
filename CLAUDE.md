@@ -58,6 +58,7 @@ Available variables in ResponseTemplate (preseed/answer files):
 - `.Port` - HTTP server port
 - `.Hostname` - machine reference from Provision
 - `.Target` - boot target reference from Provision
+- `.MAC` - machine MAC address (dash-separated, lowercase)
 - `.MachineId` - systemd machine-id from Provision (use `hasKey` to check if set)
 - `.key` - values merged from referenced ConfigMaps and Secrets (flat namespace)
 - `.ssh_host_*_key_pub` - auto-derived public keys for SSH host keys in secrets

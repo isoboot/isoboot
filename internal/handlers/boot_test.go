@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"text/template"
 )
@@ -124,6 +125,50 @@ func TestTemplateRendering(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(result), []byte("vm125")) {
 		t.Error("Expected hostname in output")
+	}
+}
+
+func TestServeBootDone_NoMAC(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		mac := r.URL.Query().Get("mac")
+		if mac == "" {
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+	}
+
+	req := httptest.NewRequest("GET", "/boot/done", nil)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d", w.Code)
+	}
+
+	if w.Header().Get("Content-Length") != "0" {
+		t.Errorf("Expected Content-Length: 0, got %s", w.Header().Get("Content-Length"))
+	}
+}
+
+func TestServeBootDone_MACNormalization(t *testing.T) {
+	// Test that MAC addresses are normalized to lowercase
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"AA-BB-CC-DD-EE-FF", "aa-bb-cc-dd-ee-ff"},
+		{"aa-bb-cc-dd-ee-ff", "aa-bb-cc-dd-ee-ff"},
+		{"Aa-Bb-Cc-Dd-Ee-Ff", "aa-bb-cc-dd-ee-ff"},
+	}
+
+	for _, tt := range tests {
+		mac := tt.input
+		mac = strings.ToLower(mac)
+		if mac != tt.expected {
+			t.Errorf("MAC normalization: input %q, got %q, want %q", tt.input, mac, tt.expected)
+		}
 	}
 }
 

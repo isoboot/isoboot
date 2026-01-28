@@ -9,6 +9,9 @@ service ControllerService {
   // GetMachineByMAC retrieves a Machine by MAC address
   rpc GetMachineByMAC(GetMachineByMACRequest) returns (GetMachineByMACResponse);
 
+  // GetMachine retrieves a Machine by name
+  rpc GetMachine(GetMachineRequest) returns (GetMachineResponse);
+
   // GetProvisionsByMachine retrieves all Provisions referencing a Machine
   rpc GetProvisionsByMachine(GetProvisionsByMachineRequest) returns (GetProvisionsByMachineResponse);
 
@@ -41,6 +44,15 @@ message GetMachineByMACRequest {
 message GetMachineByMACResponse {
   bool found = 1;
   string name = 2;
+}
+
+message GetMachineRequest {
+  string name = 1;
+}
+
+message GetMachineResponse {
+  bool found = 1;
+  string mac = 2;
 }
 
 message GetProvisionsByMachineRequest {

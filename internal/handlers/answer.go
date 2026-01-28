@@ -126,6 +126,17 @@ func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
 		data["MachineId"] = provision.MachineId
 	}
 
+	// Add MAC address from Machine
+	macAddress, err := h.ctrlClient.GetMachine(ctx, provision.MachineRef)
+	if err != nil {
+		log.Printf("Error getting machine %s: %v", provision.MachineRef, err)
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+	if macAddress != "" {
+		data["MAC"] = macAddress
+	}
+
 	// 6. Render template
 	content, err := renderAnswerTemplate(templateContent, data)
 	if err != nil {
