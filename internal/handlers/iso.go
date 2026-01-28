@@ -280,6 +280,13 @@ func isPrintableASCII(s string) bool {
 // Path format: /iso/download/{bootTarget}/{diskImageFile}
 // Example: /iso/download/ubuntu-24/ubuntu-24.04.1-live-server-amd64.iso
 func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
+	// Only allow GET and HEAD
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	ctx := r.Context()
 
 	// 1. Parse path: /iso/download/{bootTarget}/{diskImageFile}
