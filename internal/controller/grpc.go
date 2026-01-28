@@ -134,11 +134,12 @@ func (s *GRPCServer) GetDiskImage(ctx context.Context, req *pb.GetDiskImageReque
 	// Extract filename from ISO URL, handling query params/fragments properly
 	diskImageFile := ""
 	if di.ISO != "" {
-		pathStr := di.ISO
 		if u, err := url.Parse(di.ISO); err == nil && u.Path != "" {
-			pathStr = u.Path
+			diskImageFile = path.Base(u.Path)
+		} else {
+			// Not a valid URL or no path - treat as plain filename
+			diskImageFile = path.Base(di.ISO)
 		}
-		diskImageFile = path.Base(pathStr)
 	}
 
 	return &pb.GetDiskImageResponse{

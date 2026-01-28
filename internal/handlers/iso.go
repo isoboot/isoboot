@@ -298,10 +298,10 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Validate diskImageFile - no path traversal, no directory components
+	// 4. Validate diskImageFile - no directory components
 	cleanDiskImageFile := filepath.Clean(diskImageFile)
 	if cleanDiskImageFile != diskImageFile ||
-		strings.ContainsAny(diskImageFile, string(os.PathSeparator)+"\\") ||
+		strings.ContainsAny(diskImageFile, "/\\") ||
 		strings.HasPrefix(diskImageFile, ".") {
 		http.Error(w, "invalid disk image file", http.StatusBadRequest)
 		return
