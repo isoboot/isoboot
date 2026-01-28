@@ -17,7 +17,7 @@ import (
 )
 
 // validDiskImageRef matches alphanumeric, dash, underscore, with optional dot-separated segments.
-// This prevents path traversal by rejecting ".." (dots must have chars between them).
+// Examples: "ubuntu-24", "debian-13.0", "rocky_9"
 var validDiskImageRef = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 
 const streamChunkSize = 1024 * 1024 // 1MB chunks for streaming
@@ -67,8 +67,8 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Use diskImage from BootTarget for file path construction
 	diskImage := bootTarget.DiskImage
 
-	// Security: validate diskImage against allowlist pattern
-	// This prevents path traversal by rejecting ".." (dots must have chars between them)
+	// Security: validate diskImage name format
+	// Note: ".." is already rejected by pathTraversalMiddleware
 	if !validDiskImageRef.MatchString(diskImage) {
 		log.Printf("iso: invalid diskImage %q", diskImage)
 		http.Error(w, "invalid disk image reference", http.StatusBadRequest)
@@ -81,7 +81,7 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// DiskImage. Any file present is legitimate to serve (kernel, initrd, firmware, etc).
 	isoPath := filepath.Join(h.basePath, diskImage, isoFilename)
 
-	// Security: ensure path doesn't escape diskImage directory (prevent path traversal)
+	// Security: verify path stays within diskImage directory (defense-in-depth)
 	diskImageDir := filepath.Join(h.basePath, diskImage) + string(os.PathSeparator)
 	if !strings.HasPrefix(isoPath, diskImageDir) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
@@ -298,11 +298,9 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Validate diskImageFile - no directory components
-	cleanDiskImageFile := filepath.Clean(diskImageFile)
-	if cleanDiskImageFile != diskImageFile ||
-		strings.ContainsAny(diskImageFile, "/\\") ||
-		strings.HasPrefix(diskImageFile, ".") {
+	// 4. Validate diskImageFile - must be a plain filename (no directory components)
+	// Note: ".." is already rejected by pathTraversalMiddleware
+	if strings.ContainsAny(diskImageFile, "/\\") || strings.HasPrefix(diskImageFile, ".") {
 		http.Error(w, "invalid disk image file", http.StatusBadRequest)
 		return
 	}
