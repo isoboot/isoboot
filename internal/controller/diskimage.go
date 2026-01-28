@@ -267,7 +267,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 
 	// Get expected file size from HEAD request (optional - some servers don't support HEAD)
 	// Use http.DefaultClient to reuse connections across downloads
-	var expectedSize int64
+	var expectedSize int64 // 0 means size unknown (HEAD unavailable or unsupported)
 	headReq, err := http.NewRequestWithContext(ctx, http.MethodHead, fileURL, nil)
 	if err != nil {
 		log.Printf("Controller: failed to create HEAD request for %s: %v, proceeding without size check", fileURL, err)
@@ -339,11 +339,10 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 	}
 
 	// Verify file size (if we got it from HEAD)
-	if expectedSize > 0 {
-		if written != expectedSize {
-			result.FileSizeMatch = "failed"
-			return result, fmt.Errorf("size mismatch: expected %d, got %d", expectedSize, written)
-		}
+	if expectedSize > 0 && written != expectedSize {
+		result.FileSizeMatch = "failed"
+		return result, fmt.Errorf("size mismatch: expected %d, got %d", expectedSize, written)
+	} else if expectedSize > 0 {
 		result.FileSizeMatch = "verified"
 	} else {
 		// Size not available from HEAD - relying on checksum verification
