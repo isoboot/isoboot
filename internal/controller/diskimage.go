@@ -265,24 +265,29 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		return result, fmt.Errorf("create directory: %w", err)
 	}
 
-	// Get expected file size from HEAD request (optional - some servers don't support HEAD)
-	// Use http.DefaultClient to reuse connections across downloads
-	var expectedSize int64 // 0 means size unknown (HEAD unavailable or unsupported)
-	headReq, err := http.NewRequestWithContext(ctx, http.MethodHead, fileURL, nil)
+	// Get expected file size by starting a GET and reading headers only.
+	// We abort the transfer after getting Content-Length. This is more reliable
+	// than HEAD since some servers don't support HEAD requests.
+	// Note: Not all servers send Content-Length (e.g., chunked encoding), so
+	// expectedSize may still be -1/0 meaning size unknown.
+	var expectedSize int64 // 0 means size unknown
+	sizeReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
 	if err != nil {
-		log.Printf("Controller: HEAD request creation failed for %s: %v, proceeding without size check", fileURL, err)
+		log.Printf("Controller: size check request creation failed for %s: %v, proceeding without size check", fileURL, err)
 	} else {
-		headResp, err := http.DefaultClient.Do(headReq)
+		sizeResp, err := http.DefaultClient.Do(sizeReq)
 		if err != nil {
-			log.Printf("Controller: HEAD request failed for %s: %v, proceeding without size check", fileURL, err)
+			log.Printf("Controller: size check request failed for %s: %v, proceeding without size check", fileURL, err)
 		} else {
-			defer headResp.Body.Close()
-			if headResp.StatusCode >= 200 && headResp.StatusCode < 300 {
-				expectedSize = headResp.ContentLength
+			// Close body without reading content - aborts the transfer after headers are received
+			defer sizeResp.Body.Close()
+			if sizeResp.StatusCode >= 200 && sizeResp.StatusCode < 300 {
+				if sizeResp.ContentLength > 0 {
+					expectedSize = sizeResp.ContentLength
+				}
+				// ContentLength is -1 for chunked/missing, treat as 0 (unknown)
 			} else {
-				// Non-2xx status codes (3xx/4xx/5xx) - some servers don't support HEAD or restrict it
-				// Continue to GET which may still work
-				log.Printf("Controller: HEAD request for %s returned %d, proceeding without size check", fileURL, headResp.StatusCode)
+				log.Printf("Controller: size check for %s returned %d, proceeding without size check", fileURL, sizeResp.StatusCode)
 			}
 		}
 	}
