@@ -40,16 +40,96 @@ func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
 	filename := parts[1]
 	ctx := r.Context()
 
-	// Get rendered template from controller
-	content, err := h.ctrlClient.GetRenderedTemplate(ctx, provisionName, filename)
+	// 1. Get Provision
+	provision, err := h.ctrlClient.GetProvision(ctx, provisionName)
 	if err != nil {
-		log.Printf("Error getting rendered template for %s/%s: %v", provisionName, filename, err)
-		// Distinguish between "not found" (404) and server/transport errors (502)
+		log.Printf("Error getting provision %s: %v", provisionName, err)
 		if strings.Contains(err.Error(), "grpc call:") {
 			w.WriteHeader(http.StatusBadGateway)
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
+		return
+	}
+
+	// 2. Get ResponseTemplate
+	if provision.ResponseTemplateRef == "" {
+		log.Printf("Provision %s has no responseTemplateRef", provisionName)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	responseTemplate, err := h.ctrlClient.GetResponseTemplate(ctx, provision.ResponseTemplateRef)
+	if err != nil {
+		log.Printf("Error getting response template %s: %v", provision.ResponseTemplateRef, err)
+		if strings.Contains(err.Error(), "grpc call:") {
+			w.WriteHeader(http.StatusBadGateway)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+		return
+	}
+
+	// Get the template content for the requested filename
+	templateContent, ok := responseTemplate.Files[filename]
+	if !ok {
+		log.Printf("File %s not found in response template %s", filename, provision.ResponseTemplateRef)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// 3. Get ConfigMaps (if any)
+	configMapData, err := h.ctrlClient.GetConfigMaps(ctx, provision.ConfigMaps)
+	if err != nil {
+		log.Printf("Error getting configmaps for %s: %v", provisionName, err)
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+
+	// 4. Get Secrets (if any)
+	secretData, err := h.ctrlClient.GetSecrets(ctx, provision.Secrets)
+	if err != nil {
+		log.Printf("Error getting secrets for %s: %v", provisionName, err)
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+
+	// 5. Build template data
+	data := make(map[string]interface{})
+
+	// Merge ConfigMap data
+	for k, v := range configMapData {
+		data[k] = v
+	}
+
+	// Merge Secret data (overrides ConfigMap)
+	for k, v := range secretData {
+		data[k] = v
+	}
+
+	// Derive SSH public keys from private keys in secrets
+	if err := deriveSSHPublicKeys(data); err != nil {
+		log.Printf("Error deriving SSH public keys for %s: %v", provisionName, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Add system variables
+	data["Host"] = h.host
+	data["Port"] = h.port
+	data["Hostname"] = provision.MachineRef
+	data["Target"] = provision.BootTargetRef
+
+	// Add MachineId if set
+	if provision.MachineId != "" {
+		data["MachineId"] = provision.MachineId
+	}
+
+	// 6. Render template
+	content, err := renderAnswerTemplate(templateContent, data)
+	if err != nil {
+		log.Printf("Error rendering template for %s/%s: %v", provisionName, filename, err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 

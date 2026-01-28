@@ -136,19 +136,90 @@ func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInf
 	}, nil
 }
 
-// GetRenderedTemplate retrieves a rendered template file for a provision
-func (c *Client) GetRenderedTemplate(ctx context.Context, provisionName, filename string) (string, error) {
-	resp, err := c.client.GetRenderedTemplate(ctx, &pb.GetRenderedTemplateRequest{
-		ProvisionName: provisionName,
-		Filename:      filename,
-	})
+// ProvisionInfo returned by GetProvision
+type ProvisionInfo struct {
+	MachineRef          string
+	BootTargetRef       string
+	ResponseTemplateRef string
+	ConfigMaps          []string
+	Secrets             []string
+	MachineId           string
+}
+
+// GetProvision retrieves a Provision by name
+func (c *Client) GetProvision(ctx context.Context, name string) (*ProvisionInfo, error) {
+	resp, err := c.client.GetProvision(ctx, &pb.GetProvisionRequest{Name: name})
 	if err != nil {
-		return "", fmt.Errorf("grpc call: %w", err)
+		return nil, fmt.Errorf("grpc call: %w", err)
 	}
 
 	if !resp.Found {
-		return "", fmt.Errorf("template not found: %s", resp.Error)
+		return nil, fmt.Errorf("provision %s: %w", name, ErrNotFound)
 	}
 
-	return resp.Content, nil
+	return &ProvisionInfo{
+		MachineRef:          resp.MachineRef,
+		BootTargetRef:       resp.BootTargetRef,
+		ResponseTemplateRef: resp.ResponseTemplateRef,
+		ConfigMaps:          resp.ConfigMaps,
+		Secrets:             resp.Secrets,
+		MachineId:           resp.MachineId,
+	}, nil
+}
+
+// GetConfigMaps retrieves and merges data from multiple ConfigMaps
+func (c *Client) GetConfigMaps(ctx context.Context, names []string) (map[string]string, error) {
+	if len(names) == 0 {
+		return make(map[string]string), nil
+	}
+
+	resp, err := c.client.GetConfigMaps(ctx, &pb.GetConfigMapsRequest{Names: names})
+	if err != nil {
+		return nil, fmt.Errorf("grpc call: %w", err)
+	}
+
+	if !resp.Found {
+		return nil, fmt.Errorf("configmaps: %s", resp.Error)
+	}
+
+	return resp.Data, nil
+}
+
+// GetSecrets retrieves and merges data from multiple Secrets
+func (c *Client) GetSecrets(ctx context.Context, names []string) (map[string]string, error) {
+	if len(names) == 0 {
+		return make(map[string]string), nil
+	}
+
+	resp, err := c.client.GetSecrets(ctx, &pb.GetSecretsRequest{Names: names})
+	if err != nil {
+		return nil, fmt.Errorf("grpc call: %w", err)
+	}
+
+	if !resp.Found {
+		return nil, fmt.Errorf("secrets: %s", resp.Error)
+	}
+
+	return resp.Data, nil
+}
+
+// ResponseTemplateInfo returned by GetResponseTemplate
+type ResponseTemplateInfo struct {
+	Files map[string]string
+}
+
+// GetResponseTemplate retrieves a ResponseTemplate by name
+func (c *Client) GetResponseTemplate(ctx context.Context, name string) (*ResponseTemplateInfo, error) {
+	resp, err := c.client.GetResponseTemplate(ctx, &pb.GetResponseTemplateRequest{Name: name})
+	if err != nil {
+		return nil, fmt.Errorf("grpc call: %w", err)
+	}
+
+	if !resp.Found {
+		return nil, fmt.Errorf("responsetemplate %s: %w", name, ErrNotFound)
+	}
+
+	return &ResponseTemplateInfo{
+		Files: resp.Files,
+	}, nil
 }

@@ -136,37 +136,63 @@ func (s *GRPCServer) GetResponseTemplate(ctx context.Context, req *pb.GetRespons
 	}, nil
 }
 
-// GetRenderedTemplate renders a template file for a provision
-func (s *GRPCServer) GetRenderedTemplate(ctx context.Context, req *pb.GetRenderedTemplateRequest) (*pb.GetRenderedTemplateResponse, error) {
-	// Direct lookup by provision name (O(1) instead of O(n) hostname search)
-	provision, err := s.ctrl.k8sClient.GetProvision(ctx, req.ProvisionName)
+// GetProvision retrieves a Provision by name
+func (s *GRPCServer) GetProvision(ctx context.Context, req *pb.GetProvisionRequest) (*pb.GetProvisionResponse, error) {
+	provision, err := s.ctrl.k8sClient.GetProvision(ctx, req.Name)
 	if err != nil {
-		log.Printf("gRPC: error getting provision %s: %v", req.ProvisionName, err)
-		return &pb.GetRenderedTemplateResponse{Found: false, Error: "provision not found"}, nil
+		log.Printf("gRPC: error getting provision %s: %v", req.Name, err)
+		return &pb.GetProvisionResponse{Found: false}, nil
 	}
 
-	// Get the response template
-	rt, err := s.ctrl.k8sClient.GetResponseTemplate(ctx, provision.Spec.ResponseTemplateRef)
-	if err != nil {
-		log.Printf("gRPC: error getting responsetemplate %s: %v", provision.Spec.ResponseTemplateRef, err)
-		return &pb.GetRenderedTemplateResponse{Found: false, Error: "response template not found"}, nil
+	return &pb.GetProvisionResponse{
+		Found:               true,
+		MachineRef:          provision.Spec.MachineRef,
+		BootTargetRef:       provision.Spec.BootTargetRef,
+		ResponseTemplateRef: provision.Spec.ResponseTemplateRef,
+		ConfigMaps:          provision.Spec.ConfigMaps,
+		Secrets:             provision.Spec.Secrets,
+		MachineId:           provision.Spec.MachineId,
+	}, nil
+}
+
+// GetConfigMaps retrieves and merges data from multiple ConfigMaps
+func (s *GRPCServer) GetConfigMaps(ctx context.Context, req *pb.GetConfigMapsRequest) (*pb.GetConfigMapsResponse, error) {
+	data := make(map[string]string)
+
+	for _, name := range req.Names {
+		cm, err := s.ctrl.k8sClient.GetConfigMap(ctx, name)
+		if err != nil {
+			log.Printf("gRPC: error getting configmap %s: %v", name, err)
+			return &pb.GetConfigMapsResponse{Found: false, Error: "ConfigMap '" + name + "' not found"}, nil
+		}
+		for k, v := range cm.Data {
+			data[k] = v
+		}
 	}
 
-	// Get the template content
-	templateContent, ok := rt.Files[req.Filename]
-	if !ok {
-		return &pb.GetRenderedTemplateResponse{Found: false, Error: "file not found in template"}, nil
+	return &pb.GetConfigMapsResponse{
+		Found: true,
+		Data:  data,
+	}, nil
+}
+
+// GetSecrets retrieves and merges data from multiple Secrets
+func (s *GRPCServer) GetSecrets(ctx context.Context, req *pb.GetSecretsRequest) (*pb.GetSecretsResponse, error) {
+	data := make(map[string]string)
+
+	for _, name := range req.Names {
+		secret, err := s.ctrl.k8sClient.GetSecret(ctx, name)
+		if err != nil {
+			log.Printf("gRPC: error getting secret %s: %v", name, err)
+			return &pb.GetSecretsResponse{Found: false, Error: "Secret '" + name + "' not found"}, nil
+		}
+		for k, v := range secret.Data {
+			data[k] = string(v)
+		}
 	}
 
-	// Render the template
-	rendered, err := s.ctrl.RenderTemplate(ctx, provision, templateContent)
-	if err != nil {
-		log.Printf("gRPC: error rendering template for %s: %v", req.ProvisionName, err)
-		return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
-	}
-
-	return &pb.GetRenderedTemplateResponse{
-		Found:   true,
-		Content: rendered,
+	return &pb.GetSecretsResponse{
+		Found: true,
+		Data:  data,
 	}, nil
 }

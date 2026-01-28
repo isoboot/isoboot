@@ -29,8 +29,12 @@ type ControllerServiceClient interface {
 	GetBootTarget(ctx context.Context, in *GetBootTargetRequest, opts ...grpc.CallOption) (*GetBootTargetResponse, error)
 	// GetResponseTemplate retrieves a ResponseTemplate by name
 	GetResponseTemplate(ctx context.Context, in *GetResponseTemplateRequest, opts ...grpc.CallOption) (*GetResponseTemplateResponse, error)
-	// GetRenderedTemplate renders a template file for a provision
-	GetRenderedTemplate(ctx context.Context, in *GetRenderedTemplateRequest, opts ...grpc.CallOption) (*GetRenderedTemplateResponse, error)
+	// GetProvision retrieves a Provision by name
+	GetProvision(ctx context.Context, in *GetProvisionRequest, opts ...grpc.CallOption) (*GetProvisionResponse, error)
+	// GetConfigMaps retrieves and merges data from multiple ConfigMaps
+	GetConfigMaps(ctx context.Context, in *GetConfigMapsRequest, opts ...grpc.CallOption) (*GetConfigMapsResponse, error)
+	// GetSecrets retrieves and merges data from multiple Secrets
+	GetSecrets(ctx context.Context, in *GetSecretsRequest, opts ...grpc.CallOption) (*GetSecretsResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -95,9 +99,27 @@ func (c *controllerServiceClient) GetResponseTemplate(ctx context.Context, in *G
 	return out, nil
 }
 
-func (c *controllerServiceClient) GetRenderedTemplate(ctx context.Context, in *GetRenderedTemplateRequest, opts ...grpc.CallOption) (*GetRenderedTemplateResponse, error) {
-	out := new(GetRenderedTemplateResponse)
-	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetRenderedTemplate", in, out, opts...)
+func (c *controllerServiceClient) GetProvision(ctx context.Context, in *GetProvisionRequest, opts ...grpc.CallOption) (*GetProvisionResponse, error) {
+	out := new(GetProvisionResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetProvision", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controllerServiceClient) GetConfigMaps(ctx context.Context, in *GetConfigMapsRequest, opts ...grpc.CallOption) (*GetConfigMapsResponse, error) {
+	out := new(GetConfigMapsResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetConfigMaps", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controllerServiceClient) GetSecrets(ctx context.Context, in *GetSecretsRequest, opts ...grpc.CallOption) (*GetSecretsResponse, error) {
+	out := new(GetSecretsResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetSecrets", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -120,8 +142,12 @@ type ControllerServiceServer interface {
 	GetBootTarget(context.Context, *GetBootTargetRequest) (*GetBootTargetResponse, error)
 	// GetResponseTemplate retrieves a ResponseTemplate by name
 	GetResponseTemplate(context.Context, *GetResponseTemplateRequest) (*GetResponseTemplateResponse, error)
-	// GetRenderedTemplate renders a template file for a provision
-	GetRenderedTemplate(context.Context, *GetRenderedTemplateRequest) (*GetRenderedTemplateResponse, error)
+	// GetProvision retrieves a Provision by name
+	GetProvision(context.Context, *GetProvisionRequest) (*GetProvisionResponse, error)
+	// GetConfigMaps retrieves and merges data from multiple ConfigMaps
+	GetConfigMaps(context.Context, *GetConfigMapsRequest) (*GetConfigMapsResponse, error)
+	// GetSecrets retrieves and merges data from multiple Secrets
+	GetSecrets(context.Context, *GetSecretsRequest) (*GetSecretsResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -147,8 +173,14 @@ func (UnimplementedControllerServiceServer) GetBootTarget(context.Context, *GetB
 func (UnimplementedControllerServiceServer) GetResponseTemplate(context.Context, *GetResponseTemplateRequest) (*GetResponseTemplateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetResponseTemplate not implemented")
 }
-func (UnimplementedControllerServiceServer) GetRenderedTemplate(context.Context, *GetRenderedTemplateRequest) (*GetRenderedTemplateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetRenderedTemplate not implemented")
+func (UnimplementedControllerServiceServer) GetProvision(context.Context, *GetProvisionRequest) (*GetProvisionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProvision not implemented")
+}
+func (UnimplementedControllerServiceServer) GetConfigMaps(context.Context, *GetConfigMapsRequest) (*GetConfigMapsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetConfigMaps not implemented")
+}
+func (UnimplementedControllerServiceServer) GetSecrets(context.Context, *GetSecretsRequest) (*GetSecretsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSecrets not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 
@@ -271,20 +303,56 @@ func _ControllerService_GetResponseTemplate_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_GetRenderedTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetRenderedTemplateRequest)
+func _ControllerService_GetProvision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProvisionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).GetRenderedTemplate(ctx, in)
+		return srv.(ControllerServiceServer).GetProvision(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/isoboot.controller.v1.ControllerService/GetRenderedTemplate",
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetProvision",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).GetRenderedTemplate(ctx, req.(*GetRenderedTemplateRequest))
+		return srv.(ControllerServiceServer).GetProvision(ctx, req.(*GetProvisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControllerService_GetConfigMaps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetConfigMapsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).GetConfigMaps(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetConfigMaps",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).GetConfigMaps(ctx, req.(*GetConfigMapsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControllerService_GetSecrets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSecretsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).GetSecrets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetSecrets",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).GetSecrets(ctx, req.(*GetSecretsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -318,8 +386,16 @@ var _ControllerService_serviceDesc = grpc.ServiceDesc{
 			Handler:    _ControllerService_GetResponseTemplate_Handler,
 		},
 		{
-			MethodName: "GetRenderedTemplate",
-			Handler:    _ControllerService_GetRenderedTemplate_Handler,
+			MethodName: "GetProvision",
+			Handler:    _ControllerService_GetProvision_Handler,
+		},
+		{
+			MethodName: "GetConfigMaps",
+			Handler:    _ControllerService_GetConfigMaps_Handler,
+		},
+		{
+			MethodName: "GetSecrets",
+			Handler:    _ControllerService_GetSecrets_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

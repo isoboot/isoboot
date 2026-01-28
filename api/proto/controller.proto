@@ -24,8 +24,14 @@ service ControllerService {
   // GetResponseTemplate retrieves a ResponseTemplate by name
   rpc GetResponseTemplate(GetResponseTemplateRequest) returns (GetResponseTemplateResponse);
 
-  // GetRenderedTemplate renders a template file for a provision
-  rpc GetRenderedTemplate(GetRenderedTemplateRequest) returns (GetRenderedTemplateResponse);
+  // GetProvision retrieves a Provision by name
+  rpc GetProvision(GetProvisionRequest) returns (GetProvisionResponse);
+
+  // GetConfigMaps retrieves and merges data from multiple ConfigMaps
+  rpc GetConfigMaps(GetConfigMapsRequest) returns (GetConfigMapsResponse);
+
+  // GetSecrets retrieves and merges data from multiple Secrets
+  rpc GetSecrets(GetSecretsRequest) returns (GetSecretsResponse);
 }
 
 message GetPendingBootRequest {
@@ -88,13 +94,36 @@ message GetResponseTemplateResponse {
   map<string, string> files = 2;
 }
 
-message GetRenderedTemplateRequest {
-  string provision_name = 1;
-  string filename = 2;
+message GetProvisionRequest {
+  string name = 1;
 }
 
-message GetRenderedTemplateResponse {
+message GetProvisionResponse {
   bool found = 1;
-  string content = 2;
+  string machine_ref = 2;
+  string boot_target_ref = 3;
+  string response_template_ref = 4;
+  repeated string config_maps = 5;
+  repeated string secrets = 6;
+  string machine_id = 7;  // Optional systemd machine-id
+}
+
+message GetConfigMapsRequest {
+  repeated string names = 1;
+}
+
+message GetConfigMapsResponse {
+  bool found = 1;
+  map<string, string> data = 2;
+  string error = 3;
+}
+
+message GetSecretsRequest {
+  repeated string names = 1;
+}
+
+message GetSecretsResponse {
+  bool found = 1;
+  map<string, string> data = 2;
   string error = 3;
 }
