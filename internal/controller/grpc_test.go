@@ -278,6 +278,19 @@ func TestGRPC_GetResponseTemplate_Found(t *testing.T) {
 	}
 }
 
+func TestGRPC_GetResponseTemplate_NotFound(t *testing.T) {
+	fake := newFakeK8sClient()
+
+	srv := NewGRPCServer(New(fake))
+	resp, err := srv.GetResponseTemplate(context.Background(), &pb.GetResponseTemplateRequest{Name: "missing"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Found {
+		t.Error("expected Found=false")
+	}
+}
+
 func TestGRPC_GetProvision_Found(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.provisions["prov-1"] = &k8s.Provision{
