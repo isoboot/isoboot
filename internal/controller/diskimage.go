@@ -265,31 +265,26 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		return result, fmt.Errorf("create directory: %w", err)
 	}
 
-	// Get expected file size from HEAD request
+	// Get expected file size from HEAD request (optional - some servers don't support HEAD)
 	// Use http.DefaultClient to reuse connections across downloads
+	var expectedSize int64 // 0 means size unknown (HEAD unavailable or unsupported)
 	headReq, err := http.NewRequestWithContext(ctx, http.MethodHead, fileURL, nil)
 	if err != nil {
-		result.FileSizeMatch = "failed"
-		return result, fmt.Errorf("create HEAD request: %w", err)
-	}
-	headResp, err := http.DefaultClient.Do(headReq)
-	if err != nil {
-		result.FileSizeMatch = "failed"
-		return result, fmt.Errorf("HEAD request: %w", err)
-	}
-	defer headResp.Body.Close()
-
-	// Check HEAD response status
-	var expectedSize int64
-	if headResp.StatusCode >= 200 && headResp.StatusCode < 300 {
-		expectedSize = headResp.ContentLength
-	} else if headResp.StatusCode >= 400 {
-		// Fail immediately on client/server errors
-		result.FileSizeMatch = "failed"
-		return result, fmt.Errorf("HEAD request returned %d for %s", headResp.StatusCode, fileURL)
+		log.Printf("Controller: HEAD request creation failed for %s: %v, proceeding without size check", fileURL, err)
 	} else {
-		// 3xx redirects - proceed without Content-Length
-		log.Printf("Controller: HEAD request for %s returned %d, will not use Content-Length", fileURL, headResp.StatusCode)
+		headResp, err := http.DefaultClient.Do(headReq)
+		if err != nil {
+			log.Printf("Controller: HEAD request failed for %s: %v, proceeding without size check", fileURL, err)
+		} else {
+			defer headResp.Body.Close()
+			if headResp.StatusCode >= 200 && headResp.StatusCode < 300 {
+				expectedSize = headResp.ContentLength
+			} else {
+				// Non-2xx status codes (3xx/4xx/5xx) - some servers don't support HEAD or restrict it
+				// Continue to GET which may still work
+				log.Printf("Controller: HEAD request for %s returned %d, proceeding without size check", fileURL, headResp.StatusCode)
+			}
+		}
 	}
 
 	// Try to find checksums (uses its own per-request timeouts internally)
@@ -343,12 +338,16 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		return result, fmt.Errorf("download: %w", err)
 	}
 
-	// Verify file size
+	// Verify file size (if we got it from HEAD)
 	if expectedSize > 0 && written != expectedSize {
 		result.FileSizeMatch = "failed"
 		return result, fmt.Errorf("size mismatch: expected %d, got %d", expectedSize, written)
+	} else if expectedSize > 0 {
+		result.FileSizeMatch = "verified"
+	} else {
+		// Size not available from HEAD - relying on checksum verification
+		result.FileSizeMatch = "not_available"
 	}
-	result.FileSizeMatch = "verified"
 
 	// Verify SHA256 and SHA512 checksums using exact relative path matching
 	result.DigestSha256 = verifyChecksum(checksums, "sha256", sha256Hash, fileURL)
@@ -417,8 +416,12 @@ func (c *Controller) verifyExistingFile(filePath string, expectedSize int64, che
 	}
 
 	// Verify SHA256 and SHA512 checksums using exact relative path matching
+	fileSizeStatus := "not_available"
+	if expectedSize > 0 {
+		fileSizeStatus = "verified"
+	}
 	result := &k8s.DiskImageVerification{
-		FileSizeMatch: "verified",
+		FileSizeMatch: fileSizeStatus,
 		DigestSha256:  verifyChecksum(checksums, "sha256", sha256Hash, fileURL),
 		DigestSha512:  verifyChecksum(checksums, "sha512", sha512Hash, fileURL),
 	}

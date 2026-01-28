@@ -43,13 +43,3 @@ var validMachineId = regexp.MustCompile(`^[0-9a-f]{32}$`)
 ```
 Uppercase hex is rejected - users must provide lowercase.
 
-## Known Issues / Tech Debt
-
-### HEAD Request Error Handling (MEDIUM)
-**File**: diskimage.go:266, :280
-
-Any 4xx/5xx response to HEAD request causes immediate failure. Some mirrors return 403/405 for HEAD but allow GET.
-
-**Potential fixes**:
-- Treat HEAD errors as "no size available" and continue to GET
-- Special-case 405 Method Not Allowed
