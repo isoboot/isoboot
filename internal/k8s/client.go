@@ -46,9 +46,8 @@ var (
 
 // Machine represents a Machine CRD
 type Machine struct {
-	Name      string
-	MAC       string
-	MachineId string // Optional systemd machine-id (32 hex chars)
+	Name string
+	MAC  string
 }
 
 // Provision represents a Provision CRD
@@ -187,9 +186,8 @@ func parseMachine(obj *unstructured.Unstructured) (*Machine, error) {
 	}
 
 	return &Machine{
-		Name:      obj.GetName(),
-		MAC:       strings.ToLower(mac),
-		MachineId: getString(spec, "machineId"),
+		Name: obj.GetName(),
+		MAC:  strings.ToLower(mac),
 	}, nil
 }
 
