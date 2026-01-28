@@ -102,7 +102,8 @@ func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
 		data[k] = v
 	}
 
-	// Merge Secret data (overrides ConfigMap)
+	// Merge Secret data last so that Secret values intentionally overwrite
+	// ConfigMap values for the same key; this defines the data precedence.
 	for k, v := range secretData {
 		data[k] = v
 	}
