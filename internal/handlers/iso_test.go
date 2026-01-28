@@ -1,6 +1,23 @@
 package handlers
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/isoboot/isoboot/internal/controllerclient"
+)
+
+// mockISOClient implements ISOClient for testing.
+type mockISOClient struct {
+	getBootTarget func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error)
+}
+
+func (m *mockISOClient) GetBootTarget(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+	return m.getBootTarget(ctx, name)
+}
 
 func TestValidDiskImageRef(t *testing.T) {
 	tests := []struct {
@@ -31,6 +48,76 @@ func TestValidDiskImageRef(t *testing.T) {
 				t.Errorf("validDiskImageRef.MatchString(%q) = %v, want %v", tt.input, got, tt.valid)
 			}
 		})
+	}
+}
+
+func TestServeISOContent_InvalidPath(t *testing.T) {
+	mock := &mockISOClient{}
+	h := NewISOHandler("/tmp/iso", mock)
+
+	req := httptest.NewRequest("GET", "/iso/content/only-two-parts", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeISOContent(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestServeISOContent_BootTargetNotFound(t *testing.T) {
+	mock := &mockISOClient{
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return nil, fmt.Errorf("boottarget %s: %w", name, controllerclient.ErrNotFound)
+		},
+	}
+	h := NewISOHandler("/tmp/iso", mock)
+
+	req := httptest.NewRequest("GET", "/iso/content/missing-target/mini.iso/linux", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeISOContent(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestServeISOContent_InvalidDiskImageRef(t *testing.T) {
+	mock := &mockISOClient{
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return &controllerclient.BootTargetInfo{
+				DiskImageRef: "../etc/passwd",
+			}, nil
+		},
+	}
+	h := NewISOHandler("/tmp/iso", mock)
+
+	req := httptest.NewRequest("GET", "/iso/content/bad-target/mini.iso/linux", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeISOContent(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestServeISOContent_GRPCError(t *testing.T) {
+	mock := &mockISOClient{
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return nil, fmt.Errorf("grpc call: connection refused")
+		},
+	}
+	h := NewISOHandler("/tmp/iso", mock)
+
+	req := httptest.NewRequest("GET", "/iso/content/target/mini.iso/linux", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeISOContent(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", w.Code)
 	}
 }
 
