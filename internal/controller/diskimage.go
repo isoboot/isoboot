@@ -105,10 +105,6 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 	// Clean up activeDiskImageDownloads tracking when done
 	defer c.activeDiskImageDownloads.Delete(di.Name)
 
-	// Create a context with timeout for download operations (HTTP requests)
-	downloadCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
-	defer cancel()
-
 	// Use background context for status updates so they succeed even if download times out
 	statusCtx := context.Background()
 
@@ -187,7 +183,10 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 		return
 	}
 
-	isoResult, err := c.downloadAndVerify(downloadCtx, di.ISO, isoPath)
+	// Create per-download timeout context for ISO
+	isoCtx, isoCancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
+	isoResult, err := c.downloadAndVerify(isoCtx, di.ISO, isoPath)
+	isoCancel()
 	if err != nil {
 		status.Phase = "Failed"
 		status.Message = fmt.Sprintf("ISO download failed: %v", err)
@@ -226,7 +225,10 @@ func (c *Controller) downloadDiskImage(parentCtx context.Context, di *k8s.DiskIm
 			return
 		}
 		fwPath := filepath.Join(c.isoBasePath, di.Name, "firmware", fwFilename)
-		fwResult, err := c.downloadAndVerify(downloadCtx, di.Firmware, fwPath)
+		// Create per-download timeout context for firmware
+		fwCtx, fwCancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
+		fwResult, err := c.downloadAndVerify(fwCtx, di.Firmware, fwPath)
+		fwCancel()
 		if err != nil {
 			status.Phase = "Failed"
 			status.Message = fmt.Sprintf("Firmware download failed: %v", err)
