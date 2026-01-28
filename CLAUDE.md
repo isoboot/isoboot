@@ -71,6 +71,7 @@ Available variables in BootTarget (iPXE scripts):
 - `.Domain` - everything after first dot (e.g., "lan")
 - `.BootTarget` - BootTarget resource name
 - `.ProvisionName` - Provision resource name (use for answer file URLs)
+- `.DiskImageFile` - ISO filename from DiskImage (e.g., "ubuntu-24.04.iso")
 
 ### Error Handling in HTTP Handlers
 - Return 502 Bad Gateway for gRPC/transport errors

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"log"
+	"path"
 	"strings"
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
@@ -115,9 +116,28 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 
 	return &pb.GetBootTargetResponse{
 		Found:               true,
-		DiskImageRef:        bt.DiskImageRef,
+		DiskImage:           bt.DiskImageRef,
 		Template:            bt.Template,
 		IncludeFirmwarePath: bt.IncludeFirmwarePath,
+	}, nil
+}
+
+// GetDiskImage retrieves a DiskImage by name
+func (s *GRPCServer) GetDiskImage(ctx context.Context, req *pb.GetDiskImageRequest) (*pb.GetDiskImageResponse, error) {
+	di, err := s.ctrl.k8sClient.GetDiskImage(ctx, req.Name)
+	if err != nil {
+		log.Printf("gRPC: error getting disk image %s: %v", req.Name, err)
+		return &pb.GetDiskImageResponse{Found: false}, nil
+	}
+
+	diskImageFile := ""
+	if di.ISO != "" {
+		diskImageFile = path.Base(di.ISO)
+	}
+
+	return &pb.GetDiskImageResponse{
+		Found:         true,
+		DiskImageFile: diskImageFile,
 	}, nil
 }
 

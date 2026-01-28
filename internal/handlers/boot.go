@@ -41,6 +41,7 @@ type TemplateData struct {
 	Domain        string // Everything after first dot (e.g., "lan")
 	BootTarget    string
 	ProvisionName string // Provision resource name (use for answer file URLs)
+	DiskImageFile string // ISO filename from DiskImage (e.g., "ubuntu-24.04.iso")
 }
 
 // splitHostDomain splits a machine name into hostname and domain.
@@ -161,6 +162,12 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// 4.5 Get DiskImage for the filename
+	diskImageFile := ""
+	if diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage); err == nil {
+		diskImageFile = diskImageInfo.DiskImageFile
+	}
+
 	// 5. Parse and render template
 	tmpl, err := template.New(pendingProvision.BootTargetRef).Parse(bootTarget.Template)
 	if err != nil {
@@ -180,6 +187,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		Domain:        domain,
 		BootTarget:    pendingProvision.BootTargetRef,
 		ProvisionName: pendingProvision.Name,
+		DiskImageFile: diskImageFile,
 	}
 
 	var buf bytes.Buffer

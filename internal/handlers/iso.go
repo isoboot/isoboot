@@ -63,13 +63,13 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use diskImageRef from BootTarget for file path construction
-	diskImageRef := bootTarget.DiskImageRef
+	// Use diskImage from BootTarget for file path construction
+	diskImage := bootTarget.DiskImage
 
-	// Security: validate diskImageRef against allowlist pattern
+	// Security: validate diskImage against allowlist pattern
 	// This prevents path traversal by rejecting ".." (dots must have chars between them)
-	if !validDiskImageRef.MatchString(diskImageRef) {
-		log.Printf("iso: invalid diskImageRef %q", diskImageRef)
+	if !validDiskImageRef.MatchString(diskImage) {
+		log.Printf("iso: invalid diskImage %q", diskImage)
 		http.Error(w, "invalid disk image reference", http.StatusBadRequest)
 		return
 	}
@@ -78,10 +78,10 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Note: isoFilename is not validated against a specific value because all files
 	// in the disk image directory are extracted by the controller from the configured
 	// DiskImage. Any file present is legitimate to serve (kernel, initrd, firmware, etc).
-	isoPath := filepath.Join(h.basePath, diskImageRef, isoFilename)
+	isoPath := filepath.Join(h.basePath, diskImage, isoFilename)
 
 	// Security: ensure path doesn't escape diskImage directory (prevent path traversal)
-	diskImageDir := filepath.Join(h.basePath, diskImageRef) + string(os.PathSeparator)
+	diskImageDir := filepath.Join(h.basePath, diskImage) + string(os.PathSeparator)
 	if !strings.HasPrefix(isoPath, diskImageDir) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
@@ -100,7 +100,7 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 	// Check if this path should have firmware merged.
 	// Firmware is only merged when includeFirmwarePath is explicitly set.
 	if shouldMergeFirmware(filePath, bootTarget.IncludeFirmwarePath) {
-		h.serveFileWithFirmware(w, r, diskImageRef, isoFilename, filePath)
+		h.serveFileWithFirmware(w, r, diskImage, isoFilename, filePath)
 		return
 	}
 
@@ -263,7 +263,83 @@ func shouldMergeFirmware(requestedFile, includeFirmwarePath string) bool {
 	return requestPath == includeFirmwarePath
 }
 
+// ServeISODownload serves full ISO files for download
+// Path format: /iso/download/{bootTarget}/{diskImageFile}
+// Example: /iso/download/ubuntu-24/ubuntu-24.04.1-live-server-amd64.iso
+func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// 1. Parse path: /iso/download/{bootTarget}/{diskImageFile}
+	path := strings.TrimPrefix(r.URL.Path, "/iso/download/")
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	bootTargetName := parts[0]
+	diskImageFile := parts[1]
+
+	// 2. Get BootTarget → disk image name
+	bootTarget, err := h.controllerClient.GetBootTarget(ctx, bootTargetName)
+	if err != nil {
+		if errors.Is(err, controllerclient.ErrNotFound) {
+			http.Error(w, "boot target not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "failed to resolve boot target", http.StatusBadGateway)
+		}
+		return
+	}
+	diskImage := bootTarget.DiskImage
+
+	// 3. Validate diskImage (reuse existing regex)
+	if !validDiskImageRef.MatchString(diskImage) {
+		http.Error(w, "invalid disk image", http.StatusBadRequest)
+		return
+	}
+
+	// 4. Validate diskImageFile - no path traversal
+	if strings.Contains(diskImageFile, "/") || strings.Contains(diskImageFile, "..") ||
+		strings.HasPrefix(diskImageFile, ".") {
+		http.Error(w, "invalid iso file", http.StatusBadRequest)
+		return
+	}
+
+	// 5. Construct path and verify containment
+	diskImageDir := filepath.Join(h.basePath, diskImage)
+	isoPath := filepath.Join(diskImageDir, diskImageFile)
+	if !strings.HasPrefix(isoPath, diskImageDir+string(os.PathSeparator)) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	// 6. Get file info for Content-Length
+	fileInfo, err := os.Stat(isoPath)
+	if err != nil {
+		http.Error(w, "iso not found", http.StatusNotFound)
+		return
+	}
+
+	// 7. Open file for streaming
+	file, err := os.Open(isoPath)
+	if err != nil {
+		http.Error(w, "failed to open iso", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	// 8. Set headers and stream
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", diskImageFile))
+	w.WriteHeader(http.StatusOK)
+
+	// 9. Stream in chunks (1MB, don't load entire ISO into memory)
+	buf := make([]byte, streamChunkSize)
+	io.CopyBuffer(w, file, buf)
+}
+
 // RegisterRoutes registers ISO-related routes
 func (h *ISOHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/iso/content/", h.ServeISOContent)
+	mux.HandleFunc("/iso/download/", h.ServeISODownload)
 }

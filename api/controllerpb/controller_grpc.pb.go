@@ -33,6 +33,8 @@ type ControllerServiceClient interface {
 	GetResponseTemplate(ctx context.Context, in *GetResponseTemplateRequest, opts ...grpc.CallOption) (*GetResponseTemplateResponse, error)
 	// GetProvision retrieves a Provision by name
 	GetProvision(ctx context.Context, in *GetProvisionRequest, opts ...grpc.CallOption) (*GetProvisionResponse, error)
+	// GetDiskImage retrieves a DiskImage by name
+	GetDiskImage(ctx context.Context, in *GetDiskImageRequest, opts ...grpc.CallOption) (*GetDiskImageResponse, error)
 	// GetConfigMaps retrieves and merges data from multiple ConfigMaps
 	GetConfigMaps(ctx context.Context, in *GetConfigMapsRequest, opts ...grpc.CallOption) (*GetConfigMapsResponse, error)
 	// GetSecrets retrieves and merges data from multiple Secrets
@@ -119,6 +121,15 @@ func (c *controllerServiceClient) GetProvision(ctx context.Context, in *GetProvi
 	return out, nil
 }
 
+func (c *controllerServiceClient) GetDiskImage(ctx context.Context, in *GetDiskImageRequest, opts ...grpc.CallOption) (*GetDiskImageResponse, error) {
+	out := new(GetDiskImageResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetDiskImage", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *controllerServiceClient) GetConfigMaps(ctx context.Context, in *GetConfigMapsRequest, opts ...grpc.CallOption) (*GetConfigMapsResponse, error) {
 	out := new(GetConfigMapsResponse)
 	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetConfigMaps", in, out, opts...)
@@ -157,6 +168,8 @@ type ControllerServiceServer interface {
 	GetResponseTemplate(context.Context, *GetResponseTemplateRequest) (*GetResponseTemplateResponse, error)
 	// GetProvision retrieves a Provision by name
 	GetProvision(context.Context, *GetProvisionRequest) (*GetProvisionResponse, error)
+	// GetDiskImage retrieves a DiskImage by name
+	GetDiskImage(context.Context, *GetDiskImageRequest) (*GetDiskImageResponse, error)
 	// GetConfigMaps retrieves and merges data from multiple ConfigMaps
 	GetConfigMaps(context.Context, *GetConfigMapsRequest) (*GetConfigMapsResponse, error)
 	// GetSecrets retrieves and merges data from multiple Secrets
@@ -191,6 +204,9 @@ func (UnimplementedControllerServiceServer) GetResponseTemplate(context.Context,
 }
 func (UnimplementedControllerServiceServer) GetProvision(context.Context, *GetProvisionRequest) (*GetProvisionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetProvision not implemented")
+}
+func (UnimplementedControllerServiceServer) GetDiskImage(context.Context, *GetDiskImageRequest) (*GetDiskImageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDiskImage not implemented")
 }
 func (UnimplementedControllerServiceServer) GetConfigMaps(context.Context, *GetConfigMapsRequest) (*GetConfigMapsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetConfigMaps not implemented")
@@ -355,6 +371,24 @@ func _ControllerService_GetProvision_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControllerService_GetDiskImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDiskImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).GetDiskImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetDiskImage",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).GetDiskImage(ctx, req.(*GetDiskImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ControllerService_GetConfigMaps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetConfigMapsRequest)
 	if err := dec(in); err != nil {
@@ -426,6 +460,10 @@ var _ControllerService_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetProvision",
 			Handler:    _ControllerService_GetProvision_Handler,
+		},
+		{
+			MethodName: "GetDiskImage",
+			Handler:    _ControllerService_GetDiskImage_Handler,
 		},
 		{
 			MethodName: "GetConfigMaps",
