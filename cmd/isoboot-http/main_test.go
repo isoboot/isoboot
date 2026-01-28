@@ -97,6 +97,41 @@ func TestLoggingMiddleware_CapturesStatusCode(t *testing.T) {
 	}
 }
 
+func TestPathTraversalMiddleware_BlocksTraversal(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	wrapped := pathTraversalMiddleware(handler)
+
+	tests := []struct {
+		name       string
+		path       string
+		wantStatus int
+	}{
+		{"normal path", "/iso/content/foo/bar", http.StatusOK},
+		{"root path", "/", http.StatusOK},
+		{"healthz", "/healthz", http.StatusOK},
+		{"dotdot segment", "/iso/content/../etc/passwd", http.StatusBadRequest},
+		{"dotdot at start", "/../etc/passwd", http.StatusBadRequest},
+		{"dotdot at end", "/foo/bar/..", http.StatusBadRequest},
+		{"bare dotdot", "/..", http.StatusBadRequest},
+		{"backslash traversal", "/iso/content\\..\\etc\\passwd", http.StatusBadRequest},
+		{"single dot is fine", "/foo/./bar", http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			rec := httptest.NewRecorder()
+			wrapped.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("path %q: got status %d, want %d", tt.path, rec.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
 func TestLoggingMiddleware_DefaultStatusOK(t *testing.T) {
 	// Handler that writes body but doesn't call WriteHeader
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
