@@ -69,8 +69,8 @@ func (h *ISOHandler) ServeISOContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use diskImageRef from BootTarget for file path construction
-	diskImageRef := bootTarget.DiskImageRef
+	// Use diskImage from BootTarget for file path construction
+	diskImageRef := bootTarget.DiskImage
 
 	// Security: validate diskImageRef against allowlist pattern
 	// This prevents path traversal by rejecting ".." (dots must have chars between them)
