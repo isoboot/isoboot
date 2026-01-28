@@ -21,14 +21,14 @@ const (
 
 // Controller watches Provision CRDs and manages their lifecycle
 type Controller struct {
-	k8sClient                *k8s.Client
+	k8sClient                KubernetesClient
 	stopCh                   chan struct{}
 	isoBasePath              string
 	activeDiskImageDownloads sync.Map // tracks in-progress DiskImage downloads by name
 }
 
 // New creates a new controller
-func New(k8sClient *k8s.Client) *Controller {
+func New(k8sClient KubernetesClient) *Controller {
 	return &Controller{
 		k8sClient: k8sClient,
 		stopCh:    make(chan struct{}),
