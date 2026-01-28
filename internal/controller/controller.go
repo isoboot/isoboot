@@ -202,9 +202,14 @@ func (c *Controller) validateProvisionRefs(ctx context.Context, provision *k8s.P
 		return fmt.Errorf("Machine '%s' not found", provision.Spec.MachineRef)
 	}
 
-	// Validate machineId format if present
+	// Validate machineId format if present (on Machine - legacy)
 	if machine.MachineId != "" && !validMachineId.MatchString(machine.MachineId) {
-		return fmt.Errorf("Machine '%s' has invalid machineId: must be exactly 32 hex characters", provision.Spec.MachineRef)
+		return fmt.Errorf("Machine '%s' has invalid machineId: must be exactly 32 lowercase hex characters", provision.Spec.MachineRef)
+	}
+
+	// Validate machineId format if present (on Provision - preferred)
+	if provision.Spec.MachineId != "" && !validMachineId.MatchString(provision.Spec.MachineId) {
+		return fmt.Errorf("Provision '%s' has invalid machineId: must be exactly 32 lowercase hex characters", provision.Name)
 	}
 
 	// Validate bootTargetRef (BootTarget)
@@ -274,8 +279,10 @@ func (c *Controller) RenderTemplate(ctx context.Context, provision *k8s.Provisio
 	data["Hostname"] = provision.Spec.MachineRef
 	data["Target"] = provision.Spec.BootTargetRef
 
-	// Add MachineId from Machine if set (use hasKey in templates to check)
-	if c.k8sClient != nil {
+	// Add MachineId - prefer Provision, fallback to Machine (use hasKey in templates to check)
+	if provision.Spec.MachineId != "" {
+		data["MachineId"] = provision.Spec.MachineId
+	} else if c.k8sClient != nil {
 		machine, err := c.k8sClient.GetMachine(ctx, provision.Spec.MachineRef)
 		if err == nil && machine.MachineId != "" {
 			data["MachineId"] = machine.MachineId
