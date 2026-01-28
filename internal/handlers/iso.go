@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,12 +22,17 @@ var validDiskImageRef = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`
 
 const streamChunkSize = 1024 * 1024 // 1MB chunks for streaming
 
-type ISOHandler struct {
-	basePath         string
-	controllerClient *controllerclient.Client
+// ISOClient defines the controller operations needed by ISOHandler.
+type ISOClient interface {
+	GetBootTarget(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error)
 }
 
-func NewISOHandler(basePath string, controllerClient *controllerclient.Client) *ISOHandler {
+type ISOHandler struct {
+	basePath         string
+	controllerClient ISOClient
+}
+
+func NewISOHandler(basePath string, controllerClient ISOClient) *ISOHandler {
 	return &ISOHandler{
 		basePath:         basePath,
 		controllerClient: controllerClient,
