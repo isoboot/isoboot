@@ -19,6 +19,8 @@ const _ = grpc.SupportPackageIsVersion7
 type ControllerServiceClient interface {
 	// GetMachineByMAC retrieves a Machine by MAC address
 	GetMachineByMAC(ctx context.Context, in *GetMachineByMACRequest, opts ...grpc.CallOption) (*GetMachineByMACResponse, error)
+	// GetMachine retrieves a Machine by name
+	GetMachine(ctx context.Context, in *GetMachineRequest, opts ...grpc.CallOption) (*GetMachineResponse, error)
 	// GetProvisionsByMachine retrieves all Provisions referencing a Machine
 	GetProvisionsByMachine(ctx context.Context, in *GetProvisionsByMachineRequest, opts ...grpc.CallOption) (*GetProvisionsByMachineResponse, error)
 	// UpdateProvisionStatus updates a Provision's status
@@ -48,6 +50,15 @@ func NewControllerServiceClient(cc grpc.ClientConnInterface) ControllerServiceCl
 func (c *controllerServiceClient) GetMachineByMAC(ctx context.Context, in *GetMachineByMACRequest, opts ...grpc.CallOption) (*GetMachineByMACResponse, error) {
 	out := new(GetMachineByMACResponse)
 	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetMachineByMAC", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controllerServiceClient) GetMachine(ctx context.Context, in *GetMachineRequest, opts ...grpc.CallOption) (*GetMachineResponse, error) {
+	out := new(GetMachineResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetMachine", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +143,8 @@ func (c *controllerServiceClient) GetSecrets(ctx context.Context, in *GetSecrets
 type ControllerServiceServer interface {
 	// GetMachineByMAC retrieves a Machine by MAC address
 	GetMachineByMAC(context.Context, *GetMachineByMACRequest) (*GetMachineByMACResponse, error)
+	// GetMachine retrieves a Machine by name
+	GetMachine(context.Context, *GetMachineRequest) (*GetMachineResponse, error)
 	// GetProvisionsByMachine retrieves all Provisions referencing a Machine
 	GetProvisionsByMachine(context.Context, *GetProvisionsByMachineRequest) (*GetProvisionsByMachineResponse, error)
 	// UpdateProvisionStatus updates a Provision's status
@@ -157,6 +170,9 @@ type UnimplementedControllerServiceServer struct {
 
 func (UnimplementedControllerServiceServer) GetMachineByMAC(context.Context, *GetMachineByMACRequest) (*GetMachineByMACResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMachineByMAC not implemented")
+}
+func (UnimplementedControllerServiceServer) GetMachine(context.Context, *GetMachineRequest) (*GetMachineResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMachine not implemented")
 }
 func (UnimplementedControllerServiceServer) GetProvisionsByMachine(context.Context, *GetProvisionsByMachineRequest) (*GetProvisionsByMachineResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetProvisionsByMachine not implemented")
@@ -209,6 +225,24 @@ func _ControllerService_GetMachineByMAC_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ControllerServiceServer).GetMachineByMAC(ctx, req.(*GetMachineByMACRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControllerService_GetMachine_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMachineRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).GetMachine(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetMachine",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).GetMachine(ctx, req.(*GetMachineRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -364,6 +398,10 @@ var _ControllerService_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMachineByMAC",
 			Handler:    _ControllerService_GetMachineByMAC_Handler,
+		},
+		{
+			MethodName: "GetMachine",
+			Handler:    _ControllerService_GetMachine_Handler,
 		},
 		{
 			MethodName: "GetProvisionsByMachine",

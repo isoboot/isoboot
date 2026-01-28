@@ -39,6 +39,20 @@ func (s *GRPCServer) GetMachineByMAC(ctx context.Context, req *pb.GetMachineByMA
 	}, nil
 }
 
+// GetMachine retrieves a Machine by name
+func (s *GRPCServer) GetMachine(ctx context.Context, req *pb.GetMachineRequest) (*pb.GetMachineResponse, error) {
+	machine, err := s.ctrl.k8sClient.GetMachine(ctx, req.Name)
+	if err != nil {
+		log.Printf("gRPC: error getting machine %s: %v", req.Name, err)
+		return &pb.GetMachineResponse{Found: false}, nil
+	}
+
+	return &pb.GetMachineResponse{
+		Found: true,
+		Mac:   machine.MAC,
+	}, nil
+}
+
 // GetProvisionsByMachine retrieves all Provisions referencing a Machine
 func (s *GRPCServer) GetProvisionsByMachine(ctx context.Context, req *pb.GetProvisionsByMachineRequest) (*pb.GetProvisionsByMachineResponse, error) {
 	provisions, err := s.ctrl.k8sClient.ListProvisionsByMachine(ctx, req.MachineName)

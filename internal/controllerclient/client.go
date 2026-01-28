@@ -56,6 +56,21 @@ func (c *Client) GetMachineByMAC(ctx context.Context, mac string) (string, error
 	return resp.Name, nil
 }
 
+// GetMachine retrieves a Machine by name and returns its MAC address
+// Returns empty string if not found (not an error)
+func (c *Client) GetMachine(ctx context.Context, name string) (string, error) {
+	resp, err := c.client.GetMachine(ctx, &pb.GetMachineRequest{Name: name})
+	if err != nil {
+		return "", fmt.Errorf("grpc call: %w", err)
+	}
+
+	if !resp.Found {
+		return "", nil
+	}
+
+	return resp.Mac, nil
+}
+
 // ProvisionSummary contains basic provision info
 type ProvisionSummary struct {
 	Name          string
