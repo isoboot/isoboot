@@ -26,9 +26,9 @@ func NewAnswerHandler(host, port, proxyPort string, ctrlClient *controllerclient
 }
 
 // ServeAnswer serves response template files (preseed/kickstart/autoinstall)
-// Path format: /answer/{hostname}/{filename}
+// Path format: /answer/{provisionName}/{filename}
 func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
-	// Parse path: /answer/{hostname}/{filename}
+	// Parse path: /answer/{provisionName}/{filename}
 	path := strings.TrimPrefix(r.URL.Path, "/answer/")
 	parts := strings.SplitN(path, "/", 2)
 	if len(parts) < 2 {
@@ -36,14 +36,14 @@ func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hostname := parts[0]
+	provisionName := parts[0]
 	filename := parts[1]
 	ctx := r.Context()
 
 	// Get rendered template from controller
-	content, err := h.ctrlClient.GetRenderedTemplate(ctx, hostname, filename)
+	content, err := h.ctrlClient.GetRenderedTemplate(ctx, provisionName, filename)
 	if err != nil {
-		log.Printf("Error getting rendered template for %s/%s: %v", hostname, filename, err)
+		log.Printf("Error getting rendered template for %s/%s: %v", provisionName, filename, err)
 		// Distinguish between "not found" (404) and server/transport errors (502)
 		if strings.Contains(err.Error(), "grpc call:") {
 			w.WriteHeader(http.StatusBadGateway)

@@ -138,22 +138,20 @@ func (s *GRPCServer) GetResponseTemplate(ctx context.Context, req *pb.GetRespons
 
 // GetRenderedTemplate renders a template file for a provision
 func (s *GRPCServer) GetRenderedTemplate(ctx context.Context, req *pb.GetRenderedTemplateRequest) (*pb.GetRenderedTemplateResponse, error) {
-	// Find the provision by hostname (InProgress or Pending - race between boot start and answer retrieval)
-	provision, err := s.ctrl.k8sClient.FindProvisionByHostname(ctx, req.Hostname, "InProgress")
+	// Get the provision directly by name (O(1) lookup)
+	provision, err := s.ctrl.k8sClient.GetProvision(ctx, req.ProvisionName)
 	if err != nil {
-		log.Printf("gRPC: error finding provision for %s: %v", req.Hostname, err)
-		return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
+		log.Printf("gRPC: error getting provision %s: %v", req.ProvisionName, err)
+		return &pb.GetRenderedTemplateResponse{Found: false, Error: "provision not found"}, nil
 	}
-	// If not InProgress, try Pending (installer may request before MarkBootStarted completes)
-	if provision == nil {
-		provision, err = s.ctrl.k8sClient.FindProvisionByHostname(ctx, req.Hostname, "Pending")
-		if err != nil {
-			log.Printf("gRPC: error finding pending provision for %s: %v", req.Hostname, err)
-			return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
-		}
+
+	// Check provision is in active state (InProgress or Pending)
+	phase := provision.Status.Phase
+	if phase == "" {
+		phase = "Pending"
 	}
-	if provision == nil {
-		return &pb.GetRenderedTemplateResponse{Found: false, Error: "no active provision for hostname"}, nil
+	if phase != "Pending" && phase != "InProgress" {
+		return &pb.GetRenderedTemplateResponse{Found: false, Error: "provision not active"}, nil
 	}
 
 	// Get the response template
@@ -172,7 +170,7 @@ func (s *GRPCServer) GetRenderedTemplate(ctx context.Context, req *pb.GetRendere
 	// Render the template
 	rendered, err := s.ctrl.RenderTemplate(ctx, provision, templateContent)
 	if err != nil {
-		log.Printf("gRPC: error rendering template for %s: %v", req.Hostname, err)
+		log.Printf("gRPC: error rendering template for %s: %v", req.ProvisionName, err)
 		return &pb.GetRenderedTemplateResponse{Found: false, Error: err.Error()}, nil
 	}
 
