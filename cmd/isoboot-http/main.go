@@ -113,7 +113,11 @@ func main() {
 	log.Printf("ISO path: %s", isoPath)
 	log.Printf("Templates ConfigMap: %s", templatesConfigMap)
 
-	if err := http.ListenAndServe(addr, loggingMiddleware(pathTraversalMiddleware(mux))); err != nil {
+	var handler http.Handler = mux
+	handler = pathTraversalMiddleware(handler)
+	handler = loggingMiddleware(handler)
+
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
