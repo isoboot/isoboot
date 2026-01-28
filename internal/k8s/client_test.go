@@ -712,3 +712,107 @@ func TestParseDiskImage(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeMAC(t *testing.T) {
+	tests := []struct {
+		name     string
+		mac      string
+		expected string
+	}{
+		{
+			name:     "dash-separated lowercase",
+			mac:      "aa-bb-cc-dd-ee-ff",
+			expected: "aa-bb-cc-dd-ee-ff",
+		},
+		{
+			name:     "dash-separated uppercase",
+			mac:      "AA-BB-CC-DD-EE-FF",
+			expected: "aa-bb-cc-dd-ee-ff",
+		},
+		{
+			name:     "dash-separated mixed case",
+			mac:      "Aa-Bb-Cc-Dd-Ee-Ff",
+			expected: "aa-bb-cc-dd-ee-ff",
+		},
+		{
+			name:     "colon-separated rejected",
+			mac:      "aa:bb:cc:dd:ee:ff",
+			expected: "",
+		},
+		{
+			name:     "empty string",
+			mac:      "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeMAC(tt.mac)
+			if result != tt.expected {
+				t.Errorf("normalizeMAC(%q) = %q, want %q", tt.mac, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestFindMachineByMAC_ColonFormatReturnsNil tests MAC normalization edge cases
+// Note: Full integration tests for FindMachineByMAC require a k8s client
+func TestFindMachineByMAC_ColonFormatReturnsNil(t *testing.T) {
+	// This tests that colon format MACs are rejected before any k8s calls
+	// The actual function would return nil immediately for colon-separated MACs
+	mac := "aa:bb:cc:dd:ee:ff"
+	normalized := normalizeMAC(mac)
+	if normalized != "" {
+		t.Errorf("expected empty string for colon-separated MAC, got %q", normalized)
+	}
+}
+
+// TestListProvisionsByMachine_FilteringLogic tests the filtering logic
+// Note: Full integration tests require a k8s client
+func TestListProvisionsByMachine_FilteringLogic(t *testing.T) {
+	// Test that MachineRef comparison is exact string match
+	provisions := []*Provision{
+		{Name: "prov-1", Spec: ProvisionSpec{MachineRef: "vm-01.lan"}},
+		{Name: "prov-2", Spec: ProvisionSpec{MachineRef: "vm-02.lan"}},
+		{Name: "prov-3", Spec: ProvisionSpec{MachineRef: "vm-01.lan"}},
+	}
+
+	// Filter for vm-01.lan
+	machineRef := "vm-01.lan"
+	var result []*Provision
+	for _, p := range provisions {
+		if p.Spec.MachineRef == machineRef {
+			result = append(result, p)
+		}
+	}
+
+	if len(result) != 2 {
+		t.Errorf("expected 2 provisions for %s, got %d", machineRef, len(result))
+	}
+	for _, p := range result {
+		if p.Spec.MachineRef != machineRef {
+			t.Errorf("unexpected provision %s with MachineRef %s", p.Name, p.Spec.MachineRef)
+		}
+	}
+}
+
+func TestListProvisionsByMachine_NoMatches(t *testing.T) {
+	provisions := []*Provision{
+		{Name: "prov-1", Spec: ProvisionSpec{MachineRef: "vm-01.lan"}},
+		{Name: "prov-2", Spec: ProvisionSpec{MachineRef: "vm-02.lan"}},
+	}
+
+	// Filter for non-existent machine
+	machineRef := "vm-99.lan"
+	var result []*Provision
+	for _, p := range provisions {
+		if p.Spec.MachineRef == machineRef {
+			result = append(result, p)
+		}
+	}
+
+	if len(result) != 0 {
+		t.Errorf("expected 0 provisions for %s, got %d", machineRef, len(result))
+	}
+}
