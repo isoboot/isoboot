@@ -13,15 +13,24 @@ import (
 	"github.com/isoboot/isoboot/internal/controllerclient"
 )
 
+// BootClient defines the controller operations needed by BootHandler.
+type BootClient interface {
+	GetConfigMapValue(ctx context.Context, configMapName, key string) (string, error)
+	GetMachineByMAC(ctx context.Context, mac string) (string, error)
+	GetProvisionsByMachine(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error)
+	GetBootTarget(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error)
+	UpdateProvisionStatus(ctx context.Context, name, status, message, ip string) error
+}
+
 type BootHandler struct {
 	host       string
 	port       string
 	proxyPort  string
-	ctrlClient *controllerclient.Client
+	ctrlClient BootClient
 	configMap  string
 }
 
-func NewBootHandler(host, port, proxyPort string, ctrlClient *controllerclient.Client, configMap string) *BootHandler {
+func NewBootHandler(host, port, proxyPort string, ctrlClient BootClient, configMap string) *BootHandler {
 	return &BootHandler{
 		host:       host,
 		port:       port,

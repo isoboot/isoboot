@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,14 +10,23 @@ import (
 	"github.com/isoboot/isoboot/internal/controllerclient"
 )
 
+// AnswerClient defines the controller operations needed by AnswerHandler.
+type AnswerClient interface {
+	GetProvision(ctx context.Context, name string) (*controllerclient.ProvisionInfo, error)
+	GetResponseTemplate(ctx context.Context, name string) (*controllerclient.ResponseTemplateInfo, error)
+	GetConfigMaps(ctx context.Context, names []string) (map[string]string, error)
+	GetSecrets(ctx context.Context, names []string) (map[string]string, error)
+	GetMachine(ctx context.Context, name string) (string, error)
+}
+
 type AnswerHandler struct {
 	host       string
 	port       string
 	proxyPort  string
-	ctrlClient *controllerclient.Client
+	ctrlClient AnswerClient
 }
 
-func NewAnswerHandler(host, port, proxyPort string, ctrlClient *controllerclient.Client) *AnswerHandler {
+func NewAnswerHandler(host, port, proxyPort string, ctrlClient AnswerClient) *AnswerHandler {
 	return &AnswerHandler{
 		host:       host,
 		port:       port,
