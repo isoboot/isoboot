@@ -441,3 +441,20 @@ func TestGRPC_GetDiskImage_NotFound(t *testing.T) {
 		t.Error("expected Found=false for unknown disk image")
 	}
 }
+
+func TestGRPC_GetDiskImage_InvalidISOURL(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.diskImages["bad-iso"] = &k8s.DiskImage{
+		Name: "bad-iso",
+		ISO:  "https://example.com/", // URL with no filename
+	}
+
+	srv := NewGRPCServer(New(fake))
+	resp, err := srv.GetDiskImage(context.Background(), &pb.GetDiskImageRequest{Name: "bad-iso"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Found {
+		t.Error("expected Found=false for invalid ISO URL")
+	}
+}
