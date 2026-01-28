@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -26,8 +27,10 @@ func (rw *responseWriter) WriteHeader(code int) {
 // pathTraversalMiddleware rejects requests with path traversal attempts
 func pathTraversalMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Reject any URL path containing ".." to prevent path traversal
-		if strings.Contains(r.URL.Path, "..") {
+		// Reject paths containing ".." or where path.Clean changes the path
+		// (catches encoded variants since Go decodes URL before r.URL.Path)
+		cleanPath := path.Clean(r.URL.Path)
+		if strings.Contains(r.URL.Path, "..") || cleanPath != r.URL.Path {
 			http.Error(w, "invalid path", http.StatusBadRequest)
 			return
 		}
