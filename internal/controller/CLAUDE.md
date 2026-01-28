@@ -43,7 +43,7 @@ Uppercase hex is rejected - users must provide lowercase.
 ### DiskImage Download Timeout (HIGH)
 **File**: diskimage.go:108, :190, :219
 
-The `downloadRequestTimeout` (15 min) applies to the entire DiskImage operation. If ISO download takes close to 15 minutes, firmware download inherits near-expired context and may fail even with valid URL.
+The `downloadRequestTimeout` (15 min) applies to the entire DiskImage operation. If ISO download takes close to 15 minutes, firmware download inherits near-expired context and may fail even with a valid URL.
 
 **Potential fixes**:
 - Per-file timeouts (new context per download)
