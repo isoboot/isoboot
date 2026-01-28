@@ -40,6 +40,7 @@ func main() {
 	}
 
 	// Create and start controller
+	// NOTE: SetISOBasePath must be called before Start.
 	ctrl := controller.New(k8sClient)
 	ctrl.SetISOBasePath(isoBasePath)
 	ctrl.Start()
