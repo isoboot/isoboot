@@ -280,7 +280,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 			if headResp.StatusCode >= 200 && headResp.StatusCode < 300 {
 				expectedSize = headResp.ContentLength
 			} else {
-				// 3xx/4xx/5xx - some servers don't support HEAD or restrict it
+				// Non-2xx status codes (3xx/4xx/5xx) - some servers don't support HEAD or restrict it
 				// Continue to GET which may still work
 				log.Printf("Controller: HEAD request for %s returned %d, proceeding without size check", fileURL, headResp.StatusCode)
 			}
@@ -346,7 +346,7 @@ func (c *Controller) downloadAndVerify(ctx context.Context, fileURL, destPath st
 		}
 		result.FileSizeMatch = "verified"
 	} else {
-		// HEAD didn't provide size - rely on checksum verification
+		// Size not available from HEAD - relying on checksum verification
 		result.FileSizeMatch = "not_available"
 	}
 
