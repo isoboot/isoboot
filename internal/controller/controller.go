@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"regexp"
 	"sync"
 	"time"
-
-	"net/http"
 
 	"github.com/isoboot/isoboot/internal/k8s"
 )
