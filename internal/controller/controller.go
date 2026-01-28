@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"regexp"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ const (
 // Controller watches Provision CRDs and manages their lifecycle
 type Controller struct {
 	k8sClient                KubernetesClient
+	httpClient               HTTPDoer
 	stopCh                   chan struct{}
 	isoBasePath              string
 	activeDiskImageDownloads sync.Map // tracks in-progress DiskImage downloads by name
@@ -30,8 +32,9 @@ type Controller struct {
 // New creates a new controller
 func New(k8sClient KubernetesClient) *Controller {
 	return &Controller{
-		k8sClient: k8sClient,
-		stopCh:    make(chan struct{}),
+		k8sClient:  k8sClient,
+		httpClient: http.DefaultClient,
+		stopCh:     make(chan struct{}),
 	}
 }
 

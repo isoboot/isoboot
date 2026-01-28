@@ -198,7 +198,7 @@ func TestVerifyExistingFile(t *testing.T) {
 	sha256Hash.Write(testContent)
 	expectedSha256 := fmt.Sprintf("%x", sha256Hash.Sum(nil))
 
-	ctrl := &Controller{}
+	ctrl := &Controller{httpClient: http.DefaultClient}
 
 	t.Run("valid file with matching checksums", func(t *testing.T) {
 		checksums := []checksumSource{
@@ -264,7 +264,7 @@ func TestDiscoverChecksums(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	ctrl := &Controller{}
+	ctrl := &Controller{httpClient: http.DefaultClient}
 
 	t.Run("discovers checksums from directory", func(t *testing.T) {
 		fileURL := server.URL + "/images/mini.iso"
@@ -354,7 +354,7 @@ func TestDownloadAndVerify(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	ctrl := &Controller{}
+	ctrl := &Controller{httpClient: http.DefaultClient}
 
 	t.Run("successful download with verification", func(t *testing.T) {
 		destPath := filepath.Join(tmpDir, "downloaded.iso")

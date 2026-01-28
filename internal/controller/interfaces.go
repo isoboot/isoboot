@@ -2,10 +2,17 @@ package controller
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/isoboot/isoboot/internal/k8s"
 	corev1 "k8s.io/api/core/v1"
 )
+
+// HTTPDoer abstracts HTTP request execution for testability.
+// *http.Client satisfies this interface.
+type HTTPDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 // KubernetesClient abstracts the Kubernetes operations used by the controller.
 // *k8s.Client satisfies this interface implicitly.
