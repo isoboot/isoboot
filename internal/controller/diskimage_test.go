@@ -968,6 +968,9 @@ func TestDownloadDiskImage_SuccessfulDownload(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	// discoverChecksums tries the ISO's directory and up to 2 parent directories,
+	// so /images/SHA256SUMS and /SHA256SUMS will be requested. Only serve the
+	// same-directory one; the rest return 404.
 	mockHTTP := &fakeHTTPDoer{
 		doFunc: func(req *http.Request) (*http.Response, error) {
 			switch req.URL.Path {
@@ -1009,6 +1012,9 @@ func TestDownloadDiskImage_SuccessfulDownload(t *testing.T) {
 	}
 	if status.ISO.DigestSha256 != "verified" {
 		t.Errorf("expected ISO DigestSha256=verified, got %s", status.ISO.DigestSha256)
+	}
+	if status.ISO.DigestSha512 != "not_found" {
+		t.Errorf("expected ISO DigestSha512=not_found (no SHA512SUMS served), got %s", status.ISO.DigestSha512)
 	}
 
 	// Verify file was written to disk
@@ -1073,6 +1079,15 @@ func TestDownloadDiskImage_WithFirmware(t *testing.T) {
 	}
 	if status.Firmware == nil {
 		t.Fatal("expected Firmware verification status")
+	}
+	if status.Firmware.FileSizeMatch != "verified" {
+		t.Errorf("expected Firmware FileSizeMatch=verified, got %s", status.Firmware.FileSizeMatch)
+	}
+	if status.Firmware.DigestSha256 != "not_found" {
+		t.Errorf("expected Firmware DigestSha256=not_found (no checksum served), got %s", status.Firmware.DigestSha256)
+	}
+	if status.Firmware.DigestSha512 != "not_found" {
+		t.Errorf("expected Firmware DigestSha512=not_found (no checksum served), got %s", status.Firmware.DigestSha512)
 	}
 
 	// Verify both files were written
