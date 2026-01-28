@@ -271,6 +271,24 @@ func TestServeAnswer_ProvisionNotFound(t *testing.T) {
 	}
 }
 
+func TestServeAnswer_GRPCError(t *testing.T) {
+	mock := &mockAnswerClient{
+		getProvision: func(ctx context.Context, name string) (*controllerclient.ProvisionInfo, error) {
+			return nil, fmt.Errorf("grpc call: connection refused")
+		},
+	}
+
+	h := NewAnswerHandler("10.0.0.1", "8080", "3128", mock)
+	req := httptest.NewRequest("GET", "/answer/prov-1/preseed.cfg", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeAnswer(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", w.Code)
+	}
+}
+
 func TestServeAnswer_FileNotInTemplate(t *testing.T) {
 	mock := &mockAnswerClient{
 		getProvision: func(ctx context.Context, name string) (*controllerclient.ProvisionInfo, error) {

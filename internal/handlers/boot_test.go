@@ -390,6 +390,87 @@ func TestServeBootDone_Success(t *testing.T) {
 	}
 }
 
+func TestServeConditionalBoot_NoMAC_Real(t *testing.T) {
+	h := NewBootHandler("10.0.0.1", "8080", "3128", &mockBootClient{}, "cm")
+	req := httptest.NewRequest("GET", "/boot/conditional-boot", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeConditionalBoot(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestServeConditionalBoot_EmptyStatusTreatedAsPending(t *testing.T) {
+	mock := &mockBootClient{
+		getMachineByMAC: func(ctx context.Context, mac string) (string, error) {
+			return "vm-01.lan", nil
+		},
+		getProvisionsByMachine: func(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error) {
+			return []controllerclient.ProvisionSummary{
+				{Name: "prov-1", Status: "", BootTargetRef: "debian-13"},
+			}, nil
+		},
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return &controllerclient.BootTargetInfo{
+				Template: "#!ipxe\nboot\n",
+			}, nil
+		},
+		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
+			return nil
+		},
+	}
+
+	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeConditionalBoot(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (empty status treated as Pending), got %d", w.Code)
+	}
+}
+
+func TestServeBootDone_NoMAC_Real(t *testing.T) {
+	h := NewBootHandler("10.0.0.1", "8080", "3128", &mockBootClient{}, "cm")
+	req := httptest.NewRequest("GET", "/boot/done", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeBootDone(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestServeBootDone_UpdateStatusError(t *testing.T) {
+	mock := &mockBootClient{
+		getMachineByMAC: func(ctx context.Context, mac string) (string, error) {
+			return "vm-01.lan", nil
+		},
+		getProvisionsByMachine: func(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error) {
+			return []controllerclient.ProvisionSummary{
+				{Name: "prov-1", Status: "InProgress", BootTargetRef: "debian-13"},
+			}, nil
+		},
+		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
+			return fmt.Errorf("grpc call: connection refused")
+		},
+	}
+
+	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	req := httptest.NewRequest("GET", "/boot/done?mac=aa-bb-cc-dd-ee-ff", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeBootDone(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
 func TestServeBootDone_NoInProgress(t *testing.T) {
 	mock := &mockBootClient{
 		getMachineByMAC: func(ctx context.Context, mac string) (string, error) {
