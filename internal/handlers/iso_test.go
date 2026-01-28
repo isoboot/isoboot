@@ -112,27 +112,14 @@ func TestServeISODownload_InvalidPath(t *testing.T) {
 		{"only slash", "/iso/download//", http.StatusBadRequest},
 	}
 
-	prefix := "/iso/download/"
+	// Create handler with nil controller - these tests fail before gRPC calls
+	h := &ISOHandler{basePath: "/tmp"}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Simulate the path parsing logic from ServeISODownload
-			handler := func(w http.ResponseWriter, r *http.Request) {
-				urlPath := r.URL.Path
-				if len(urlPath) < len(prefix) {
-					http.Error(w, "invalid path", http.StatusBadRequest)
-					return
-				}
-				path := urlPath[len(prefix):]
-				parts := splitPath(path, 2)
-				if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-					http.Error(w, "invalid path", http.StatusBadRequest)
-					return
-				}
-			}
-
 			req := httptest.NewRequest("GET", tt.path, nil)
 			w := httptest.NewRecorder()
-			handler(w, req)
+			h.ServeISODownload(w, req)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("path %q: got status %d, want %d", tt.path, w.Code, tt.wantStatus)
@@ -145,58 +132,28 @@ func TestServeISODownload_DiskImageFileValidation(t *testing.T) {
 	tests := []struct {
 		name          string
 		diskImageFile string
-		wantValid     bool
+		wantStatus    int
 	}{
-		{"valid iso name", "ubuntu-24.04.iso", true},
-		{"valid with dots", "ubuntu-24.04.1-live-server-amd64.iso", true},
-		{"dot only", ".", false},
-		{"contains slash", "foo/bar.iso", false},
-		{"contains backslash", "foo\\bar.iso", false},
+		// Invalid diskImageFile - rejected before gRPC call
+		{"dot only", ".", http.StatusBadRequest},
+		{"contains slash", "foo/bar.iso", http.StatusBadRequest},
+		{"contains backslash", "foo\\bar.iso", http.StatusBadRequest},
 	}
+
+	// Create handler with nil controller - these tests fail at diskImageFile validation
+	h := &ISOHandler{basePath: "/tmp"}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Simulate the diskImageFile validation from ServeISODownload
-			valid := !(tt.diskImageFile == "." || containsAny(tt.diskImageFile, "/\\"))
-			if valid != tt.wantValid {
-				t.Errorf("diskImageFile %q: got valid=%v, want valid=%v", tt.diskImageFile, valid, tt.wantValid)
+			// Construct valid path format with the test diskImageFile
+			path := "/iso/download/ubuntu-24/" + tt.diskImageFile
+			req := httptest.NewRequest("GET", path, nil)
+			w := httptest.NewRecorder()
+			h.ServeISODownload(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("diskImageFile %q: got status %d, want %d", tt.diskImageFile, w.Code, tt.wantStatus)
 			}
 		})
 	}
-}
-
-// Helper functions for tests
-func splitPath(path string, n int) []string {
-	parts := make([]string, 0, n)
-	for i := 0; i < n-1; i++ {
-		idx := indexOf(path, '/')
-		if idx == -1 {
-			parts = append(parts, path)
-			return parts
-		}
-		parts = append(parts, path[:idx])
-		path = path[idx+1:]
-	}
-	parts = append(parts, path)
-	return parts
-}
-
-func indexOf(s string, c byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == c {
-			return i
-		}
-	}
-	return -1
-}
-
-func containsAny(s, chars string) bool {
-	for i := 0; i < len(s); i++ {
-		for j := 0; j < len(chars); j++ {
-			if s[i] == chars[j] {
-				return true
-			}
-		}
-	}
-	return false
 }

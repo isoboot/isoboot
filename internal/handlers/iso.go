@@ -280,7 +280,15 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 	bootTargetName := parts[0]
 	diskImageFile := parts[1]
 
-	// 2. Get BootTarget → disk image name
+	// 2. Validate diskImageFile early - must be a plain filename (no directory components)
+	// This check runs before gRPC to avoid unnecessary calls on invalid input.
+	// Note: ".." is already rejected by pathTraversalMiddleware
+	if diskImageFile == "." || strings.ContainsAny(diskImageFile, "/\\") {
+		http.Error(w, "invalid disk image file", http.StatusBadRequest)
+		return
+	}
+
+	// 3. Get BootTarget → disk image name
 	bootTarget, err := h.controllerClient.GetBootTarget(ctx, bootTargetName)
 	if err != nil {
 		if errors.Is(err, controllerclient.ErrNotFound) {
@@ -292,16 +300,9 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 	}
 	diskImage := bootTarget.DiskImage
 
-	// 3. Validate diskImage (reuse existing regex)
+	// 4. Validate diskImage (reuse existing regex)
 	if !validDiskImageRef.MatchString(diskImage) {
 		http.Error(w, "invalid disk image", http.StatusBadRequest)
-		return
-	}
-
-	// 4. Validate diskImageFile - must be a plain filename (no directory components)
-	// Note: ".." is already rejected by pathTraversalMiddleware
-	if diskImageFile == "." || strings.ContainsAny(diskImageFile, "/\\") {
-		http.Error(w, "invalid disk image file", http.StatusBadRequest)
 		return
 	}
 
