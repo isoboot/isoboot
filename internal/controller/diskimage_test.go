@@ -1,15 +1,19 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/isoboot/isoboot/internal/k8s"
 )
 
 func TestParseChecksumFile(t *testing.T) {
@@ -756,6 +760,469 @@ func TestFormatHashMismatch(t *testing.T) {
 				t.Errorf("expected %q, got %q", tt.want, got)
 			}
 		})
+	}
+}
+
+// fakeHTTPDoer implements HTTPDoer for testing.
+type fakeHTTPDoer struct {
+	doFunc func(req *http.Request) (*http.Response, error)
+}
+
+func (f *fakeHTTPDoer) Do(req *http.Request) (*http.Response, error) {
+	return f.doFunc(req)
+}
+
+// httpResponse is a helper to build an *http.Response for mock tests.
+func httpResponse(status int, body string, contentLength int64) *http.Response {
+	return &http.Response{
+		StatusCode:    status,
+		Body:          io.NopCloser(strings.NewReader(body)),
+		ContentLength: contentLength,
+		Header:        make(http.Header),
+	}
+}
+
+// httpResponseBytes is like httpResponse but takes a byte slice body.
+func httpResponseBytes(status int, body []byte) *http.Response {
+	return &http.Response{
+		StatusCode:    status,
+		Body:          io.NopCloser(bytes.NewReader(body)),
+		ContentLength: int64(len(body)),
+		Header:        make(http.Header),
+	}
+}
+
+func TestReconcileDiskImage_InitializePending(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name: "test-iso",
+		ISO:  "http://example.com/images/test.iso",
+	}
+
+	ctrl := &Controller{k8sClient: fake, httpClient: http.DefaultClient}
+	di := fake.diskImages["test-iso"]
+	ctrl.reconcileDiskImage(context.Background(), di)
+
+	status, ok := fake.getDiskImageStatus("test-iso")
+	if !ok {
+		t.Fatal("expected DiskImage status to be updated")
+	}
+	if status.Phase != "Pending" {
+		t.Errorf("expected phase Pending, got %q", status.Phase)
+	}
+	if status.Message != "Waiting for download" {
+		t.Errorf("expected message 'Waiting for download', got %q", status.Message)
+	}
+	if status.ISO == nil {
+		t.Fatal("expected ISO verification status")
+	}
+	if status.ISO.FileSizeMatch != "pending" {
+		t.Errorf("expected ISO FileSizeMatch=pending, got %s", status.ISO.FileSizeMatch)
+	}
+	if status.Firmware != nil {
+		t.Error("expected no Firmware verification status when firmware not specified")
+	}
+}
+
+func TestReconcileDiskImage_InitializePendingWithFirmware(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name:     "test-iso",
+		ISO:      "http://example.com/images/test.iso",
+		Firmware: "http://example.com/images/firmware/initrd.gz",
+	}
+
+	ctrl := &Controller{k8sClient: fake, httpClient: http.DefaultClient}
+	di := fake.diskImages["test-iso"]
+	ctrl.reconcileDiskImage(context.Background(), di)
+
+	status, ok := fake.getDiskImageStatus("test-iso")
+	if !ok {
+		t.Fatal("expected DiskImage status to be updated")
+	}
+	if status.Phase != "Pending" {
+		t.Errorf("expected phase Pending, got %q", status.Phase)
+	}
+	if status.ISO == nil {
+		t.Fatal("expected ISO verification status")
+	}
+	if status.Firmware == nil {
+		t.Fatal("expected Firmware verification status when firmware specified")
+	}
+	if status.Firmware.FileSizeMatch != "pending" {
+		t.Errorf("expected Firmware FileSizeMatch=pending, got %s", status.Firmware.FileSizeMatch)
+	}
+}
+
+func TestReconcileDiskImage_CompleteIsNoop(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name:   "test-iso",
+		ISO:    "http://example.com/images/test.iso",
+		Status: k8s.DiskImageStatus{Phase: "Complete"},
+	}
+
+	ctrl := &Controller{k8sClient: fake, httpClient: http.DefaultClient}
+	di := fake.diskImages["test-iso"]
+	ctrl.reconcileDiskImage(context.Background(), di)
+
+	if _, ok := fake.getDiskImageStatus("test-iso"); ok {
+		t.Error("expected no status update for Complete DiskImage")
+	}
+}
+
+func TestReconcileDiskImage_FailedIsNoop(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name:   "test-iso",
+		ISO:    "http://example.com/images/test.iso",
+		Status: k8s.DiskImageStatus{Phase: "Failed"},
+	}
+
+	ctrl := &Controller{k8sClient: fake, httpClient: http.DefaultClient}
+	di := fake.diskImages["test-iso"]
+	ctrl.reconcileDiskImage(context.Background(), di)
+
+	if _, ok := fake.getDiskImageStatus("test-iso"); ok {
+		t.Error("expected no status update for Failed DiskImage")
+	}
+}
+
+func TestDownloadDiskImage_NoISOBasePath(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name: "test-iso",
+		ISO:  "http://example.com/images/test.iso",
+	}
+
+	ctrl := &Controller{
+		k8sClient:  fake,
+		httpClient: http.DefaultClient,
+		isoBasePath: "", // not configured
+	}
+
+	di := fake.diskImages["test-iso"]
+	ctrl.downloadDiskImage(context.Background(), di)
+
+	status, ok := fake.getDiskImageStatus("test-iso")
+	if !ok {
+		t.Fatal("expected DiskImage status to be updated")
+	}
+	if status.Phase != "Failed" {
+		t.Errorf("expected phase Failed, got %q", status.Phase)
+	}
+	if !strings.Contains(status.Message, "isoBasePath not configured") {
+		t.Errorf("expected message about isoBasePath, got %q", status.Message)
+	}
+}
+
+func TestDownloadDiskImage_InvalidISOURL(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name: "test-iso",
+		ISO:  "http://example.com/", // no filename
+	}
+
+	tmpDir, err := os.MkdirTemp("", "diskimage-mock-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctrl := &Controller{
+		k8sClient:   fake,
+		httpClient:   http.DefaultClient,
+		isoBasePath:  tmpDir,
+	}
+
+	di := fake.diskImages["test-iso"]
+	ctrl.downloadDiskImage(context.Background(), di)
+
+	status, ok := fake.getDiskImageStatus("test-iso")
+	if !ok {
+		t.Fatal("expected DiskImage status to be updated")
+	}
+	if status.Phase != "Failed" {
+		t.Errorf("expected phase Failed, got %q", status.Phase)
+	}
+	if !strings.Contains(status.Message, "Invalid ISO URL") {
+		t.Errorf("expected message about invalid URL, got %q", status.Message)
+	}
+}
+
+func TestDownloadDiskImage_SuccessfulDownload(t *testing.T) {
+	isoContent := []byte("fake ISO content for mock download test")
+	sha256Hash := sha256.New()
+	sha256Hash.Write(isoContent)
+	expectedSha256 := fmt.Sprintf("%x", sha256Hash.Sum(nil))
+
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name: "test-iso",
+		ISO:  "http://example.com/images/test.iso",
+	}
+
+	tmpDir, err := os.MkdirTemp("", "diskimage-mock-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockHTTP := &fakeHTTPDoer{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/images/test.iso":
+				return httpResponseBytes(200, isoContent), nil
+			case "/images/SHA256SUMS":
+				body := fmt.Sprintf("%s  test.iso\n", expectedSha256)
+				return httpResponse(200, body, -1), nil
+			default:
+				return httpResponse(404, "not found", -1), nil
+			}
+		},
+	}
+
+	ctrl := &Controller{
+		k8sClient:   fake,
+		httpClient:   mockHTTP,
+		isoBasePath:  tmpDir,
+	}
+
+	di := fake.diskImages["test-iso"]
+	ctrl.downloadDiskImage(context.Background(), di)
+
+	status, ok := fake.getDiskImageStatus("test-iso")
+	if !ok {
+		t.Fatal("expected DiskImage status to be updated")
+	}
+	if status.Phase != "Complete" {
+		t.Fatalf("expected phase Complete, got %q (message: %s)", status.Phase, status.Message)
+	}
+	if status.Progress != 100 {
+		t.Errorf("expected progress 100, got %d", status.Progress)
+	}
+	if status.ISO == nil {
+		t.Fatal("expected ISO verification status")
+	}
+	if status.ISO.FileSizeMatch != "verified" {
+		t.Errorf("expected ISO FileSizeMatch=verified, got %s", status.ISO.FileSizeMatch)
+	}
+	if status.ISO.DigestSha256 != "verified" {
+		t.Errorf("expected ISO DigestSha256=verified, got %s", status.ISO.DigestSha256)
+	}
+
+	// Verify file was written to disk
+	isoPath := filepath.Join(tmpDir, "test-iso", "test.iso")
+	content, err := os.ReadFile(isoPath)
+	if err != nil {
+		t.Fatalf("failed to read downloaded ISO: %v", err)
+	}
+	if string(content) != string(isoContent) {
+		t.Error("downloaded ISO content doesn't match")
+	}
+}
+
+func TestDownloadDiskImage_WithFirmware(t *testing.T) {
+	isoContent := []byte("fake ISO content")
+	fwContent := []byte("fake firmware content")
+
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name:     "test-iso",
+		ISO:      "http://example.com/images/test.iso",
+		Firmware: "http://example.com/firmware/initrd.gz",
+	}
+
+	tmpDir, err := os.MkdirTemp("", "diskimage-mock-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockHTTP := &fakeHTTPDoer{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/images/test.iso":
+				return httpResponseBytes(200, isoContent), nil
+			case "/firmware/initrd.gz":
+				return httpResponseBytes(200, fwContent), nil
+			default:
+				return httpResponse(404, "not found", -1), nil
+			}
+		},
+	}
+
+	ctrl := &Controller{
+		k8sClient:   fake,
+		httpClient:   mockHTTP,
+		isoBasePath:  tmpDir,
+	}
+
+	di := fake.diskImages["test-iso"]
+	ctrl.downloadDiskImage(context.Background(), di)
+
+	status, ok := fake.getDiskImageStatus("test-iso")
+	if !ok {
+		t.Fatal("expected DiskImage status to be updated")
+	}
+	if status.Phase != "Complete" {
+		t.Fatalf("expected phase Complete, got %q (message: %s)", status.Phase, status.Message)
+	}
+	if status.Progress != 100 {
+		t.Errorf("expected progress 100, got %d", status.Progress)
+	}
+	if status.Firmware == nil {
+		t.Fatal("expected Firmware verification status")
+	}
+
+	// Verify both files were written
+	isoPath := filepath.Join(tmpDir, "test-iso", "test.iso")
+	if _, err := os.Stat(isoPath); err != nil {
+		t.Errorf("expected ISO file to exist: %v", err)
+	}
+	fwPath := filepath.Join(tmpDir, "test-iso", "firmware", "initrd.gz")
+	fwData, err := os.ReadFile(fwPath)
+	if err != nil {
+		t.Fatalf("failed to read firmware file: %v", err)
+	}
+	if string(fwData) != string(fwContent) {
+		t.Error("firmware content doesn't match")
+	}
+}
+
+func TestDownloadDiskImage_HTTPError(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name: "test-iso",
+		ISO:  "http://example.com/images/test.iso",
+	}
+
+	tmpDir, err := os.MkdirTemp("", "diskimage-mock-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockHTTP := &fakeHTTPDoer{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			return httpResponse(500, "internal server error", -1), nil
+		},
+	}
+
+	ctrl := &Controller{
+		k8sClient:   fake,
+		httpClient:   mockHTTP,
+		isoBasePath:  tmpDir,
+	}
+
+	di := fake.diskImages["test-iso"]
+	ctrl.downloadDiskImage(context.Background(), di)
+
+	status, ok := fake.getDiskImageStatus("test-iso")
+	if !ok {
+		t.Fatal("expected DiskImage status to be updated")
+	}
+	if status.Phase != "Failed" {
+		t.Errorf("expected phase Failed, got %q", status.Phase)
+	}
+	if !strings.Contains(status.Message, "ISO download failed") {
+		t.Errorf("expected message about ISO download failure, got %q", status.Message)
+	}
+}
+
+func TestDownloadDiskImage_FirmwareFailsAfterISOSuccess(t *testing.T) {
+	isoContent := []byte("fake ISO content")
+
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name:     "test-iso",
+		ISO:      "http://example.com/images/test.iso",
+		Firmware: "http://example.com/firmware/initrd.gz",
+	}
+
+	tmpDir, err := os.MkdirTemp("", "diskimage-mock-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockHTTP := &fakeHTTPDoer{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/images/test.iso":
+				return httpResponseBytes(200, isoContent), nil
+			case "/firmware/initrd.gz":
+				return httpResponse(500, "internal server error", -1), nil
+			default:
+				return httpResponse(404, "not found", -1), nil
+			}
+		},
+	}
+
+	ctrl := &Controller{
+		k8sClient:   fake,
+		httpClient:   mockHTTP,
+		isoBasePath:  tmpDir,
+	}
+
+	di := fake.diskImages["test-iso"]
+	ctrl.downloadDiskImage(context.Background(), di)
+
+	status, ok := fake.getDiskImageStatus("test-iso")
+	if !ok {
+		t.Fatal("expected DiskImage status to be updated")
+	}
+	if status.Phase != "Failed" {
+		t.Errorf("expected phase Failed, got %q", status.Phase)
+	}
+	if !strings.Contains(status.Message, "Firmware download failed") {
+		t.Errorf("expected message about firmware failure, got %q", status.Message)
+	}
+
+	// ISO file should still exist (downloaded before firmware failed)
+	isoPath := filepath.Join(tmpDir, "test-iso", "test.iso")
+	if _, err := os.Stat(isoPath); err != nil {
+		t.Errorf("expected ISO file to exist after firmware failure: %v", err)
+	}
+}
+
+func TestDownloadDiskImage_ConnectionError(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.diskImages["test-iso"] = &k8s.DiskImage{
+		Name: "test-iso",
+		ISO:  "http://example.com/images/test.iso",
+	}
+
+	tmpDir, err := os.MkdirTemp("", "diskimage-mock-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockHTTP := &fakeHTTPDoer{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			return nil, fmt.Errorf("connection refused")
+		},
+	}
+
+	ctrl := &Controller{
+		k8sClient:   fake,
+		httpClient:   mockHTTP,
+		isoBasePath:  tmpDir,
+	}
+
+	di := fake.diskImages["test-iso"]
+	ctrl.downloadDiskImage(context.Background(), di)
+
+	status, ok := fake.getDiskImageStatus("test-iso")
+	if !ok {
+		t.Fatal("expected DiskImage status to be updated")
+	}
+	if status.Phase != "Failed" {
+		t.Errorf("expected phase Failed, got %q", status.Phase)
+	}
+	if !strings.Contains(status.Message, "ISO download failed") {
+		t.Errorf("expected message about ISO download failure, got %q", status.Message)
 	}
 }
 

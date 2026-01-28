@@ -206,6 +206,14 @@ func (f *fakeK8sClient) getProvisionStatus(name string) (k8s.ProvisionStatus, bo
 	return s, ok
 }
 
+// helper to get the current disk image status recorded by the fake
+func (f *fakeK8sClient) getDiskImageStatus(name string) (*k8s.DiskImageStatus, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.diskImageStatuses[name]
+	return s, ok
+}
+
 // newConfigMap is a helper to create a corev1.ConfigMap for testing
 func newConfigMap(name string, data map[string]string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
