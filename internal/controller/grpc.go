@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"log"
+	"net/url"
 	"path"
 	"strings"
 
@@ -130,11 +131,15 @@ func (s *GRPCServer) GetDiskImage(ctx context.Context, req *pb.GetDiskImageReque
 		return &pb.GetDiskImageResponse{Found: false}, nil
 	}
 
-	// Extract filename from ISO URL using path.Base (not filepath.Base)
-	// since di.ISO is a URL, not a filesystem path
+	// Extract filename from ISO URL, handling query params/fragments properly
 	diskImageFile := ""
 	if di.ISO != "" {
-		diskImageFile = path.Base(di.ISO)
+		if u, err := url.Parse(di.ISO); err == nil {
+			diskImageFile = path.Base(u.Path)
+		} else {
+			// Fallback to simple path.Base if URL parsing fails
+			diskImageFile = path.Base(di.ISO)
+		}
 	}
 
 	return &pb.GetDiskImageResponse{
