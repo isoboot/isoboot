@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"path"
 	"strings"
 	"time"
 
@@ -28,17 +27,15 @@ func (rw *responseWriter) WriteHeader(code int) {
 // Defense-in-depth: handlers must still perform their own containment validation.
 func pathTraversalMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Normalize path: handle backslashes and clean
+		// Normalize path: handle backslashes
 		normalizedPath := strings.ReplaceAll(r.URL.Path, "\\", "/")
-		cleanPath := path.Clean(normalizedPath)
 
-		// Reject if cleaned path contains parent-directory traversal
-		// Note: URL paths start with "/", so path.Clean won't return bare ".."
-		if strings.HasPrefix(cleanPath, "../") ||
-			strings.HasPrefix(cleanPath, "/../") ||
-			strings.Contains(cleanPath, "/../") {
-			http.Error(w, "invalid path", http.StatusBadRequest)
-			return
+		// Reject if any path segment is ".."
+		for _, segment := range strings.Split(normalizedPath, "/") {
+			if segment == ".." {
+				http.Error(w, "invalid path", http.StatusBadRequest)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

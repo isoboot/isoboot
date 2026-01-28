@@ -316,7 +316,12 @@ func (h *ISOHandler) ServeISODownload(w http.ResponseWriter, r *http.Request) {
 	// 6. Get file info for Content-Length
 	fileInfo, err := os.Stat(isoPath)
 	if err != nil {
-		http.Error(w, "iso not found", http.StatusNotFound)
+		if os.IsNotExist(err) {
+			http.Error(w, "iso not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("iso: error stating %s: %v", isoPath, err)
+		http.Error(w, "failed to stat iso", http.StatusInternalServerError)
 		return
 	}
 
