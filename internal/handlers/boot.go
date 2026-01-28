@@ -103,48 +103,78 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	// MAC must be dash-separated (xx-xx-xx-xx-xx-xx from iPXE)
 	mac = strings.ToLower(mac)
 
-	// Find pending provision for this MAC via controller
-	bootInfo, err := h.ctrlClient.GetPendingBoot(ctx, mac)
+	// 1. Find Machine by MAC
+	machineName, err := h.ctrlClient.GetMachineByMAC(ctx, mac)
 	if err != nil {
-		log.Printf("Error getting boot info for %s: %v", mac, err)
+		log.Printf("Error getting machine for MAC %s: %v", mac, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	if bootInfo == nil {
-		// No pending provision found - return 404 so iPXE falls back to local boot
+	if machineName == "" {
+		// No machine with this MAC - return 404 so iPXE falls back to local boot
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	// Load target template from BootTarget CRD
-	bootTarget, err := h.ctrlClient.GetBootTarget(ctx, bootInfo.Target)
+	// 2. Get Provisions for this Machine
+	provisions, err := h.ctrlClient.GetProvisionsByMachine(ctx, machineName)
 	if err != nil {
-		log.Printf("Error loading BootTarget %s: %v", bootInfo.Target, err)
+		log.Printf("Error getting provisions for machine %s: %v", machineName, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	tmpl, err := template.New(bootInfo.Target).Parse(bootTarget.Template)
+	// 3. Find Pending provision
+	var pendingProvision *controllerclient.ProvisionSummary
+	for i := range provisions {
+		status := provisions[i].Status
+		if status == "" {
+			status = "Pending" // Empty status treated as Pending
+		}
+		if status == "Pending" {
+			pendingProvision = &provisions[i]
+			break
+		}
+	}
+
+	if pendingProvision == nil {
+		// No pending provision - return 404 so iPXE falls back to local boot
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// 4. Get BootTarget
+	bootTarget, err := h.ctrlClient.GetBootTarget(ctx, pendingProvision.BootTargetRef)
 	if err != nil {
-		log.Printf("Error parsing template for %s: %v", bootInfo.Target, err)
+		log.Printf("Error loading BootTarget %s: %v", pendingProvision.BootTargetRef, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	hostname, domain := splitHostDomain(bootInfo.MachineName)
+	// 5. Parse and render template
+	tmpl, err := template.New(pendingProvision.BootTargetRef).Parse(bootTarget.Template)
+	if err != nil {
+		log.Printf("Error parsing template for %s: %v", pendingProvision.BootTargetRef, err)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	hostname, domain := splitHostDomain(machineName)
 	data := TemplateData{
 		Host:          h.host,
 		Port:          h.port,
-		MachineName:   bootInfo.MachineName,
+		MachineName:   machineName,
 		Hostname:      hostname,
 		Domain:        domain,
-		BootTarget:    bootInfo.Target,
-		ProvisionName: bootInfo.ProvisionName,
+		BootTarget:    pendingProvision.BootTargetRef,
+		ProvisionName: pendingProvision.Name,
 	}
 
 	var buf bytes.Buffer
@@ -159,9 +189,9 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	w.Write(buf.Bytes())
 
-	// Mark provision as started via controller
-	if err := h.ctrlClient.MarkBootStarted(ctx, mac); err != nil {
-		log.Printf("Warning: failed to mark boot started for %s: %v", mac, err)
+	// 6. Mark provision as InProgress
+	if err := h.ctrlClient.UpdateProvisionStatus(ctx, pendingProvision.Name, "InProgress", "Boot script served", ""); err != nil {
+		log.Printf("Warning: failed to mark boot started for %s: %v", pendingProvision.Name, err)
 	}
 }
 
@@ -184,8 +214,34 @@ func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 		ip = r.RemoteAddr // fallback if no port present
 	}
 
-	if err := h.ctrlClient.MarkBootCompleted(ctx, id, ip); err != nil {
-		log.Printf("Error marking boot completed for %s: %v", id, err)
+	// id is machineName - find InProgress provision for this machine
+	provisions, err := h.ctrlClient.GetProvisionsByMachine(ctx, id)
+	if err != nil {
+		log.Printf("Error getting provisions for machine %s: %v", id, err)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Find InProgress provision
+	var inProgressProvision *controllerclient.ProvisionSummary
+	for i := range provisions {
+		if provisions[i].Status == "InProgress" {
+			inProgressProvision = &provisions[i]
+			break
+		}
+	}
+
+	if inProgressProvision == nil {
+		log.Printf("No InProgress provision found for machine %s", id)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// Update provision status to Complete
+	if err := h.ctrlClient.UpdateProvisionStatus(ctx, inProgressProvision.Name, "Complete", "Installation completed", ip); err != nil {
+		log.Printf("Error marking boot completed for %s: %v", inProgressProvision.Name, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
