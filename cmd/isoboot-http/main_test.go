@@ -117,6 +117,10 @@ func TestPathTraversalMiddleware_BlocksTraversal(t *testing.T) {
 		{"bare dotdot", "/..", http.StatusBadRequest},
 		{"backslash traversal", "/iso/content\\..\\etc\\passwd", http.StatusBadRequest},
 		{"single dot is fine", "/foo/./bar", http.StatusOK},
+		// URL-encoded variants: Go decodes %2e to "." before r.URL.Path,
+		// so these are caught by the same segment check.
+		{"url-encoded dotdot", "/foo/%2e%2e/bar", http.StatusBadRequest},
+		{"url-encoded mixed case", "/foo/%2E%2E/bar", http.StatusBadRequest},
 	}
 
 	for _, tt := range tests {

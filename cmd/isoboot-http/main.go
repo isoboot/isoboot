@@ -33,6 +33,7 @@ func pathTraversalMiddleware(next http.Handler) http.Handler {
 		// Reject if any path segment is ".."
 		for _, segment := range strings.Split(normalizedPath, "/") {
 			if segment == ".." {
+				log.Printf("blocked path traversal: path=%q remote_addr=%s", r.URL.Path, r.RemoteAddr)
 				http.Error(w, "invalid path", http.StatusBadRequest)
 				return
 			}
