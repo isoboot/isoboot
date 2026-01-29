@@ -175,14 +175,16 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 
 	// Get DiskImage for the filename (optional - not all templates use it)
 	var diskImageFile string
-	diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage)
-	switch {
-	case err != nil && errors.Is(err, controllerclient.ErrNotFound):
-		log.Printf("DiskImage %s not found for BootTarget %s", bootTarget.DiskImage, pendingProvision.BootTargetRef)
-	case err != nil:
-		log.Printf("Error loading DiskImage %s for BootTarget %s: %v", bootTarget.DiskImage, pendingProvision.BootTargetRef, err)
-	default:
-		diskImageFile = diskImageInfo.ISOFilename
+	if bootTarget.DiskImage != "" {
+		diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage)
+		switch {
+		case err != nil && errors.Is(err, controllerclient.ErrNotFound):
+			log.Printf("DiskImage %s not found for BootTarget %s", bootTarget.DiskImage, pendingProvision.BootTargetRef)
+		case err != nil:
+			log.Printf("Error loading DiskImage %s for BootTarget %s: %v", bootTarget.DiskImage, pendingProvision.BootTargetRef, err)
+		default:
+			diskImageFile = diskImageInfo.ISOFilename
+		}
 	}
 
 	// 5. Parse and render template
