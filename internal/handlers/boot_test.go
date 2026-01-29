@@ -17,6 +17,7 @@ type mockBootClient struct {
 	getMachineByMAC        func(ctx context.Context, mac string) (string, error)
 	getProvisionsByMachine func(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error)
 	getBootTarget          func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error)
+	getDiskImage           func(ctx context.Context, name string) (*controllerclient.DiskImageInfo, error)
 	updateProvisionStatus  func(ctx context.Context, name, status, message, ip string) error
 }
 
@@ -31,6 +32,12 @@ func (m *mockBootClient) GetProvisionsByMachine(ctx context.Context, machineName
 }
 func (m *mockBootClient) GetBootTarget(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
 	return m.getBootTarget(ctx, name)
+}
+func (m *mockBootClient) GetDiskImage(ctx context.Context, name string) (*controllerclient.DiskImageInfo, error) {
+	if m.getDiskImage != nil {
+		return m.getDiskImage(ctx, name)
+	}
+	return nil, fmt.Errorf("diskimage %s: %w", name, controllerclient.ErrNotFound)
 }
 func (m *mockBootClient) UpdateProvisionStatus(ctx context.Context, name, status, message, ip string) error {
 	return m.updateProvisionStatus(ctx, name, status, message, ip)
@@ -167,6 +174,81 @@ func TestServeConditionalBoot_PendingProvision(t *testing.T) {
 	}
 	if updatedName != "prov-1" || updatedStatus != "InProgress" {
 		t.Errorf("expected provision prov-1 marked InProgress, got name=%q status=%q", updatedName, updatedStatus)
+	}
+}
+
+func TestServeConditionalBoot_DiskImageFile(t *testing.T) {
+	mock := &mockBootClient{
+		getMachineByMAC: func(ctx context.Context, mac string) (string, error) {
+			return "vm-01.lan", nil
+		},
+		getProvisionsByMachine: func(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error) {
+			return []controllerclient.ProvisionSummary{
+				{Name: "prov-1", Status: "Pending", BootTargetRef: "ubuntu-24"},
+			}, nil
+		},
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return &controllerclient.BootTargetInfo{
+				DiskImage: "ubuntu-iso",
+				Template:  "url=http://{{ .Host }}:{{ .Port }}/iso/download/{{ .BootTarget }}/{{ .DiskImageFile }}",
+			}, nil
+		},
+		getDiskImage: func(ctx context.Context, name string) (*controllerclient.DiskImageInfo, error) {
+			return &controllerclient.DiskImageInfo{ISOFilename: "ubuntu-24.04.1-live-server-amd64.iso"}, nil
+		},
+		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
+			return nil
+		},
+	}
+
+	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeConditionalBoot(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "ubuntu-24.04.1-live-server-amd64.iso") {
+		t.Errorf("expected DiskImageFile in body, got %q", body)
+	}
+}
+
+func TestServeConditionalBoot_DiskImageNotFound(t *testing.T) {
+	// When DiskImage is not found, DiskImageFile should be empty but boot should still succeed
+	mock := &mockBootClient{
+		getMachineByMAC: func(ctx context.Context, mac string) (string, error) {
+			return "vm-01.lan", nil
+		},
+		getProvisionsByMachine: func(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error) {
+			return []controllerclient.ProvisionSummary{
+				{Name: "prov-1", Status: "Pending", BootTargetRef: "debian-13"},
+			}, nil
+		},
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return &controllerclient.BootTargetInfo{
+				DiskImage: "missing-image",
+				Template:  "#!ipxe\nboot\n",
+			}, nil
+		},
+		getDiskImage: func(ctx context.Context, name string) (*controllerclient.DiskImageInfo, error) {
+			return nil, fmt.Errorf("diskimage %s: %w", name, controllerclient.ErrNotFound)
+		},
+		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
+			return nil
+		},
+	}
+
+	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeConditionalBoot(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (DiskImage not found is non-fatal), got %d", w.Code)
 	}
 }
 
