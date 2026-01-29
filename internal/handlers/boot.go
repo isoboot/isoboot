@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -19,6 +20,7 @@ type BootClient interface {
 	GetMachineByMAC(ctx context.Context, mac string) (string, error)
 	GetProvisionsByMachine(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error)
 	GetBootTarget(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error)
+	GetDiskImage(ctx context.Context, name string) (*controllerclient.DiskImageInfo, error)
 	UpdateProvisionStatus(ctx context.Context, name, status, message, ip string) error
 }
 
@@ -50,6 +52,7 @@ type TemplateData struct {
 	Domain        string // Everything after first dot (e.g., "lan")
 	BootTarget    string
 	ProvisionName string // Provision resource name (use for answer file URLs)
+	DiskImageFile string // ISO filename from DiskImage (e.g., "ubuntu-24.04.iso")
 }
 
 // splitHostDomain splits a machine name into hostname and domain.
@@ -170,6 +173,20 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Get DiskImage for the filename (optional - not all templates use it)
+	var diskImageFile string
+	if bootTarget.DiskImage != "" {
+		diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage)
+		switch {
+		case err != nil && errors.Is(err, controllerclient.ErrNotFound):
+			log.Printf("DiskImage %s not found for BootTarget %s", bootTarget.DiskImage, pendingProvision.BootTargetRef)
+		case err != nil:
+			log.Printf("Error loading DiskImage %s for BootTarget %s: %v", bootTarget.DiskImage, pendingProvision.BootTargetRef, err)
+		default:
+			diskImageFile = diskImageInfo.ISOFilename
+		}
+	}
+
 	// 5. Parse and render template
 	tmpl, err := template.New(pendingProvision.BootTargetRef).Parse(bootTarget.Template)
 	if err != nil {
@@ -189,6 +206,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		Domain:        domain,
 		BootTarget:    pendingProvision.BootTargetRef,
 		ProvisionName: pendingProvision.Name,
+		DiskImageFile: diskImageFile,
 	}
 
 	var buf bytes.Buffer
