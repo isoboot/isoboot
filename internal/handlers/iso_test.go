@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/isoboot/isoboot/internal/controllerclient"
@@ -236,6 +238,61 @@ func TestServeISODownload_BootTargetNotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestServeISODownload_GRPCError(t *testing.T) {
+	mock := &mockISOClient{
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return nil, fmt.Errorf("grpc call: connection refused")
+		},
+	}
+	h := NewISOHandler("/tmp/iso", mock)
+
+	req := httptest.NewRequest("GET", "/iso/download/target/ubuntu.iso", nil)
+	w := httptest.NewRecorder()
+	h.ServeISODownload(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", w.Code)
+	}
+}
+
+func TestServeISODownload_HEAD(t *testing.T) {
+	// Create a temporary file to serve
+	tmpDir := t.TempDir()
+	diskImageDir := filepath.Join(tmpDir, "ubuntu-iso")
+	if err := os.MkdirAll(diskImageDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	isoFile := filepath.Join(diskImageDir, "ubuntu.iso")
+	content := []byte("fake iso content for testing")
+	if err := os.WriteFile(isoFile, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &mockISOClient{
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return &controllerclient.BootTargetInfo{DiskImage: "ubuntu-iso"}, nil
+		},
+	}
+	h := NewISOHandler(tmpDir, mock)
+
+	req := httptest.NewRequest("HEAD", "/iso/download/ubuntu-24/ubuntu.iso", nil)
+	w := httptest.NewRecorder()
+	h.ServeISODownload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if cl := w.Header().Get("Content-Length"); cl != fmt.Sprintf("%d", len(content)) {
+		t.Errorf("expected Content-Length %d, got %q", len(content), cl)
+	}
+	if cd := w.Header().Get("Content-Disposition"); cd == "" {
+		t.Error("expected Content-Disposition header")
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("expected empty body for HEAD, got %d bytes", w.Body.Len())
 	}
 }
 
