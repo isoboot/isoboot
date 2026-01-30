@@ -81,6 +81,34 @@ func TestSplitHostDomain(t *testing.T) {
 	}
 }
 
+func TestPortFromRequest(t *testing.T) {
+	tests := []struct {
+		name           string
+		forwardedPort  string
+		host           string
+		expectedPort   string
+	}{
+		{"X-Forwarded-Port set", "8080", "example.com", "8080"},
+		{"host with port", "", "10.0.0.1:9090", "9090"},
+		{"host without port", "", "example.com", "80"},
+		{"both set, forwarded wins", "8080", "10.0.0.1:9090", "8080"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test", nil)
+			if tt.forwardedPort != "" {
+				req.Header.Set("X-Forwarded-Port", tt.forwardedPort)
+			}
+			req.Host = tt.host
+			got := portFromRequest(req)
+			if got != tt.expectedPort {
+				t.Errorf("portFromRequest() = %q, want %q", got, tt.expectedPort)
+			}
+		})
+	}
+}
+
 func TestServeConditionalBoot_PendingProvision(t *testing.T) {
 	var updatedName, updatedStatus string
 	mock := &mockBootClient{
@@ -106,8 +134,9 @@ func TestServeConditionalBoot_PendingProvision(t *testing.T) {
 		},
 	}
 
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "isoboot-templates")
+	h := NewBootHandler("10.0.0.1", "3128", mock, "isoboot-templates")
 	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	req.Header.Set("X-Forwarded-Port", "8080")
 	w := httptest.NewRecorder()
 
 	h.ServeConditionalBoot(w, req)
@@ -152,7 +181,7 @@ func TestServeConditionalBoot_BootMediaAndFirmwareRendered(t *testing.T) {
 		},
 	}
 
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", mock, "cm")
 	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -194,7 +223,7 @@ func TestServeConditionalBoot_NewTemplateVariables(t *testing.T) {
 		},
 	}
 
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", mock, "cm")
 	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -222,7 +251,7 @@ func TestServeConditionalBoot_NoMachine(t *testing.T) {
 		},
 	}
 
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", mock, "cm")
 	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -245,7 +274,7 @@ func TestServeConditionalBoot_NoPendingProvision(t *testing.T) {
 		},
 	}
 
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", mock, "cm")
 	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -274,7 +303,7 @@ func TestServeBootDone_Success(t *testing.T) {
 		},
 	}
 
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", mock, "cm")
 	req := httptest.NewRequest("GET", "/boot/done?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -292,7 +321,7 @@ func TestServeBootDone_Success(t *testing.T) {
 }
 
 func TestServeConditionalBoot_NoMAC(t *testing.T) {
-	h := NewBootHandler("10.0.0.1", "8080", "3128", &mockBootClient{}, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", &mockBootClient{}, "cm")
 	req := httptest.NewRequest("GET", "/boot/conditional-boot", nil)
 	w := httptest.NewRecorder()
 
@@ -324,7 +353,7 @@ func TestServeConditionalBoot_EmptyStatusTreatedAsPending(t *testing.T) {
 		},
 	}
 
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", mock, "cm")
 	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -336,7 +365,7 @@ func TestServeConditionalBoot_EmptyStatusTreatedAsPending(t *testing.T) {
 }
 
 func TestServeBootDone_NoMAC(t *testing.T) {
-	h := NewBootHandler("10.0.0.1", "8080", "3128", &mockBootClient{}, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", &mockBootClient{}, "cm")
 	req := httptest.NewRequest("GET", "/boot/done", nil)
 	w := httptest.NewRecorder()
 
@@ -362,7 +391,7 @@ func TestServeBootDone_UpdateStatusError(t *testing.T) {
 		},
 	}
 
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", mock, "cm")
 	req := httptest.NewRequest("GET", "/boot/done?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -385,7 +414,7 @@ func TestServeBootDone_NoInProgress(t *testing.T) {
 		},
 	}
 
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	h := NewBootHandler("10.0.0.1", "3128", mock, "cm")
 	req := httptest.NewRequest("GET", "/boot/done?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 

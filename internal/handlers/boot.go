@@ -24,16 +24,14 @@ type BootClient interface {
 
 type BootHandler struct {
 	host       string
-	port       string
 	proxyPort  string
 	ctrlClient BootClient
 	configMap  string
 }
 
-func NewBootHandler(host, port, proxyPort string, ctrlClient BootClient, configMap string) *BootHandler {
+func NewBootHandler(host, proxyPort string, ctrlClient BootClient, configMap string) *BootHandler {
 	return &BootHandler{
 		host:       host,
-		port:       port,
 		proxyPort:  proxyPort,
 		ctrlClient: ctrlClient,
 		configMap:  configMap,
@@ -58,12 +56,16 @@ type TemplateData struct {
 }
 
 // portFromRequest returns the X-Forwarded-Port header if present,
-// otherwise falls back to the default port.
-func portFromRequest(r *http.Request, defaultPort string) string {
+// otherwise extracts the port from the Host header.
+func portFromRequest(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-Port"); fwd != "" {
 		return fwd
 	}
-	return defaultPort
+	_, port, err := net.SplitHostPort(r.Host)
+	if err == nil && port != "" {
+		return port
+	}
+	return "80"
 }
 
 // splitHostDomain splits a machine name into hostname and domain.
@@ -166,7 +168,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	hostname, domain := splitHostDomain(machineName)
 	data := TemplateData{
 		Host:              h.host,
-		Port:              portFromRequest(r, h.port),
+		Port:              portFromRequest(r),
 		ProxyPort:         h.proxyPort,
 		MachineName:       machineName,
 		Hostname:          hostname,

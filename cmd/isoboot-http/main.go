@@ -35,7 +35,6 @@ func loggingMiddleware(next http.Handler) http.Handler {
 func main() {
 	var (
 		host               string
-		port               string
 		listenPort         string
 		proxyPort          string
 		controllerAddr     string
@@ -43,7 +42,6 @@ func main() {
 	)
 
 	flag.StringVar(&host, "host", "", "Host IP to advertise in boot scripts")
-	flag.StringVar(&port, "port", "8080", "Advertised HTTP port (used in templates)")
 	flag.StringVar(&listenPort, "listen-port", "80", "Port the Go server binds to")
 	flag.StringVar(&proxyPort, "proxy-port", "3128", "Squid proxy port")
 	flag.StringVar(&controllerAddr, "controller", "localhost:8081", "Controller gRPC address")
@@ -77,16 +75,16 @@ func main() {
 	})
 
 	// Boot handlers
-	bootHandler := handlers.NewBootHandler(host, port, proxyPort, ctrlClient, templatesConfigMap)
+	bootHandler := handlers.NewBootHandler(host, proxyPort, ctrlClient, templatesConfigMap)
 	bootHandler.RegisterRoutes(mux)
 
 	// Answer file handlers
-	answerHandler := handlers.NewAnswerHandler(host, port, proxyPort, ctrlClient)
+	answerHandler := handlers.NewAnswerHandler(host, proxyPort, ctrlClient)
 	answerHandler.RegisterRoutes(mux)
 
 	// Start server
 	addr := fmt.Sprintf(":%s", listenPort)
-	log.Printf("Starting isoboot-http on :%s (advertised as %s:%s)", listenPort, host, port)
+	log.Printf("Starting isoboot-http on :%s (host: %s)", listenPort, host)
 	log.Printf("Templates ConfigMap: %s", templatesConfigMap)
 
 	var handler http.Handler = mux
