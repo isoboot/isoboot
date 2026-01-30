@@ -9,7 +9,7 @@ import (
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
 	"github.com/isoboot/isoboot/internal/controller"
-	"github.com/isoboot/isoboot/internal/k8s/typed"
+	"github.com/isoboot/isoboot/internal/k8s"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -34,7 +34,7 @@ func main() {
 	}
 
 	// Initialize Kubernetes client
-	k8sClient, err := typed.NewClient(namespace)
+	k8sClient, err := k8s.NewClient(namespace)
 	if err != nil {
 		log.Fatalf("Failed to create Kubernetes client: %v", err)
 	}

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/isoboot/isoboot/internal/k8s/typed"
+	"github.com/isoboot/isoboot/internal/k8s"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -30,7 +30,7 @@ const (
 
 // Controller watches Provision CRDs and manages their lifecycle
 type Controller struct {
-	k8sClient                *typed.Client
+	k8sClient                *k8s.Client
 	httpClient               HTTPDoer
 	stopCh                   chan struct{}
 	filesBasePath            string
@@ -38,7 +38,7 @@ type Controller struct {
 }
 
 // New creates a new controller
-func New(k8sClient *typed.Client) *Controller {
+func New(k8sClient *k8s.Client) *Controller {
 	return &Controller{
 		k8sClient:  k8sClient,
 		httpClient: http.DefaultClient,
@@ -87,7 +87,7 @@ func (c *Controller) reconcile() {
 	c.reconcileBootMedias(ctx)
 
 	// Then reconcile Provisions
-	var provisionList typed.ProvisionList
+	var provisionList k8s.ProvisionList
 	if err := c.k8sClient.List(ctx, &provisionList, client.InNamespace(c.k8sClient.Namespace())); err != nil {
 		log.Printf("Controller: failed to list provisions: %v", err)
 		return
@@ -98,7 +98,7 @@ func (c *Controller) reconcile() {
 	}
 }
 
-func (c *Controller) reconcileProvision(ctx context.Context, provision *typed.Provision) {
+func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Provision) {
 	// Validate references before any status changes
 	if err := c.validateProvisionRefs(ctx, provision); err != nil {
 		if provision.Status.Phase != "ConfigError" || provision.Status.Message != err.Error() {
@@ -153,15 +153,15 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *typed.Pr
 }
 
 // checkBootMediaReady checks if the BootMedia for this Provision's BootTarget is ready
-func (c *Controller) checkBootMediaReady(ctx context.Context, provision *typed.Provision) (bool, string) {
+func (c *Controller) checkBootMediaReady(ctx context.Context, provision *k8s.Provision) (bool, string) {
 	// Get BootTarget to find BootMedia reference
-	var bootTarget typed.BootTarget
+	var bootTarget k8s.BootTarget
 	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(provision.Spec.BootTargetRef), &bootTarget); err != nil {
 		return false, fmt.Sprintf("BootTarget '%s' not found", provision.Spec.BootTargetRef)
 	}
 
 	// Get BootMedia
-	var bootMedia typed.BootMedia
+	var bootMedia k8s.BootMedia
 	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(bootTarget.Spec.BootMediaRef), &bootMedia); err != nil {
 		return false, fmt.Sprintf("BootMedia '%s' not found (referenced by BootTarget '%s')", bootTarget.Spec.BootMediaRef, bootTarget.Name)
 	}
@@ -170,7 +170,7 @@ func (c *Controller) checkBootMediaReady(ctx context.Context, provision *typed.P
 }
 
 // checkBootMediaStatus checks the status of a BootMedia and returns whether it's ready
-func checkBootMediaStatus(bm *typed.BootMedia) (bool, string) {
+func checkBootMediaStatus(bm *k8s.BootMedia) (bool, string) {
 	switch bm.Status.Phase {
 	case "Complete":
 		return true, ""
@@ -184,9 +184,9 @@ func checkBootMediaStatus(bm *typed.BootMedia) (bool, string) {
 }
 
 // validateProvisionRefs checks that all referenced resources exist and have valid configuration
-func (c *Controller) validateProvisionRefs(ctx context.Context, provision *typed.Provision) error {
+func (c *Controller) validateProvisionRefs(ctx context.Context, provision *k8s.Provision) error {
 	// Validate machineRef exists
-	var machine typed.Machine
+	var machine k8s.Machine
 	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(provision.Spec.MachineRef), &machine); err != nil {
 		return fmt.Errorf("Machine '%s' not found", provision.Spec.MachineRef)
 	}
@@ -197,18 +197,18 @@ func (c *Controller) validateProvisionRefs(ctx context.Context, provision *typed
 	}
 
 	// Validate bootTargetRef (BootTarget) and its bootMediaRef
-	var bt typed.BootTarget
+	var bt k8s.BootTarget
 	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(provision.Spec.BootTargetRef), &bt); err != nil {
 		return fmt.Errorf("BootTarget '%s' not found", provision.Spec.BootTargetRef)
 	}
-	var bm typed.BootMedia
+	var bm k8s.BootMedia
 	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(bt.Spec.BootMediaRef), &bm); err != nil {
 		return fmt.Errorf("BootMedia '%s' not found (referenced by BootTarget '%s')", bt.Spec.BootMediaRef, bt.Name)
 	}
 
 	// Validate responseTemplateRef
 	if provision.Spec.ResponseTemplateRef != "" {
-		var rt typed.ResponseTemplate
+		var rt k8s.ResponseTemplate
 		if err := c.k8sClient.Get(ctx, c.k8sClient.Key(provision.Spec.ResponseTemplateRef), &rt); err != nil {
 			return fmt.Errorf("ResponseTemplate '%s' not found", provision.Spec.ResponseTemplateRef)
 		}

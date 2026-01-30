@@ -5,15 +5,15 @@ import (
 	"testing"
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
-	"github.com/isoboot/isoboot/internal/k8s/typed"
+	"github.com/isoboot/isoboot/internal/k8s"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestGRPC_GetMachineByMAC_Found(t *testing.T) {
 	k := newTestTypedClient(
-		&typed.Machine{
+		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
-			Spec:       typed.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
 		},
 	)
 
@@ -45,9 +45,9 @@ func TestGRPC_GetMachineByMAC_NotFound(t *testing.T) {
 
 func TestGRPC_GetMachine_Found(t *testing.T) {
 	k := newTestTypedClient(
-		&typed.Machine{
+		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
-			Spec:       typed.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
 		},
 	)
 
@@ -79,15 +79,15 @@ func TestGRPC_GetMachine_NotFound(t *testing.T) {
 
 func TestGRPC_GetProvisionsByMachine(t *testing.T) {
 	k := newTestTypedClient(
-		&typed.Provision{
+		&k8s.Provision{
 			ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
-			Spec:       typed.ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
-			Status:     typed.ProvisionStatus{Phase: "Pending"},
+			Spec:       k8s.ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
+			Status:     k8s.ProvisionStatus{Phase: "Pending"},
 		},
-		&typed.Provision{
+		&k8s.Provision{
 			ObjectMeta: metav1.ObjectMeta{Name: "prov-2", Namespace: "default"},
-			Spec:       typed.ProvisionSpec{MachineRef: "vm-02", BootTargetRef: "debian-13"},
-			Status:     typed.ProvisionStatus{Phase: "InProgress"},
+			Spec:       k8s.ProvisionSpec{MachineRef: "vm-02", BootTargetRef: "debian-13"},
+			Status:     k8s.ProvisionStatus{Phase: "InProgress"},
 		},
 	)
 
@@ -122,10 +122,10 @@ func TestGRPC_GetProvisionsByMachine_Empty(t *testing.T) {
 
 func TestGRPC_UpdateProvisionStatus(t *testing.T) {
 	k := newTestTypedClient(
-		&typed.Provision{
+		&k8s.Provision{
 			ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
-			Spec:       typed.ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
-			Status:     typed.ProvisionStatus{Phase: "Pending"},
+			Spec:       k8s.ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
+			Status:     k8s.ProvisionStatus{Phase: "Pending"},
 		},
 	)
 
@@ -143,7 +143,7 @@ func TestGRPC_UpdateProvisionStatus(t *testing.T) {
 		t.Errorf("expected Success=true, got error: %s", resp.Error)
 	}
 
-	var updated typed.Provision
+	var updated k8s.Provision
 	if err := k.Get(context.Background(), k.Key("prov-1"), &updated); err != nil {
 		t.Fatalf("failed to get provision: %v", err)
 	}
@@ -230,9 +230,9 @@ func TestGRPC_GetConfigMapValue_ConfigMapNotFound(t *testing.T) {
 
 func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	k := newTestTypedClient(
-		&typed.BootTarget{
+		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       typed.BootTargetSpec{BootMediaRef: "debian-media", UseFirmware: true, Template: "#!ipxe\nkernel ...\n"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-media", UseFirmware: true, Template: "#!ipxe\nkernel ...\n"},
 		},
 	)
 
@@ -270,9 +270,9 @@ func TestGRPC_GetBootTarget_NotFound(t *testing.T) {
 
 func TestGRPC_GetResponseTemplate_Found(t *testing.T) {
 	k := newTestTypedClient(
-		&typed.ResponseTemplate{
+		&k8s.ResponseTemplate{
 			ObjectMeta: metav1.ObjectMeta{Name: "preseed-tmpl", Namespace: "default"},
-			Spec: typed.ResponseTemplateSpec{
+			Spec: k8s.ResponseTemplateSpec{
 				Files: map[string]string{
 					"preseed.cfg": "d-i netcfg/hostname string {{ .Hostname }}",
 				},
@@ -308,9 +308,9 @@ func TestGRPC_GetResponseTemplate_NotFound(t *testing.T) {
 
 func TestGRPC_GetProvision_Found(t *testing.T) {
 	k := newTestTypedClient(
-		&typed.Provision{
+		&k8s.Provision{
 			ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
-			Spec: typed.ProvisionSpec{
+			Spec: k8s.ProvisionSpec{
 				MachineRef:          "vm-01",
 				BootTargetRef:       "debian-13",
 				ResponseTemplateRef: "preseed",
@@ -430,11 +430,11 @@ func TestGRPC_GetSecrets_MissingSecret(t *testing.T) {
 
 func TestGRPC_GetBootMedia_Found(t *testing.T) {
 	k := newTestTypedClient(
-		&typed.BootMedia{
+		&k8s.BootMedia{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec: typed.BootMediaSpec{
-				Kernel: &typed.BootMediaFileRef{URL: "http://example.com/linux"},
-				Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			Spec: k8s.BootMediaSpec{
+				Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
+				Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 			},
 		},
 	)
@@ -460,12 +460,12 @@ func TestGRPC_GetBootMedia_Found(t *testing.T) {
 
 func TestGRPC_GetBootMedia_WithFirmware(t *testing.T) {
 	k := newTestTypedClient(
-		&typed.BootMedia{
+		&k8s.BootMedia{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec: typed.BootMediaSpec{
-				Kernel:   &typed.BootMediaFileRef{URL: "http://example.com/linux"},
-				Initrd:   &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
-				Firmware: &typed.BootMediaFileRef{URL: "http://example.com/firmware.cpio.gz"},
+			Spec: k8s.BootMediaSpec{
+				Kernel:   &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
+				Initrd:   &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+				Firmware: &k8s.BootMediaFileRef{URL: "http://example.com/firmware.cpio.gz"},
 			},
 		},
 	)

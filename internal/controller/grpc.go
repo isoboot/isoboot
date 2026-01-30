@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
-	"github.com/isoboot/isoboot/internal/k8s/typed"
+	"github.com/isoboot/isoboot/internal/k8s"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -43,7 +43,7 @@ func (s *GRPCServer) GetMachineByMAC(ctx context.Context, req *pb.GetMachineByMA
 
 // GetMachine retrieves a Machine by name
 func (s *GRPCServer) GetMachine(ctx context.Context, req *pb.GetMachineRequest) (*pb.GetMachineResponse, error) {
-	var machine typed.Machine
+	var machine k8s.Machine
 	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &machine); err != nil {
 		log.Printf("gRPC: error getting machine %s: %v", req.Name, err)
 		return &pb.GetMachineResponse{Found: false}, nil
@@ -109,7 +109,7 @@ func (s *GRPCServer) GetConfigMapValue(ctx context.Context, req *pb.GetConfigMap
 
 // GetBootTarget retrieves a BootTarget by name
 func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetRequest) (*pb.GetBootTargetResponse, error) {
-	var bt typed.BootTarget
+	var bt k8s.BootTarget
 	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &bt); err != nil {
 		log.Printf("gRPC: error getting boottarget %s: %v", req.Name, err)
 		return &pb.GetBootTargetResponse{Found: false}, nil
@@ -125,7 +125,7 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 
 // GetBootMedia retrieves a BootMedia by name
 func (s *GRPCServer) GetBootMedia(ctx context.Context, req *pb.GetBootMediaRequest) (*pb.GetBootMediaResponse, error) {
-	var bm typed.BootMedia
+	var bm k8s.BootMedia
 	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &bm); err != nil {
 		log.Printf("gRPC: error getting bootmedia %s: %v", req.Name, err)
 		return &pb.GetBootMediaResponse{Found: false}, nil
@@ -141,7 +141,7 @@ func (s *GRPCServer) GetBootMedia(ctx context.Context, req *pb.GetBootMediaReque
 
 // GetResponseTemplate retrieves a ResponseTemplate by name
 func (s *GRPCServer) GetResponseTemplate(ctx context.Context, req *pb.GetResponseTemplateRequest) (*pb.GetResponseTemplateResponse, error) {
-	var rt typed.ResponseTemplate
+	var rt k8s.ResponseTemplate
 	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &rt); err != nil {
 		log.Printf("gRPC: error getting responsetemplate %s: %v", req.Name, err)
 		return &pb.GetResponseTemplateResponse{Found: false}, nil
@@ -155,7 +155,7 @@ func (s *GRPCServer) GetResponseTemplate(ctx context.Context, req *pb.GetRespons
 
 // GetProvision retrieves a Provision by name
 func (s *GRPCServer) GetProvision(ctx context.Context, req *pb.GetProvisionRequest) (*pb.GetProvisionResponse, error) {
-	var provision typed.Provision
+	var provision k8s.Provision
 	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &provision); err != nil {
 		log.Printf("gRPC: error getting provision %s: %v", req.Name, err)
 		return &pb.GetProvisionResponse{Found: false}, nil
