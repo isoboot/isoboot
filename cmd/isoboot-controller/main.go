@@ -48,7 +48,7 @@ func main() {
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer()
-	pb.RegisterControllerServiceServer(grpcServer, controller.NewGRPCServer(ctrl))
+	pb.RegisterControllerServiceServer(grpcServer, controller.NewGRPCServer(ctrl, nil))
 
 	// Enable reflection for debugging (grpcurl)
 	reflection.Register(grpcServer)

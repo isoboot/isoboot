@@ -6,17 +6,19 @@ import (
 	"strings"
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
+	"github.com/isoboot/isoboot/internal/k8s/typed"
 )
 
 // GRPCServer implements the ControllerService gRPC interface
 type GRPCServer struct {
 	pb.UnimplementedControllerServiceServer
-	ctrl *Controller
+	ctrl     *Controller
+	typedK8s *typed.Client
 }
 
 // NewGRPCServer creates a new gRPC server
-func NewGRPCServer(ctrl *Controller) *GRPCServer {
-	return &GRPCServer{ctrl: ctrl}
+func NewGRPCServer(ctrl *Controller, typedK8s *typed.Client) *GRPCServer {
+	return &GRPCServer{ctrl: ctrl, typedK8s: typedK8s}
 }
 
 // GetMachineByMAC retrieves a Machine by MAC address
@@ -118,6 +120,22 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 		DiskImage:           bt.DiskImageRef,
 		Template:            bt.Template,
 		IncludeFirmwarePath: bt.IncludeFirmwarePath,
+	}, nil
+}
+
+// GetBootMedia retrieves a BootMedia by name
+func (s *GRPCServer) GetBootMedia(ctx context.Context, req *pb.GetBootMediaRequest) (*pb.GetBootMediaResponse, error) {
+	var bm typed.BootMedia
+	if err := s.typedK8s.Get(ctx, s.typedK8s.Key(req.Name), &bm); err != nil {
+		log.Printf("gRPC: error getting bootmedia %s: %v", req.Name, err)
+		return &pb.GetBootMediaResponse{Found: false}, nil
+	}
+
+	return &pb.GetBootMediaResponse{
+		Found:          true,
+		KernelFilename: bm.KernelFilename(),
+		InitrdFilename: bm.InitrdFilename(),
+		HasFirmware:    bm.HasFirmware(),
 	}, nil
 }
 

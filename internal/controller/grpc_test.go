@@ -12,7 +12,7 @@ func TestGRPC_GetMachineByMAC_Found(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetMachineByMAC(context.Background(), &pb.GetMachineByMACRequest{Mac: "AA-BB-CC-DD-EE-FF"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -28,7 +28,7 @@ func TestGRPC_GetMachineByMAC_Found(t *testing.T) {
 func TestGRPC_GetMachineByMAC_NotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetMachineByMAC(context.Background(), &pb.GetMachineByMACRequest{Mac: "aa-bb-cc-dd-ee-ff"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -42,7 +42,7 @@ func TestGRPC_GetMachine_Found(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetMachine(context.Background(), &pb.GetMachineRequest{Name: "vm-01"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -58,7 +58,7 @@ func TestGRPC_GetMachine_Found(t *testing.T) {
 func TestGRPC_GetMachine_NotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetMachine(context.Background(), &pb.GetMachineRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -81,7 +81,7 @@ func TestGRPC_GetProvisionsByMachine(t *testing.T) {
 		Status: k8s.ProvisionStatus{Phase: "InProgress"},
 	}
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetProvisionsByMachine(context.Background(), &pb.GetProvisionsByMachineRequest{MachineName: "vm-01"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -100,7 +100,7 @@ func TestGRPC_GetProvisionsByMachine(t *testing.T) {
 func TestGRPC_GetProvisionsByMachine_Empty(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetProvisionsByMachine(context.Background(), &pb.GetProvisionsByMachineRequest{MachineName: "vm-01"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -118,7 +118,7 @@ func TestGRPC_UpdateProvisionStatus(t *testing.T) {
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.UpdateProvisionStatus(context.Background(), &pb.UpdateProvisionStatusRequest{
 		Name:    "prov-1",
 		Status:  "InProgress",
@@ -147,7 +147,7 @@ func TestGRPC_UpdateProvisionStatus(t *testing.T) {
 func TestGRPC_UpdateProvisionStatus_NotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.UpdateProvisionStatus(context.Background(), &pb.UpdateProvisionStatusRequest{
 		Name:   "missing",
 		Status: "InProgress",
@@ -166,7 +166,7 @@ func TestGRPC_GetConfigMapValue_Found(t *testing.T) {
 		"boot.ipxe": "#!ipxe\nchain ...\n",
 	})
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetConfigMapValue(context.Background(), &pb.GetConfigMapValueRequest{
 		ConfigmapName: "isoboot-templates",
 		Key:           "boot.ipxe",
@@ -186,7 +186,7 @@ func TestGRPC_GetConfigMapValue_KeyNotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.configMaps["cm"] = newConfigMap("cm", map[string]string{"a": "b"})
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetConfigMapValue(context.Background(), &pb.GetConfigMapValueRequest{
 		ConfigmapName: "cm",
 		Key:           "missing-key",
@@ -202,7 +202,7 @@ func TestGRPC_GetConfigMapValue_KeyNotFound(t *testing.T) {
 func TestGRPC_GetConfigMapValue_ConfigMapNotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetConfigMapValue(context.Background(), &pb.GetConfigMapValueRequest{
 		ConfigmapName: "missing",
 		Key:           "key",
@@ -224,7 +224,7 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 		IncludeFirmwarePath: "/initrd.gz",
 	}
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "debian-13"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -246,7 +246,7 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 func TestGRPC_GetBootTarget_NotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -265,7 +265,7 @@ func TestGRPC_GetResponseTemplate_Found(t *testing.T) {
 		},
 	}
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetResponseTemplate(context.Background(), &pb.GetResponseTemplateRequest{Name: "preseed-tmpl"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -281,7 +281,7 @@ func TestGRPC_GetResponseTemplate_Found(t *testing.T) {
 func TestGRPC_GetResponseTemplate_NotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetResponseTemplate(context.Background(), &pb.GetResponseTemplateRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -305,7 +305,7 @@ func TestGRPC_GetProvision_Found(t *testing.T) {
 		},
 	}
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetProvision(context.Background(), &pb.GetProvisionRequest{Name: "prov-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -336,7 +336,7 @@ func TestGRPC_GetProvision_Found(t *testing.T) {
 func TestGRPC_GetProvision_NotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetProvision(context.Background(), &pb.GetProvisionRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -351,7 +351,7 @@ func TestGRPC_GetConfigMaps_MergesData(t *testing.T) {
 	fake.configMaps["cm-1"] = newConfigMap("cm-1", map[string]string{"a": "1", "b": "2"})
 	fake.configMaps["cm-2"] = newConfigMap("cm-2", map[string]string{"c": "3"})
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetConfigMaps(context.Background(), &pb.GetConfigMapsRequest{Names: []string{"cm-1", "cm-2"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -368,7 +368,7 @@ func TestGRPC_GetConfigMaps_MissingConfigMap(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.configMaps["cm-1"] = newConfigMap("cm-1", map[string]string{"a": "1"})
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetConfigMaps(context.Background(), &pb.GetConfigMapsRequest{Names: []string{"cm-1", "missing"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -383,7 +383,7 @@ func TestGRPC_GetSecrets_MergesData(t *testing.T) {
 	fake.secrets["s-1"] = newSecret("s-1", map[string][]byte{"key1": []byte("val1")})
 	fake.secrets["s-2"] = newSecret("s-2", map[string][]byte{"key2": []byte("val2")})
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetSecrets(context.Background(), &pb.GetSecretsRequest{Names: []string{"s-1", "s-2"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -399,7 +399,7 @@ func TestGRPC_GetSecrets_MergesData(t *testing.T) {
 func TestGRPC_GetSecrets_MissingSecret(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetSecrets(context.Background(), &pb.GetSecretsRequest{Names: []string{"missing"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -416,7 +416,7 @@ func TestGRPC_GetDiskImage_Found(t *testing.T) {
 		ISO:  "https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/mini.iso",
 	}
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetDiskImage(context.Background(), &pb.GetDiskImageRequest{Name: "debian-iso"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -432,7 +432,7 @@ func TestGRPC_GetDiskImage_Found(t *testing.T) {
 func TestGRPC_GetDiskImage_NotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetDiskImage(context.Background(), &pb.GetDiskImageRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -449,7 +449,7 @@ func TestGRPC_GetDiskImage_InvalidISOURL(t *testing.T) {
 		ISO:  "https://example.com/", // URL with no filename
 	}
 
-	srv := NewGRPCServer(New(fake))
+	srv := NewGRPCServer(New(fake), nil)
 	resp, err := srv.GetDiskImage(context.Background(), &pb.GetDiskImageRequest{Name: "bad-iso"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
