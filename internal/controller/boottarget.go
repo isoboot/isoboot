@@ -235,7 +235,7 @@ func (c *Controller) downloadFile(ctx context.Context, fileURL, checksumURL, des
 
 	// Write to temp file while computing hash
 	tmpPath := destPath + ".tmp"
-	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
@@ -282,7 +282,7 @@ func (c *Controller) buildCombinedFile(baseDir string, cf k8s.CombinedFile, dest
 	}
 
 	tmpPath := destPath + ".tmp"
-	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return "", fmt.Errorf("create output file: %w", err)
 	}
