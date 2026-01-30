@@ -3,7 +3,7 @@
 // Hand-written deepcopy functions for CRD types.
 // Equivalent to controller-gen object output.
 
-package typed
+package k8s
 
 import (
 	runtime "k8s.io/apimachinery/pkg/runtime"

@@ -3,7 +3,7 @@ package controller
 import (
 	"net/http"
 
-	"github.com/isoboot/isoboot/internal/k8s/typed"
+	"github.com/isoboot/isoboot/internal/k8s"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,17 +14,17 @@ import (
 func testScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = corev1.AddToScheme(s)
-	_ = typed.AddToScheme(s)
+	_ = k8s.AddToScheme(s)
 	return s
 }
 
-func newTestTypedClient(objs ...client.Object) *typed.Client {
+func newTestK8sClient(objs ...client.Object) *k8s.Client {
 	cl := fake.NewClientBuilder().
 		WithScheme(testScheme()).
 		WithObjects(objs...).
-		WithStatusSubresource(&typed.Provision{}, &typed.BootMedia{}).
+		WithStatusSubresource(&k8s.Provision{}, &k8s.BootMedia{}).
 		Build()
-	return typed.NewClientFromClient(cl, "default")
+	return k8s.NewClientFromClient(cl, "default")
 }
 
 // fakeHTTPDoer is a mock HTTP client for tests
