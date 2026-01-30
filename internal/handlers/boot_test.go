@@ -187,6 +187,9 @@ func TestServeConditionalBoot_BootMediaAndFirmwareRendered(t *testing.T) {
 				Template:          "#!ipxe\n{{ if .UseDebianFirmware }}firmware{{ else }}nofirmware{{ end }}\nstatic/{{ .BootMedia }}/linux\n",
 				BootMediaRef:      "debian-13",
 				UseDebianFirmware: true,
+				KernelFilename:    "linux",
+				InitrdFilename:    "initrd.gz",
+				HasFirmware:       true,
 			}, nil
 		},
 		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
@@ -209,6 +212,51 @@ func TestServeConditionalBoot_BootMediaAndFirmwareRendered(t *testing.T) {
 	}
 	if !strings.Contains(body, "static/debian-13/linux") {
 		t.Errorf("expected 'static/debian-13/linux' in body (BootMedia=debian-13), got %q", body)
+	}
+}
+
+func TestServeConditionalBoot_NewTemplateVariables(t *testing.T) {
+	mock := &mockBootClient{
+		getMachineByMAC: func(ctx context.Context, mac string) (string, error) {
+			return "vm-01.lan", nil
+		},
+		getProvisionsByMachine: func(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error) {
+			return []controllerclient.ProvisionSummary{
+				{Name: "prov-1", Status: "Pending", BootTargetRef: "debian-13"},
+			}, nil
+		},
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return &controllerclient.BootTargetInfo{
+				Template:       "kernel={{ .KernelFilename }} initrd={{ .InitrdFilename }} hasFw={{ .HasFirmware }}",
+				BootMediaRef:   "debian-13",
+				KernelFilename: "vmlinuz",
+				InitrdFilename: "initrd.gz",
+				HasFirmware:    true,
+			}, nil
+		},
+		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
+			return nil
+		},
+	}
+
+	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeConditionalBoot(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "kernel=vmlinuz") {
+		t.Errorf("expected KernelFilename=vmlinuz in body, got %q", body)
+	}
+	if !strings.Contains(body, "initrd=initrd.gz") {
+		t.Errorf("expected InitrdFilename=initrd.gz in body, got %q", body)
+	}
+	if !strings.Contains(body, "hasFw=true") {
+		t.Errorf("expected HasFirmware=true in body, got %q", body)
 	}
 }
 

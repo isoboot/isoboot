@@ -113,12 +113,26 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 		return &pb.GetBootTargetResponse{Found: false}, nil
 	}
 
-	return &pb.GetBootTargetResponse{
+	resp := &pb.GetBootTargetResponse{
 		Found:             true,
 		Template:          bt.Template,
 		BootMediaRef:      bt.BootMediaRef,
 		UseDebianFirmware: bt.UseDebianFirmware,
-	}, nil
+	}
+
+	// Resolve BootMedia to populate filename fields
+	bm, err := s.ctrl.k8sClient.GetBootMedia(ctx, bt.BootMediaRef)
+	if err != nil {
+		log.Printf("gRPC: error getting bootmedia %s for boottarget %s: %v", bt.BootMediaRef, req.Name, err)
+		// Graceful degradation: return response with empty filenames
+		return resp, nil
+	}
+
+	resp.KernelFilename = bm.KernelFilename()
+	resp.InitrdFilename = bm.InitrdFilename()
+	resp.HasFirmware = bm.HasFirmware()
+
+	return resp, nil
 }
 
 // GetResponseTemplate retrieves a ResponseTemplate by name

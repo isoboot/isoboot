@@ -73,12 +73,33 @@ Available variables in BootTarget (iPXE scripts):
 - `.BootMedia` - BootMedia resource name (for static file paths, e.g., `/static/{{ .BootMedia }}/linux`)
 - `.UseDebianFirmware` - bool, whether to use firmware-combined initrd
 - `.ProvisionName` - Provision resource name (use for answer file URLs)
+- `.KernelFilename` - kernel filename (e.g., "linux", "vmlinuz") resolved from BootMedia
+- `.InitrdFilename` - initrd filename (e.g., "initrd.gz") resolved from BootMedia
+- `.HasFirmware` - bool, whether BootMedia has firmware defined
 
 ### CRD Architecture: BootMedia + BootTarget
-- **BootMedia** owns file downloads (`files[]`, `combinedFiles[]`, status tracking). One per OS version. Names: `debian-12`, `debian-13`.
+- **BootMedia** owns file downloads via named fields: `kernel`, `initrd` (direct URLs), or `iso` (ISO download + extraction with `iso.kernel`/`iso.initrd` paths). Optional `firmware` for initrd concatenation. One per OS version. Names: `debian-12`, `debian-13`.
 - **BootTarget** references a BootMedia via `bootMediaRef`. Adds `useDebianFirmware: bool` and `template`. Multiple BootTargets can share one BootMedia. Names: `debian-12`, `debian-12-firmware`, `debian-13`, `debian-13-firmware`.
 - Static files served at `/static/{bootMedia}/`.
 - Provision still references `bootTargetRef`.
+
+### BootMedia Directory Structure
+Without firmware (flat layout):
+```
+debian-12/
+  linux           ← kernel
+  initrd.gz       ← initrd
+```
+
+With firmware (subdirectory layout):
+```
+debian-12/
+  linux                    ← kernel (always top-level)
+  no-firmware/
+    initrd.gz              ← original initrd
+  with-firmware/
+    initrd.gz              ← initrd + firmware.cpio.gz concatenated
+```
 
 ### Error Handling in HTTP Handlers
 - Return 502 Bad Gateway for gRPC/transport errors

@@ -82,64 +82,6 @@ def456  file2.iso
 	}
 }
 
-func TestFilenameFromURL(t *testing.T) {
-	tests := []struct {
-		name        string
-		url         string
-		expected    string
-		expectError bool
-	}{
-		{
-			name:        "normal URL with filename",
-			url:         "http://example.com/path/to/file.iso",
-			expected:    "file.iso",
-			expectError: false,
-		},
-		{
-			name:        "URL ending with slash returns last component",
-			url:         "http://example.com/path/to/",
-			expected:    "to", // filepath.Base("/path/to/") = "to"
-			expectError: false,
-		},
-		{
-			name:        "URL with only root path",
-			url:         "http://example.com/",
-			expected:    "",
-			expectError: true, // filepath.Base("/") = "/"
-		},
-		{
-			name:        "URL with no path",
-			url:         "http://example.com",
-			expected:    "",
-			expectError: true, // filepath.Base("") = "."
-		},
-		{
-			name:        "URL with query string",
-			url:         "http://example.com/file.iso?token=abc",
-			expected:    "file.iso",
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := filenameFromURL(tt.url)
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("expected error for URL %q, got result %q", tt.url, result)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("unexpected error for URL %q: %v", tt.url, err)
-				}
-				if result != tt.expected {
-					t.Errorf("expected %q, got %q", tt.expected, result)
-				}
-			}
-		})
-	}
-}
-
 func TestParseChecksumFileDuplicateBaseFilenames(t *testing.T) {
 	// Tests that all full paths are stored (exact relative path matching uses these)
 	input := `abc123  dir1/file.iso
@@ -215,10 +157,9 @@ func (f *fakeHTTPDoer) Do(req *http.Request) (*http.Response, error) {
 func TestReconcileBootMedia_InitializePending(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.bootMedias["test-bm"] = &k8s.BootMedia{
-		Name: "test-bm",
-		Files: []k8s.BootMediaFile{
-			{URL: "http://example.com/images/linux"},
-		},
+		Name:   "test-bm",
+		Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/images/linux"},
+		Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/images/initrd.gz"},
 	}
 
 	ctrl := &Controller{k8sClient: fake, httpClient: http.DefaultClient}
@@ -272,15 +213,14 @@ func TestReconcileBootMedia_FailedIsNoop(t *testing.T) {
 func TestDownloadBootMedia_NoFilesBasePath(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.bootMedias["test-bm"] = &k8s.BootMedia{
-		Name: "test-bm",
-		Files: []k8s.BootMediaFile{
-			{URL: "http://example.com/images/linux"},
-		},
+		Name:   "test-bm",
+		Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/images/linux"},
+		Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/images/initrd.gz"},
 	}
 
 	ctrl := &Controller{
-		k8sClient:   fake,
-		httpClient:  http.DefaultClient,
+		k8sClient:     fake,
+		httpClient:    http.DefaultClient,
 		filesBasePath: "", // not configured
 	}
 
@@ -299,13 +239,12 @@ func TestDownloadBootMedia_NoFilesBasePath(t *testing.T) {
 	}
 }
 
-func TestDownloadBootMedia_InvalidURL(t *testing.T) {
+func TestDownloadBootMedia_ValidationError(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.bootMedias["test-bm"] = &k8s.BootMedia{
-		Name: "test-bm",
-		Files: []k8s.BootMediaFile{
-			{URL: "http://example.com/"}, // no filename
-		},
+		Name:   "test-bm",
+		Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
+		// Missing Initrd - should fail validation
 	}
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
@@ -330,23 +269,23 @@ func TestDownloadBootMedia_InvalidURL(t *testing.T) {
 	if status.Phase != "Failed" {
 		t.Errorf("expected phase Failed, got %q", status.Phase)
 	}
-	if !strings.Contains(status.Message, "Invalid URL") {
-		t.Errorf("expected message about invalid URL, got %q", status.Message)
+	if !strings.Contains(status.Message, "Invalid spec") {
+		t.Errorf("expected message about invalid spec, got %q", status.Message)
 	}
 }
 
-func TestDownloadBootMedia_SuccessfulDownload(t *testing.T) {
-	fileContent := []byte("fake kernel content")
-	sha256Hash := sha256.New()
-	sha256Hash.Write(fileContent)
-	expectedSha256 := fmt.Sprintf("%x", sha256Hash.Sum(nil))
+func TestDownloadBootMedia_DirectNoFirmware(t *testing.T) {
+	kernelContent := []byte("fake kernel content")
+	initrdContent := []byte("fake initrd content")
+	kernelHash := sha256.New()
+	kernelHash.Write(kernelContent)
+	expectedKernelSha := fmt.Sprintf("%x", kernelHash.Sum(nil))
 
 	fake := newFakeK8sClient()
 	fake.bootMedias["test-bm"] = &k8s.BootMedia{
-		Name: "test-bm",
-		Files: []k8s.BootMediaFile{
-			{URL: "http://example.com/images/linux"},
-		},
+		Name:   "test-bm",
+		Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/images/linux"},
+		Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/images/initrd.gz"},
 	}
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
@@ -357,10 +296,14 @@ func TestDownloadBootMedia_SuccessfulDownload(t *testing.T) {
 
 	mockHTTP := &fakeHTTPDoer{
 		doFunc: func(req *http.Request) (*http.Response, error) {
-			if req.URL.Path == "/images/linux" {
-				return httpResponseBytes(200, fileContent), nil
+			switch req.URL.Path {
+			case "/images/linux":
+				return httpResponseBytes(200, kernelContent), nil
+			case "/images/initrd.gz":
+				return httpResponseBytes(200, initrdContent), nil
+			default:
+				return httpResponse(404, "not found", -1), nil
 			}
-			return httpResponse(404, "not found", -1), nil
 		},
 	}
 
@@ -380,31 +323,127 @@ func TestDownloadBootMedia_SuccessfulDownload(t *testing.T) {
 	if status.Phase != "Complete" {
 		t.Fatalf("expected phase Complete, got %q (message: %s)", status.Phase, status.Message)
 	}
-	if len(status.Files) != 1 {
-		t.Fatalf("expected 1 file status, got %d", len(status.Files))
+	if status.Kernel == nil || status.Kernel.SHA256 != expectedKernelSha {
+		t.Errorf("expected kernel SHA256 %s, got %+v", expectedKernelSha, status.Kernel)
 	}
-	if status.Files[0].SHA256 != expectedSha256 {
-		t.Errorf("expected SHA256 %s, got %s", expectedSha256, status.Files[0].SHA256)
+	if status.Initrd == nil || status.Initrd.Phase != "Complete" {
+		t.Errorf("expected initrd Complete, got %+v", status.Initrd)
 	}
 
-	// Verify file was written to disk
-	filePath := filepath.Join(tmpDir, "test-bm", "linux")
-	content, err := os.ReadFile(filePath)
+	// Verify files written to disk (no firmware = flat layout)
+	kernelPath := filepath.Join(tmpDir, "test-bm", "linux")
+	content, err := os.ReadFile(kernelPath)
 	if err != nil {
-		t.Fatalf("failed to read downloaded file: %v", err)
+		t.Fatalf("failed to read kernel file: %v", err)
 	}
-	if string(content) != string(fileContent) {
-		t.Error("downloaded content doesn't match")
+	if string(content) != string(kernelContent) {
+		t.Error("kernel content doesn't match")
+	}
+
+	initrdPath := filepath.Join(tmpDir, "test-bm", "initrd.gz")
+	content, err = os.ReadFile(initrdPath)
+	if err != nil {
+		t.Fatalf("failed to read initrd file: %v", err)
+	}
+	if string(content) != string(initrdContent) {
+		t.Error("initrd content doesn't match")
+	}
+}
+
+func TestDownloadBootMedia_DirectWithFirmware(t *testing.T) {
+	kernelContent := []byte("kernel-data")
+	initrdContent := []byte("initrd-data")
+	firmwareContent := []byte("firmware-data")
+
+	fake := newFakeK8sClient()
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name:     "test-bm",
+		Kernel:   &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
+		Initrd:   &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Firmware: &k8s.BootMediaFileRef{URL: "http://example.com/firmware.cpio.gz"},
+	}
+
+	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockHTTP := &fakeHTTPDoer{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/linux":
+				return httpResponseBytes(200, kernelContent), nil
+			case "/initrd.gz":
+				return httpResponseBytes(200, initrdContent), nil
+			case "/firmware.cpio.gz":
+				return httpResponseBytes(200, firmwareContent), nil
+			default:
+				return httpResponse(404, "not found", -1), nil
+			}
+		},
+	}
+
+	ctrl := &Controller{
+		k8sClient:     fake,
+		httpClient:    mockHTTP,
+		filesBasePath: tmpDir,
+	}
+
+	bm := fake.bootMedias["test-bm"]
+	ctrl.downloadBootMedia(context.Background(), bm)
+
+	status, ok := fake.getBootMediaStatus("test-bm")
+	if !ok {
+		t.Fatal("expected BootMedia status to be updated")
+	}
+	if status.Phase != "Complete" {
+		t.Fatalf("expected phase Complete, got %q (message: %s)", status.Phase, status.Message)
+	}
+
+	// Verify directory layout with firmware
+	// Kernel at top level
+	kernelPath := filepath.Join(tmpDir, "test-bm", "linux")
+	if _, err := os.Stat(kernelPath); err != nil {
+		t.Fatalf("kernel not found at %s: %v", kernelPath, err)
+	}
+
+	// Initrd in no-firmware subdir
+	noFwInitrd := filepath.Join(tmpDir, "test-bm", "no-firmware", "initrd.gz")
+	content, err := os.ReadFile(noFwInitrd)
+	if err != nil {
+		t.Fatalf("no-firmware initrd not found: %v", err)
+	}
+	if string(content) != string(initrdContent) {
+		t.Error("no-firmware initrd content mismatch")
+	}
+
+	// Firmware-combined initrd in with-firmware subdir
+	withFwInitrd := filepath.Join(tmpDir, "test-bm", "with-firmware", "initrd.gz")
+	content, err = os.ReadFile(withFwInitrd)
+	if err != nil {
+		t.Fatalf("with-firmware initrd not found: %v", err)
+	}
+	expectedCombined := string(initrdContent) + string(firmwareContent)
+	if string(content) != expectedCombined {
+		t.Errorf("with-firmware initrd content mismatch: got %q, want %q", string(content), expectedCombined)
+	}
+
+	// Check status fields
+	if status.Firmware == nil || status.Firmware.Phase != "Complete" {
+		t.Errorf("expected firmware Complete, got %+v", status.Firmware)
+	}
+	if status.FirmwareInitrd == nil || status.FirmwareInitrd.Phase != "Complete" {
+		t.Errorf("expected firmwareInitrd Complete, got %+v", status.FirmwareInitrd)
 	}
 }
 
 func TestDownloadBootMedia_HTTPError(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.bootMedias["test-bm"] = &k8s.BootMedia{
-		Name: "test-bm",
-		Files: []k8s.BootMediaFile{
-			{URL: "http://example.com/images/linux"},
-		},
+		Name:   "test-bm",
+		Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/images/linux"},
+		Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/images/initrd.gz"},
 	}
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
@@ -443,10 +482,9 @@ func TestDownloadBootMedia_HTTPError(t *testing.T) {
 func TestDownloadBootMedia_ConnectionError(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.bootMedias["test-bm"] = &k8s.BootMedia{
-		Name: "test-bm",
-		Files: []k8s.BootMediaFile{
-			{URL: "http://example.com/images/linux"},
-		},
+		Name:   "test-bm",
+		Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/images/linux"},
+		Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/images/initrd.gz"},
 	}
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
@@ -482,76 +520,71 @@ func TestDownloadBootMedia_ConnectionError(t *testing.T) {
 	}
 }
 
-func TestDownloadBootMedia_CombinedFile(t *testing.T) {
-	kernelContent := []byte("kernel-data")
-	initrdContent := []byte("initrd-data")
-
-	fake := newFakeK8sClient()
-	fake.bootMedias["test-bm"] = &k8s.BootMedia{
-		Name: "test-bm",
-		Files: []k8s.BootMediaFile{
-			{URL: "http://example.com/linux"},
-			{URL: "http://example.com/initrd.gz"},
-		},
-		CombinedFiles: []k8s.CombinedFile{
-			{Name: "combined-initrd.gz", Sources: []string{"initrd.gz", "linux"}},
-		},
-	}
-
+func TestWriteFileAtomic(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	mockHTTP := &fakeHTTPDoer{
-		doFunc: func(req *http.Request) (*http.Response, error) {
-			switch req.URL.Path {
-			case "/linux":
-				return httpResponseBytes(200, kernelContent), nil
-			case "/initrd.gz":
-				return httpResponseBytes(200, initrdContent), nil
-			default:
-				return httpResponse(404, "not found", -1), nil
-			}
-		},
-	}
+	data := []byte("test content")
+	destPath := filepath.Join(tmpDir, "subdir", "file.txt")
 
-	ctrl := &Controller{
-		k8sClient:     fake,
-		httpClient:    mockHTTP,
-		filesBasePath: tmpDir,
-	}
-
-	bm := fake.bootMedias["test-bm"]
-	ctrl.downloadBootMedia(context.Background(), bm)
-
-	status, ok := fake.getBootMediaStatus("test-bm")
-	if !ok {
-		t.Fatal("expected BootMedia status to be updated")
-	}
-	if status.Phase != "Complete" {
-		t.Fatalf("expected phase Complete, got %q (message: %s)", status.Phase, status.Message)
-	}
-	if len(status.Files) != 2 {
-		t.Fatalf("expected 2 file statuses, got %d", len(status.Files))
-	}
-	if len(status.CombinedFiles) != 1 {
-		t.Fatalf("expected 1 combined file status, got %d", len(status.CombinedFiles))
-	}
-	if status.CombinedFiles[0].Phase != "Complete" {
-		t.Errorf("expected combined file phase Complete, got %q", status.CombinedFiles[0].Phase)
-	}
-
-	// Verify combined file content
-	combinedPath := filepath.Join(tmpDir, "test-bm", "combined-initrd.gz")
-	combinedContent, err := os.ReadFile(combinedPath)
+	sha, err := writeFileAtomic(destPath, data)
 	if err != nil {
-		t.Fatalf("failed to read combined file: %v", err)
+		t.Fatalf("writeFileAtomic failed: %v", err)
 	}
-	expectedCombined := string(initrdContent) + string(kernelContent)
-	if string(combinedContent) != expectedCombined {
-		t.Errorf("combined content mismatch: got %q, want %q", string(combinedContent), expectedCombined)
+
+	// Verify file content
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("failed to read file: %v", err)
+	}
+	if string(content) != string(data) {
+		t.Error("content mismatch")
+	}
+
+	// Verify SHA256
+	h := sha256.Sum256(data)
+	expectedSha := fmt.Sprintf("%x", h[:])
+	if sha != expectedSha {
+		t.Errorf("SHA256 = %q, want %q", sha, expectedSha)
+	}
+}
+
+func TestConcatenateFiles(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create source files
+	src1 := filepath.Join(tmpDir, "file1")
+	src2 := filepath.Join(tmpDir, "file2")
+	os.WriteFile(src1, []byte("hello"), 0o644)
+	os.WriteFile(src2, []byte("world"), 0o644)
+
+	destPath := filepath.Join(tmpDir, "output", "combined")
+	sha, err := concatenateFiles(destPath, src1, src2)
+	if err != nil {
+		t.Fatalf("concatenateFiles failed: %v", err)
+	}
+
+	// Verify content
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("failed to read file: %v", err)
+	}
+	if string(content) != "helloworld" {
+		t.Errorf("content = %q, want %q", string(content), "helloworld")
+	}
+
+	// Verify SHA256
+	h := sha256.Sum256([]byte("helloworld"))
+	expectedSha := fmt.Sprintf("%x", h[:])
+	if sha != expectedSha {
+		t.Errorf("SHA256 = %q, want %q", sha, expectedSha)
 	}
 }
 

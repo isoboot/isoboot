@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -73,32 +75,39 @@ type ProvisionStatus struct {
 	IP          string
 }
 
-// BootMedia represents a BootMedia CRD (owns file downloads)
-type BootMedia struct {
-	Name          string
-	Files         []BootMediaFile
-	CombinedFiles []CombinedFile
-	Status        BootMediaStatus
-}
-
-// BootMediaFile represents a file to download
-type BootMediaFile struct {
+// BootMediaFileRef represents a file to download (kernel, initrd, or firmware)
+type BootMediaFileRef struct {
 	URL         string
 	ChecksumURL string
 }
 
-// CombinedFile represents a file built by concatenating other files
-type CombinedFile struct {
-	Name    string
-	Sources []string
+// BootMediaISO represents an ISO to download and extract files from
+type BootMediaISO struct {
+	URL         string
+	ChecksumURL string
+	Kernel      string // path within ISO
+	Initrd      string // path within ISO
+}
+
+// BootMedia represents a BootMedia CRD (owns file downloads)
+type BootMedia struct {
+	Name     string
+	Kernel   *BootMediaFileRef
+	Initrd   *BootMediaFileRef
+	ISO      *BootMediaISO
+	Firmware *BootMediaFileRef
+	Status   BootMediaStatus
 }
 
 // BootMediaStatus represents the status of a BootMedia
 type BootMediaStatus struct {
-	Phase         string // Pending, Downloading, Complete, Failed
-	Message       string
-	Files         []FileStatus
-	CombinedFiles []FileStatus
+	Phase          string // Pending, Downloading, Complete, Failed
+	Message        string
+	Kernel         *FileStatus
+	Initrd         *FileStatus
+	ISO            *FileStatus
+	Firmware       *FileStatus
+	FirmwareInitrd *FileStatus
 }
 
 // FileStatus represents the download status of a single file
@@ -106,6 +115,151 @@ type FileStatus struct {
 	Name   string
 	Phase  string // Pending, Downloading, Complete, Failed
 	SHA256 string
+}
+
+// KernelFilename returns the basename of the kernel file
+func (bm *BootMedia) KernelFilename() string {
+	if bm.Kernel != nil {
+		if name, err := FilenameFromURL(bm.Kernel.URL); err == nil {
+			return name
+		}
+	}
+	if bm.ISO != nil {
+		return path.Base(bm.ISO.Kernel)
+	}
+	return ""
+}
+
+// InitrdFilename returns the basename of the initrd file
+func (bm *BootMedia) InitrdFilename() string {
+	if bm.Initrd != nil {
+		if name, err := FilenameFromURL(bm.Initrd.URL); err == nil {
+			return name
+		}
+	}
+	if bm.ISO != nil {
+		return path.Base(bm.ISO.Initrd)
+	}
+	return ""
+}
+
+// HasFirmware returns whether this BootMedia has firmware
+func (bm *BootMedia) HasFirmware() bool {
+	return bm.Firmware != nil
+}
+
+// Validate checks BootMedia spec for correctness
+func (bm *BootMedia) Validate() error {
+	hasDirect := bm.Kernel != nil || bm.Initrd != nil
+	hasISO := bm.ISO != nil
+
+	// Mutual exclusivity: direct XOR ISO
+	if hasDirect && hasISO {
+		return fmt.Errorf("cannot specify both kernel/initrd and iso")
+	}
+	if !hasDirect && !hasISO {
+		return fmt.Errorf("must specify either kernel+initrd or iso")
+	}
+
+	// Direct mode: both kernel and initrd required
+	if hasDirect {
+		if bm.Kernel == nil {
+			return fmt.Errorf("kernel requires initrd")
+		}
+		if bm.Initrd == nil {
+			return fmt.Errorf("initrd requires kernel")
+		}
+		if bm.Kernel.URL == "" {
+			return fmt.Errorf("kernel.url is required")
+		}
+		if bm.Initrd.URL == "" {
+			return fmt.Errorf("initrd.url is required")
+		}
+	}
+
+	// ISO mode: kernel and initrd paths required
+	if hasISO {
+		if bm.ISO.URL == "" {
+			return fmt.Errorf("iso.url is required")
+		}
+		if bm.ISO.Kernel == "" {
+			return fmt.Errorf("iso.kernel is required")
+		}
+		if bm.ISO.Initrd == "" {
+			return fmt.Errorf("iso.initrd is required")
+		}
+	}
+
+	// Basename uniqueness
+	basenames := make(map[string]string) // basename -> source description
+	addBasename := func(name, source string) error {
+		if prev, exists := basenames[name]; exists {
+			return fmt.Errorf("duplicate basename %q: used by %s and %s", name, prev, source)
+		}
+		basenames[name] = source
+		return nil
+	}
+
+	if bm.Kernel != nil {
+		name, err := FilenameFromURL(bm.Kernel.URL)
+		if err != nil {
+			return fmt.Errorf("kernel: %w", err)
+		}
+		if err := addBasename(name, "kernel"); err != nil {
+			return err
+		}
+	}
+	if bm.Initrd != nil {
+		name, err := FilenameFromURL(bm.Initrd.URL)
+		if err != nil {
+			return fmt.Errorf("initrd: %w", err)
+		}
+		if err := addBasename(name, "initrd"); err != nil {
+			return err
+		}
+	}
+	if bm.ISO != nil {
+		name, err := FilenameFromURL(bm.ISO.URL)
+		if err != nil {
+			return fmt.Errorf("iso: %w", err)
+		}
+		if err := addBasename(name, "iso"); err != nil {
+			return err
+		}
+		if err := addBasename(path.Base(bm.ISO.Kernel), "iso.kernel"); err != nil {
+			return err
+		}
+		if err := addBasename(path.Base(bm.ISO.Initrd), "iso.initrd"); err != nil {
+			return err
+		}
+	}
+	if bm.Firmware != nil {
+		if bm.Firmware.URL == "" {
+			return fmt.Errorf("firmware.url is required")
+		}
+		name, err := FilenameFromURL(bm.Firmware.URL)
+		if err != nil {
+			return fmt.Errorf("firmware: %w", err)
+		}
+		if err := addBasename(name, "firmware"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// FilenameFromURL extracts the filename from a URL
+func FilenameFromURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parse URL: %w", err)
+	}
+	filename := path.Base(u.Path)
+	if filename == "." || filename == "/" {
+		return "", fmt.Errorf("URL has no filename: %s", rawURL)
+	}
+	return filename, nil
 }
 
 // BootTarget represents a BootTarget CRD (references a BootMedia, adds template)
@@ -582,68 +736,79 @@ func parseBootMedia(obj *unstructured.Unstructured) (*BootMedia, error) {
 		Name: obj.GetName(),
 	}
 
-	// Parse files array
-	if filesRaw, ok := spec["files"].([]interface{}); ok {
-		for _, item := range filesRaw {
-			if m, ok := item.(map[string]interface{}); ok {
-				bm.Files = append(bm.Files, BootMediaFile{
-					URL:         getString(m, "url"),
-					ChecksumURL: getString(m, "checksumURL"),
-				})
-			}
+	// Parse kernel
+	if m, ok := spec["kernel"].(map[string]interface{}); ok {
+		bm.Kernel = &BootMediaFileRef{
+			URL:         getString(m, "url"),
+			ChecksumURL: getString(m, "checksumURL"),
 		}
 	}
 
-	// Parse combinedFiles array
-	if combinedRaw, ok := spec["combinedFiles"].([]interface{}); ok {
-		for _, item := range combinedRaw {
-			if m, ok := item.(map[string]interface{}); ok {
-				cf := CombinedFile{
-					Name: getString(m, "name"),
-				}
-				if sources, ok := m["sources"].([]interface{}); ok {
-					for _, s := range sources {
-						if str, ok := s.(string); ok {
-							cf.Sources = append(cf.Sources, str)
-						}
-					}
-				}
-				bm.CombinedFiles = append(bm.CombinedFiles, cf)
-			}
+	// Parse initrd
+	if m, ok := spec["initrd"].(map[string]interface{}); ok {
+		bm.Initrd = &BootMediaFileRef{
+			URL:         getString(m, "url"),
+			ChecksumURL: getString(m, "checksumURL"),
+		}
+	}
+
+	// Parse iso
+	if m, ok := spec["iso"].(map[string]interface{}); ok {
+		bm.ISO = &BootMediaISO{
+			URL:         getString(m, "url"),
+			ChecksumURL: getString(m, "checksumURL"),
+			Kernel:      getString(m, "kernel"),
+			Initrd:      getString(m, "initrd"),
+		}
+	}
+
+	// Parse firmware
+	if m, ok := spec["firmware"].(map[string]interface{}); ok {
+		bm.Firmware = &BootMediaFileRef{
+			URL:         getString(m, "url"),
+			ChecksumURL: getString(m, "checksumURL"),
 		}
 	}
 
 	// Parse status if present
 	if status, ok := obj.Object["status"].(map[string]interface{}); ok {
 		bm.Status = BootMediaStatus{
-			Phase:   getString(status, "phase"),
-			Message: getString(status, "message"),
-		}
-		if filesStatus, ok := status["files"].([]interface{}); ok {
-			for _, item := range filesStatus {
-				if m, ok := item.(map[string]interface{}); ok {
-					bm.Status.Files = append(bm.Status.Files, FileStatus{
-						Name:   getString(m, "name"),
-						Phase:  getString(m, "phase"),
-						SHA256: getString(m, "sha256"),
-					})
-				}
-			}
-		}
-		if combinedStatus, ok := status["combinedFiles"].([]interface{}); ok {
-			for _, item := range combinedStatus {
-				if m, ok := item.(map[string]interface{}); ok {
-					bm.Status.CombinedFiles = append(bm.Status.CombinedFiles, FileStatus{
-						Name:   getString(m, "name"),
-						Phase:  getString(m, "phase"),
-						SHA256: getString(m, "sha256"),
-					})
-				}
-			}
+			Phase:          getString(status, "phase"),
+			Message:        getString(status, "message"),
+			Kernel:         parseFileStatusPtr(status, "kernel"),
+			Initrd:         parseFileStatusPtr(status, "initrd"),
+			ISO:            parseFileStatusPtr(status, "iso"),
+			Firmware:       parseFileStatusPtr(status, "firmware"),
+			FirmwareInitrd: parseFileStatusPtr(status, "firmwareInitrd"),
 		}
 	}
 
 	return bm, nil
+}
+
+// parseFileStatusPtr parses an optional FileStatus from a nested map
+func parseFileStatusPtr(m map[string]interface{}, key string) *FileStatus {
+	sub, ok := m[key].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return &FileStatus{
+		Name:   getString(sub, "name"),
+		Phase:  getString(sub, "phase"),
+		SHA256: getString(sub, "sha256"),
+	}
+}
+
+// fileStatusToMap converts a FileStatus to a map for serialization
+func fileStatusToMap(fs *FileStatus) map[string]interface{} {
+	if fs == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"name":   fs.Name,
+		"phase":  fs.Phase,
+		"sha256": fs.SHA256,
+	}
 }
 
 // UpdateBootMediaStatus updates the status of a BootMedia.
@@ -662,28 +827,20 @@ func (c *Client) UpdateBootMediaStatus(ctx context.Context, name string, status 
 		"message": status.Message,
 	}
 
-	if len(status.Files) > 0 {
-		var filesArr []interface{}
-		for _, f := range status.Files {
-			filesArr = append(filesArr, map[string]interface{}{
-				"name":   f.Name,
-				"phase":  f.Phase,
-				"sha256": f.SHA256,
-			})
-		}
-		statusMap["files"] = filesArr
+	if m := fileStatusToMap(status.Kernel); m != nil {
+		statusMap["kernel"] = m
 	}
-
-	if len(status.CombinedFiles) > 0 {
-		var combinedArr []interface{}
-		for _, f := range status.CombinedFiles {
-			combinedArr = append(combinedArr, map[string]interface{}{
-				"name":   f.Name,
-				"phase":  f.Phase,
-				"sha256": f.SHA256,
-			})
-		}
-		statusMap["combinedFiles"] = combinedArr
+	if m := fileStatusToMap(status.Initrd); m != nil {
+		statusMap["initrd"] = m
+	}
+	if m := fileStatusToMap(status.ISO); m != nil {
+		statusMap["iso"] = m
+	}
+	if m := fileStatusToMap(status.Firmware); m != nil {
+		statusMap["firmware"] = m
+	}
+	if m := fileStatusToMap(status.FirmwareInitrd); m != nil {
+		statusMap["firmwareInitrd"] = m
 	}
 
 	obj.Object["status"] = statusMap

@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -458,82 +459,145 @@ func TestParseBootMedia(t *testing.T) {
 	tests := []struct {
 		name        string
 		obj         *unstructured.Unstructured
-		expected    *BootMedia
 		expectError bool
+		check       func(t *testing.T, bm *BootMedia)
 	}{
 		{
-			name: "valid BootMedia with files and combinedFiles",
+			name: "direct kernel + initrd",
 			obj: &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"metadata": map[string]interface{}{"name": "debian-13"},
 					"spec": map[string]interface{}{
-						"files": []interface{}{
-							map[string]interface{}{
-								"url":         "http://example.com/linux",
-								"checksumURL": "http://example.com/SHA256SUMS",
-							},
-							map[string]interface{}{
-								"url": "http://example.com/initrd.gz",
-							},
+						"kernel": map[string]interface{}{
+							"url":         "http://example.com/linux",
+							"checksumURL": "http://example.com/SHA256SUMS",
 						},
-						"combinedFiles": []interface{}{
-							map[string]interface{}{
-								"name":    "firmware-initrd.gz",
-								"sources": []interface{}{"initrd.gz", "firmware.cpio.gz"},
-							},
+						"initrd": map[string]interface{}{
+							"url": "http://example.com/initrd.gz",
 						},
 					},
 				},
 			},
-			expected: &BootMedia{
-				Name: "debian-13",
-				Files: []BootMediaFile{
-					{URL: "http://example.com/linux", ChecksumURL: "http://example.com/SHA256SUMS"},
-					{URL: "http://example.com/initrd.gz"},
-				},
-				CombinedFiles: []CombinedFile{
-					{Name: "firmware-initrd.gz", Sources: []string{"initrd.gz", "firmware.cpio.gz"}},
-				},
+			check: func(t *testing.T, bm *BootMedia) {
+				if bm.Name != "debian-13" {
+					t.Errorf("Name = %q, want %q", bm.Name, "debian-13")
+				}
+				if bm.Kernel == nil || bm.Kernel.URL != "http://example.com/linux" {
+					t.Errorf("Kernel = %+v, want URL http://example.com/linux", bm.Kernel)
+				}
+				if bm.Kernel.ChecksumURL != "http://example.com/SHA256SUMS" {
+					t.Errorf("Kernel.ChecksumURL = %q, want SHA256SUMS URL", bm.Kernel.ChecksumURL)
+				}
+				if bm.Initrd == nil || bm.Initrd.URL != "http://example.com/initrd.gz" {
+					t.Errorf("Initrd = %+v, want URL http://example.com/initrd.gz", bm.Initrd)
+				}
+				if bm.ISO != nil {
+					t.Error("ISO should be nil for direct mode")
+				}
+				if bm.Firmware != nil {
+					t.Error("Firmware should be nil")
+				}
 			},
-			expectError: false,
 		},
 		{
-			name: "BootMedia with status",
+			name: "ISO mode",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "debian-12-iso"},
+					"spec": map[string]interface{}{
+						"iso": map[string]interface{}{
+							"url":         "http://example.com/debian-12.iso",
+							"checksumURL": "http://example.com/SHA256SUMS",
+							"kernel":      "/install.amd/vmlinuz",
+							"initrd":      "/install.amd/initrd.gz",
+						},
+					},
+				},
+			},
+			check: func(t *testing.T, bm *BootMedia) {
+				if bm.Name != "debian-12-iso" {
+					t.Errorf("Name = %q, want debian-12-iso", bm.Name)
+				}
+				if bm.ISO == nil {
+					t.Fatal("ISO should not be nil")
+				}
+				if bm.ISO.URL != "http://example.com/debian-12.iso" {
+					t.Errorf("ISO.URL = %q", bm.ISO.URL)
+				}
+				if bm.ISO.Kernel != "/install.amd/vmlinuz" {
+					t.Errorf("ISO.Kernel = %q", bm.ISO.Kernel)
+				}
+				if bm.ISO.Initrd != "/install.amd/initrd.gz" {
+					t.Errorf("ISO.Initrd = %q", bm.ISO.Initrd)
+				}
+				if bm.Kernel != nil || bm.Initrd != nil {
+					t.Error("Kernel/Initrd should be nil for ISO mode")
+				}
+			},
+		},
+		{
+			name: "direct with firmware",
 			obj: &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"metadata": map[string]interface{}{"name": "debian-13"},
 					"spec": map[string]interface{}{
-						"files": []interface{}{
-							map[string]interface{}{"url": "http://example.com/linux"},
+						"kernel": map[string]interface{}{
+							"url": "http://example.com/linux",
 						},
+						"initrd": map[string]interface{}{
+							"url": "http://example.com/initrd.gz",
+						},
+						"firmware": map[string]interface{}{
+							"url": "http://example.com/firmware.cpio.gz",
+						},
+					},
+				},
+			},
+			check: func(t *testing.T, bm *BootMedia) {
+				if bm.Firmware == nil || bm.Firmware.URL != "http://example.com/firmware.cpio.gz" {
+					t.Errorf("Firmware = %+v", bm.Firmware)
+				}
+			},
+		},
+		{
+			name: "status parsing",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "debian-13"},
+					"spec": map[string]interface{}{
+						"kernel": map[string]interface{}{"url": "http://example.com/linux"},
+						"initrd": map[string]interface{}{"url": "http://example.com/initrd.gz"},
 					},
 					"status": map[string]interface{}{
 						"phase":   "Complete",
 						"message": "All files downloaded",
-						"files": []interface{}{
-							map[string]interface{}{
-								"name":   "linux",
-								"phase":  "Complete",
-								"sha256": "abc123def456",
-							},
+						"kernel": map[string]interface{}{
+							"name":   "linux",
+							"phase":  "Complete",
+							"sha256": "abc123",
+						},
+						"initrd": map[string]interface{}{
+							"name":   "initrd.gz",
+							"phase":  "Complete",
+							"sha256": "def456",
 						},
 					},
 				},
 			},
-			expected: &BootMedia{
-				Name: "debian-13",
-				Files: []BootMediaFile{
-					{URL: "http://example.com/linux"},
-				},
-				Status: BootMediaStatus{
-					Phase:   "Complete",
-					Message: "All files downloaded",
-					Files: []FileStatus{
-						{Name: "linux", Phase: "Complete", SHA256: "abc123def456"},
-					},
-				},
+			check: func(t *testing.T, bm *BootMedia) {
+				if bm.Status.Phase != "Complete" {
+					t.Errorf("Status.Phase = %q", bm.Status.Phase)
+				}
+				if bm.Status.Kernel == nil || bm.Status.Kernel.SHA256 != "abc123" {
+					t.Errorf("Status.Kernel = %+v", bm.Status.Kernel)
+				}
+				if bm.Status.Initrd == nil || bm.Status.Initrd.SHA256 != "def456" {
+					t.Errorf("Status.Initrd = %+v", bm.Status.Initrd)
+				}
+				if bm.Status.ISO != nil {
+					t.Error("Status.ISO should be nil")
+				}
 			},
-			expectError: false,
 		},
 		{
 			name: "missing spec returns error",
@@ -542,7 +606,6 @@ func TestParseBootMedia(t *testing.T) {
 					"metadata": map[string]interface{}{"name": "no-spec"},
 				},
 			},
-			expected:    nil,
 			expectError: true,
 		},
 	}
@@ -559,41 +622,202 @@ func TestParseBootMedia(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
-			if result.Name != tt.expected.Name {
-				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
+			if tt.check != nil {
+				tt.check(t, result)
 			}
-			if len(result.Files) != len(tt.expected.Files) {
-				t.Errorf("Files len = %d, want %d", len(result.Files), len(tt.expected.Files))
-			} else {
-				for i, f := range result.Files {
-					if f.URL != tt.expected.Files[i].URL {
-						t.Errorf("Files[%d].URL = %q, want %q", i, f.URL, tt.expected.Files[i].URL)
-					}
-					if f.ChecksumURL != tt.expected.Files[i].ChecksumURL {
-						t.Errorf("Files[%d].ChecksumURL = %q, want %q", i, f.ChecksumURL, tt.expected.Files[i].ChecksumURL)
-					}
+		})
+	}
+}
+
+func TestBootMedia_Validate(t *testing.T) {
+	tests := []struct {
+		name      string
+		bm        *BootMedia
+		expectErr string
+	}{
+		{
+			name: "valid direct",
+			bm: &BootMedia{
+				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
+				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			},
+		},
+		{
+			name: "valid ISO",
+			bm: &BootMedia{
+				ISO: &BootMediaISO{
+					URL:    "http://example.com/debian.iso",
+					Kernel: "/install.amd/vmlinuz",
+					Initrd: "/install.amd/initrd.gz",
+				},
+			},
+		},
+		{
+			name: "both set",
+			bm: &BootMedia{
+				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
+				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+				ISO:    &BootMediaISO{URL: "http://example.com/debian.iso", Kernel: "/k", Initrd: "/i"},
+			},
+			expectErr: "cannot specify both",
+		},
+		{
+			name:      "neither set",
+			bm:        &BootMedia{},
+			expectErr: "must specify either",
+		},
+		{
+			name: "kernel only",
+			bm: &BootMedia{
+				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
+			},
+			expectErr: "initrd requires kernel",
+		},
+		{
+			name: "initrd only",
+			bm: &BootMedia{
+				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			},
+			expectErr: "kernel requires initrd",
+		},
+		{
+			name: "duplicate basenames",
+			bm: &BootMedia{
+				Kernel: &BootMediaFileRef{URL: "http://example.com/path1/file"},
+				Initrd: &BootMediaFileRef{URL: "http://example.com/path2/file"},
+			},
+			expectErr: "duplicate basename",
+		},
+		{
+			name: "ISO missing kernel path",
+			bm: &BootMedia{
+				ISO: &BootMediaISO{
+					URL:    "http://example.com/debian.iso",
+					Initrd: "/install.amd/initrd.gz",
+				},
+			},
+			expectErr: "iso.kernel is required",
+		},
+		{
+			name: "ISO missing initrd path",
+			bm: &BootMedia{
+				ISO: &BootMediaISO{
+					URL:    "http://example.com/debian.iso",
+					Kernel: "/install.amd/vmlinuz",
+				},
+			},
+			expectErr: "iso.initrd is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.bm.Validate()
+			if tt.expectErr == "" {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
 				}
+				return
 			}
-			if len(result.CombinedFiles) != len(tt.expected.CombinedFiles) {
-				t.Errorf("CombinedFiles len = %d, want %d", len(result.CombinedFiles), len(tt.expected.CombinedFiles))
-			} else {
-				for i, cf := range result.CombinedFiles {
-					if cf.Name != tt.expected.CombinedFiles[i].Name {
-						t.Errorf("CombinedFiles[%d].Name = %q, want %q", i, cf.Name, tt.expected.CombinedFiles[i].Name)
-					}
-					if !reflect.DeepEqual(cf.Sources, tt.expected.CombinedFiles[i].Sources) {
-						t.Errorf("CombinedFiles[%d].Sources = %v, want %v", i, cf.Sources, tt.expected.CombinedFiles[i].Sources)
-					}
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.expectErr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tt.expectErr)
+			}
+		})
+	}
+}
+
+func TestBootMedia_KernelFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		bm       *BootMedia
+		expected string
+	}{
+		{
+			name:     "from kernel URL",
+			bm:       &BootMedia{Kernel: &BootMediaFileRef{URL: "http://example.com/path/linux"}},
+			expected: "linux",
+		},
+		{
+			name: "from ISO path",
+			bm: &BootMedia{ISO: &BootMediaISO{
+				URL: "http://example.com/debian.iso", Kernel: "/install.amd/vmlinuz", Initrd: "/install.amd/initrd.gz",
+			}},
+			expected: "vmlinuz",
+		},
+		{
+			name:     "empty",
+			bm:       &BootMedia{},
+			expected: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.bm.KernelFilename()
+			if got != tt.expected {
+				t.Errorf("KernelFilename() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBootMedia_InitrdFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		bm       *BootMedia
+		expected string
+	}{
+		{
+			name:     "from initrd URL",
+			bm:       &BootMedia{Initrd: &BootMediaFileRef{URL: "http://example.com/path/initrd.gz"}},
+			expected: "initrd.gz",
+		},
+		{
+			name: "from ISO path",
+			bm: &BootMedia{ISO: &BootMediaISO{
+				URL: "http://example.com/debian.iso", Kernel: "/install.amd/vmlinuz", Initrd: "/install.amd/initrd.gz",
+			}},
+			expected: "initrd.gz",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.bm.InitrdFilename()
+			if got != tt.expected {
+				t.Errorf("InitrdFilename() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFilenameFromURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		expected    string
+		expectError bool
+	}{
+		{"normal URL", "http://example.com/path/to/file.iso", "file.iso", false},
+		{"root path", "http://example.com/", "", true},
+		{"no path", "http://example.com", "", true},
+		{"with query", "http://example.com/file.iso?token=abc", "file.iso", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FilenameFromURL(tt.url)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error, got %q", got)
 				}
-			}
-			if result.Status.Phase != tt.expected.Status.Phase {
-				t.Errorf("Status.Phase = %q, want %q", result.Status.Phase, tt.expected.Status.Phase)
-			}
-			if result.Status.Message != tt.expected.Status.Message {
-				t.Errorf("Status.Message = %q, want %q", result.Status.Message, tt.expected.Status.Message)
-			}
-			if len(result.Status.Files) != len(tt.expected.Status.Files) {
-				t.Errorf("Status.Files len = %d, want %d", len(result.Status.Files), len(tt.expected.Status.Files))
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if got != tt.expected {
+					t.Errorf("got %q, want %q", got, tt.expected)
+				}
 			}
 		})
 	}

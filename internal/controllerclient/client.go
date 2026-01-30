@@ -138,6 +138,9 @@ type BootTargetInfo struct {
 	Template          string
 	BootMediaRef      string
 	UseDebianFirmware bool
+	KernelFilename    string
+	InitrdFilename    string
+	HasFirmware       bool
 }
 
 // GetBootTarget retrieves a BootTarget by name
@@ -155,6 +158,9 @@ func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInf
 		Template:          resp.Template,
 		BootMediaRef:      resp.BootMediaRef,
 		UseDebianFirmware: resp.UseDebianFirmware,
+		KernelFilename:    resp.KernelFilename,
+		InitrdFilename:    resp.InitrdFilename,
+		HasFirmware:       resp.HasFirmware,
 	}, nil
 }
 
