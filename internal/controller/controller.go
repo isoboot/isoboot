@@ -27,9 +27,7 @@ type Controller struct {
 	typedK8s                 *typed.Client
 	httpClient               HTTPDoer
 	stopCh                   chan struct{}
-	isoBasePath              string
 	filesBasePath            string
-	activeDiskImageDownloads sync.Map // tracks in-progress DiskImage downloads by name
 	activeBootMediaDownloads sync.Map // tracks in-progress BootMedia downloads by name
 }
 
@@ -40,11 +38,6 @@ func New(k8sClient KubernetesClient) *Controller {
 		httpClient: http.DefaultClient,
 		stopCh:     make(chan struct{}),
 	}
-}
-
-// SetISOBasePath sets the base path for ISO storage
-func (c *Controller) SetISOBasePath(path string) {
-	c.isoBasePath = path
 }
 
 // SetTypedK8s sets the typed k8s client

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -13,11 +14,54 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/isoboot/isoboot/internal/iso"
 	"github.com/isoboot/isoboot/internal/k8s/typed"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// downloadRequestTimeout is the timeout for the entire download operation.
+const downloadRequestTimeout = 15 * time.Minute
+
+// checksumDiscoveryTimeout is the timeout for fetching checksum files.
+const checksumDiscoveryTimeout = 30 * time.Second
+
+// parseChecksumFile parses a checksum file (SHA256SUMS/SHA512SUMS format).
+func parseChecksumFile(r io.Reader) map[string]string {
+	result := make(map[string]string)
+	scanner := bufio.NewScanner(r)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Format: "hash  filename" (text mode) or "hash *filename" (binary mode).
+		var hash, filename string
+		if i := strings.Index(line, "  "); i != -1 {
+			hash = strings.TrimSpace(line[:i])
+			filename = strings.TrimSpace(line[i+2:])
+		} else if i := strings.Index(line, " *"); i != -1 {
+			hash = strings.TrimSpace(line[:i])
+			filename = strings.TrimSpace(line[i+2:])
+		}
+
+		if hash == "" || filename == "" {
+			continue
+		}
+
+		filename = strings.TrimPrefix(filename, "./")
+		result[filename] = hash
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("Controller: error scanning checksum file (returning partial results): %v", err)
+	}
+
+	return result
+}
 
 // reconcileBootMedias reconciles all BootMedia resources
 func (c *Controller) reconcileBootMedias(ctx context.Context) {
