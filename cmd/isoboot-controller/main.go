@@ -10,6 +10,7 @@ import (
 	pb "github.com/isoboot/isoboot/api/controllerpb"
 	"github.com/isoboot/isoboot/internal/controller"
 	"github.com/isoboot/isoboot/internal/k8s"
+	"github.com/isoboot/isoboot/internal/k8s/typed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -39,6 +40,12 @@ func main() {
 		log.Fatalf("Failed to create Kubernetes client: %v", err)
 	}
 
+	// Initialize typed Kubernetes client
+	typedK8s, err := typed.NewClient(namespace)
+	if err != nil {
+		log.Fatalf("Failed to create typed Kubernetes client: %v", err)
+	}
+
 	// Create and start controller
 	// NOTE: SetISOBasePath must be called before Start.
 	ctrl := controller.New(k8sClient)
@@ -48,7 +55,7 @@ func main() {
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer()
-	pb.RegisterControllerServiceServer(grpcServer, controller.NewGRPCServer(ctrl, nil))
+	pb.RegisterControllerServiceServer(grpcServer, controller.NewGRPCServer(ctrl, typedK8s))
 
 	// Enable reflection for debugging (grpcurl)
 	reflection.Register(grpcServer)
