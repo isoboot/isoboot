@@ -57,6 +57,15 @@ type TemplateData struct {
 	HasFirmware       bool   // Whether BootMedia has firmware
 }
 
+// portFromRequest returns the X-Forwarded-Port header if present,
+// otherwise falls back to the default port.
+func portFromRequest(r *http.Request, defaultPort string) string {
+	if fwd := r.Header.Get("X-Forwarded-Port"); fwd != "" {
+		return fwd
+	}
+	return defaultPort
+}
+
 // splitHostDomain splits a machine name into hostname and domain.
 // "abc.lan" -> ("abc", "lan")
 // "web.example.com" -> ("web", "example.com")
@@ -157,7 +166,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	hostname, domain := splitHostDomain(machineName)
 	data := TemplateData{
 		Host:              h.host,
-		Port:              h.port,
+		Port:              portFromRequest(r, h.port),
 		ProxyPort:         h.proxyPort,
 		MachineName:       machineName,
 		Hostname:          hostname,
