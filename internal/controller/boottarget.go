@@ -176,21 +176,33 @@ func (c *Controller) downloadFile(ctx context.Context, fileURL, checksumURL, des
 		return "", fmt.Errorf("create directory: %w", err)
 	}
 
-	// Check if file already exists
-	if _, err := os.Stat(destPath); err == nil {
-		// File exists, compute hash
-		sha, err := computeSHA256(destPath)
-		if err == nil {
-			log.Printf("Controller: existing file %s verified, skipping download", filepath.Base(destPath))
-			return sha, nil
-		}
-		// Can't read existing file, re-download
-	}
-
 	// Discover checksums if checksumURL is provided
 	var checksums map[string]string
 	if checksumURL != "" {
 		checksums = c.fetchChecksumFile(ctx, checksumURL)
+	}
+
+	// Check if file already exists
+	if _, err := os.Stat(destPath); err == nil {
+		sha, err := computeSHA256(destPath)
+		if err == nil {
+			if checksums != nil {
+				fname, _ := filenameFromURL(fileURL)
+				if expected, ok := lookupChecksum(checksums, fname); ok {
+					if strings.EqualFold(sha, expected) {
+						log.Printf("Controller: existing file %s matches checksum, skipping download", filepath.Base(destPath))
+						return sha, nil
+					}
+					log.Printf("Controller: existing file %s checksum mismatch, re-downloading", filepath.Base(destPath))
+				} else {
+					log.Printf("Controller: no checksum entry for existing file %s, re-downloading", filepath.Base(destPath))
+				}
+			} else {
+				log.Printf("Controller: existing file %s verified (no remote checksum), skipping download", filepath.Base(destPath))
+				return sha, nil
+			}
+		}
+		// Can't read existing file or checksum mismatch, re-download
 	}
 
 	// Download file
@@ -221,7 +233,9 @@ func (c *Controller) downloadFile(ctx context.Context, fileURL, checksumURL, des
 	multiWriter := io.MultiWriter(tmpFile, h)
 
 	written, err := io.Copy(multiWriter, resp.Body)
-	tmpFile.Close()
+	if cerr := tmpFile.Close(); cerr != nil && err == nil {
+		err = fmt.Errorf("close temp file: %w", cerr)
+	}
 	if err != nil {
 		return "", fmt.Errorf("download: %w", err)
 	}
@@ -230,11 +244,11 @@ func (c *Controller) downloadFile(ctx context.Context, fileURL, checksumURL, des
 
 	// Verify checksum if available
 	if checksums != nil {
-		fname := filenameFromURLMust(fileURL)
+		fname, _ := filenameFromURL(fileURL)
 		if expected, ok := lookupChecksum(checksums, fname); ok {
 			if !strings.EqualFold(sha, expected) {
 				os.Remove(tmpPath)
-				return "", fmt.Errorf("checksum mismatch: expected %s, got %s", expected[:8]+"...", sha[:8]+"...")
+				return "", fmt.Errorf("checksum mismatch: expected %s, got %s", truncHash(expected), truncHash(sha))
 			}
 			log.Printf("Controller: checksum verified for %s", fname)
 		}
@@ -266,6 +280,11 @@ func (c *Controller) buildCombinedFile(baseDir string, cf k8s.CombinedFile, dest
 	w := io.MultiWriter(out, h)
 
 	for _, src := range cf.Sources {
+		// Validate source name to prevent path traversal
+		if src == "" || strings.ContainsAny(src, "/\\") || strings.Contains(src, "..") {
+			out.Close()
+			return "", fmt.Errorf("invalid source name %q", src)
+		}
 		srcPath := filepath.Join(baseDir, src)
 		f, err := os.Open(srcPath)
 		if err != nil {
@@ -280,7 +299,9 @@ func (c *Controller) buildCombinedFile(baseDir string, cf k8s.CombinedFile, dest
 		}
 	}
 
-	out.Close()
+	if err := out.Close(); err != nil {
+		return "", fmt.Errorf("close output file: %w", err)
+	}
 
 	if err := os.Rename(tmpPath, destPath); err != nil {
 		return "", fmt.Errorf("rename: %w", err)
@@ -384,13 +405,13 @@ func filenameFromURL(rawURL string) (string, error) {
 	return filename, nil
 }
 
-// filenameFromURLMust is like filenameFromURL but panics on error
-func filenameFromURLMust(rawURL string) string {
-	name, err := filenameFromURL(rawURL)
-	if err != nil {
-		panic(err)
+// truncHash returns the first 8 chars of a hash string with "..." suffix,
+// or the full string if shorter than 8 chars.
+func truncHash(h string) string {
+	if len(h) <= 8 {
+		return h
 	}
-	return name
+	return h[:8] + "..."
 }
 
 // Keep hash.Hash import used by tests

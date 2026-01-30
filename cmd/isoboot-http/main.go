@@ -36,18 +36,18 @@ func main() {
 	var (
 		host               string
 		port               string
+		listenPort         string
 		proxyPort          string
 		controllerAddr     string
 		templatesConfigMap string
-		filesPath          string
 	)
 
 	flag.StringVar(&host, "host", "", "Host IP to advertise in boot scripts")
-	flag.StringVar(&port, "port", "8080", "HTTP server port")
+	flag.StringVar(&port, "port", "8080", "Advertised HTTP port (used in templates)")
+	flag.StringVar(&listenPort, "listen-port", "8082", "Port the Go server binds to (localhost only)")
 	flag.StringVar(&proxyPort, "proxy-port", "3128", "Squid proxy port")
 	flag.StringVar(&controllerAddr, "controller", "localhost:8081", "Controller gRPC address")
 	flag.StringVar(&templatesConfigMap, "templates-configmap", "", "ConfigMap containing boot templates")
-	flag.StringVar(&filesPath, "files-path", "/opt/isoboot/files", "Path to boot files directory")
 	flag.Parse()
 
 	if host == "" {
@@ -80,20 +80,13 @@ func main() {
 	bootHandler := handlers.NewBootHandler(host, port, proxyPort, ctrlClient, templatesConfigMap)
 	bootHandler.RegisterRoutes(mux)
 
-	// Static file serving for boot files (kernel, initrd, firmware, combined files)
-	// Served from: /static/{bootTarget}/{filename}
-	// Files stored at: filesPath/{bootTarget}/{filename}
-	staticHandler := http.StripPrefix("/static/", http.FileServer(http.Dir(filesPath)))
-	mux.Handle("/static/", staticHandler)
-
 	// Answer file handlers
 	answerHandler := handlers.NewAnswerHandler(host, port, proxyPort, ctrlClient)
 	answerHandler.RegisterRoutes(mux)
 
 	// Start server
-	addr := fmt.Sprintf(":%s", port)
-	log.Printf("Starting isoboot-http on %s:%s", host, port)
-	log.Printf("Files path: %s", filesPath)
+	addr := fmt.Sprintf("127.0.0.1:%s", listenPort)
+	log.Printf("Starting isoboot-http on 127.0.0.1:%s (advertised as %s:%s)", listenPort, host, port)
 	log.Printf("Templates ConfigMap: %s", templatesConfigMap)
 
 	var handler http.Handler = mux
