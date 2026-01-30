@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/isoboot/isoboot/internal/k8s"
+	"github.com/isoboot/isoboot/internal/k8s/typed"
 )
 
 // validMachineId validates systemd machine-id format (exactly 32 lowercase hex characters)
@@ -23,10 +24,13 @@ const (
 // Controller watches Provision CRDs and manages their lifecycle
 type Controller struct {
 	k8sClient                KubernetesClient
+	typedK8s                 *typed.Client
 	httpClient               HTTPDoer
 	stopCh                   chan struct{}
 	isoBasePath              string
+	filesBasePath            string
 	activeDiskImageDownloads sync.Map // tracks in-progress DiskImage downloads by name
+	activeBootMediaDownloads sync.Map // tracks in-progress BootMedia downloads by name
 }
 
 // New creates a new controller
@@ -41,6 +45,16 @@ func New(k8sClient KubernetesClient) *Controller {
 // SetISOBasePath sets the base path for ISO storage
 func (c *Controller) SetISOBasePath(path string) {
 	c.isoBasePath = path
+}
+
+// SetTypedK8s sets the typed k8s client
+func (c *Controller) SetTypedK8s(client *typed.Client) {
+	c.typedK8s = client
+}
+
+// SetFilesBasePath sets the base path for file storage
+func (c *Controller) SetFilesBasePath(path string) {
+	c.filesBasePath = path
 }
 
 // Start begins the controller reconciliation loop
