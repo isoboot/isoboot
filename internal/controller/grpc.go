@@ -7,18 +7,18 @@ import (
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
 	"github.com/isoboot/isoboot/internal/k8s/typed"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // GRPCServer implements the ControllerService gRPC interface
 type GRPCServer struct {
 	pb.UnimplementedControllerServiceServer
-	ctrl     *Controller
-	typedK8s *typed.Client
+	ctrl *Controller
 }
 
 // NewGRPCServer creates a new gRPC server
-func NewGRPCServer(ctrl *Controller, typedK8s *typed.Client) *GRPCServer {
-	return &GRPCServer{ctrl: ctrl, typedK8s: typedK8s}
+func NewGRPCServer(ctrl *Controller) *GRPCServer {
+	return &GRPCServer{ctrl: ctrl}
 }
 
 // GetMachineByMAC retrieves a Machine by MAC address
@@ -43,15 +43,15 @@ func (s *GRPCServer) GetMachineByMAC(ctx context.Context, req *pb.GetMachineByMA
 
 // GetMachine retrieves a Machine by name
 func (s *GRPCServer) GetMachine(ctx context.Context, req *pb.GetMachineRequest) (*pb.GetMachineResponse, error) {
-	machine, err := s.ctrl.k8sClient.GetMachine(ctx, req.Name)
-	if err != nil {
+	var machine typed.Machine
+	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &machine); err != nil {
 		log.Printf("gRPC: error getting machine %s: %v", req.Name, err)
 		return &pb.GetMachineResponse{Found: false}, nil
 	}
 
 	return &pb.GetMachineResponse{
 		Found: true,
-		Mac:   machine.MAC,
+		Mac:   machine.Spec.MAC,
 	}, nil
 }
 
@@ -90,8 +90,8 @@ func (s *GRPCServer) UpdateProvisionStatus(ctx context.Context, req *pb.UpdatePr
 
 // GetConfigMapValue retrieves a value from a ConfigMap by key
 func (s *GRPCServer) GetConfigMapValue(ctx context.Context, req *pb.GetConfigMapValueRequest) (*pb.GetConfigMapValueResponse, error) {
-	cm, err := s.ctrl.k8sClient.GetConfigMap(ctx, req.ConfigmapName)
-	if err != nil {
+	var cm corev1.ConfigMap
+	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.ConfigmapName), &cm); err != nil {
 		log.Printf("gRPC: error getting configmap %s: %v", req.ConfigmapName, err)
 		return &pb.GetConfigMapValueResponse{Found: false}, nil
 	}
@@ -110,7 +110,7 @@ func (s *GRPCServer) GetConfigMapValue(ctx context.Context, req *pb.GetConfigMap
 // GetBootTarget retrieves a BootTarget by name
 func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetRequest) (*pb.GetBootTargetResponse, error) {
 	var bt typed.BootTarget
-	if err := s.typedK8s.Get(ctx, s.typedK8s.Key(req.Name), &bt); err != nil {
+	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &bt); err != nil {
 		log.Printf("gRPC: error getting boottarget %s: %v", req.Name, err)
 		return &pb.GetBootTargetResponse{Found: false}, nil
 	}
@@ -126,7 +126,7 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 // GetBootMedia retrieves a BootMedia by name
 func (s *GRPCServer) GetBootMedia(ctx context.Context, req *pb.GetBootMediaRequest) (*pb.GetBootMediaResponse, error) {
 	var bm typed.BootMedia
-	if err := s.typedK8s.Get(ctx, s.typedK8s.Key(req.Name), &bm); err != nil {
+	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &bm); err != nil {
 		log.Printf("gRPC: error getting bootmedia %s: %v", req.Name, err)
 		return &pb.GetBootMediaResponse{Found: false}, nil
 	}
@@ -141,22 +141,22 @@ func (s *GRPCServer) GetBootMedia(ctx context.Context, req *pb.GetBootMediaReque
 
 // GetResponseTemplate retrieves a ResponseTemplate by name
 func (s *GRPCServer) GetResponseTemplate(ctx context.Context, req *pb.GetResponseTemplateRequest) (*pb.GetResponseTemplateResponse, error) {
-	rt, err := s.ctrl.k8sClient.GetResponseTemplate(ctx, req.Name)
-	if err != nil {
+	var rt typed.ResponseTemplate
+	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &rt); err != nil {
 		log.Printf("gRPC: error getting responsetemplate %s: %v", req.Name, err)
 		return &pb.GetResponseTemplateResponse{Found: false}, nil
 	}
 
 	return &pb.GetResponseTemplateResponse{
 		Found: true,
-		Files: rt.Files,
+		Files: rt.Spec.Files,
 	}, nil
 }
 
 // GetProvision retrieves a Provision by name
 func (s *GRPCServer) GetProvision(ctx context.Context, req *pb.GetProvisionRequest) (*pb.GetProvisionResponse, error) {
-	provision, err := s.ctrl.k8sClient.GetProvision(ctx, req.Name)
-	if err != nil {
+	var provision typed.Provision
+	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &provision); err != nil {
 		log.Printf("gRPC: error getting provision %s: %v", req.Name, err)
 		return &pb.GetProvisionResponse{Found: false}, nil
 	}
@@ -177,8 +177,8 @@ func (s *GRPCServer) GetConfigMaps(ctx context.Context, req *pb.GetConfigMapsReq
 	data := make(map[string]string)
 
 	for _, name := range req.Names {
-		cm, err := s.ctrl.k8sClient.GetConfigMap(ctx, name)
-		if err != nil {
+		var cm corev1.ConfigMap
+		if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(name), &cm); err != nil {
 			log.Printf("gRPC: error getting configmap %s: %v", name, err)
 			return &pb.GetConfigMapsResponse{Found: false, Error: "ConfigMap '" + name + "' not found"}, nil
 		}
@@ -198,8 +198,8 @@ func (s *GRPCServer) GetSecrets(ctx context.Context, req *pb.GetSecretsRequest) 
 	data := make(map[string]string)
 
 	for _, name := range req.Names {
-		secret, err := s.ctrl.k8sClient.GetSecret(ctx, name)
-		if err != nil {
+		var secret corev1.Secret
+		if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(name), &secret); err != nil {
 			log.Printf("gRPC: error getting secret %s: %v", name, err)
 			return &pb.GetSecretsResponse{Found: false, Error: "Secret '" + name + "' not found"}, nil
 		}
@@ -213,4 +213,3 @@ func (s *GRPCServer) GetSecrets(ctx context.Context, req *pb.GetSecretsRequest) 
 		Data:  data,
 	}, nil
 }
-
