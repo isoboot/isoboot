@@ -9,7 +9,7 @@ HTTP handlers for isoboot-http server.
 - `GET /boot/conditional-boot?mac=xx-xx-xx-xx-xx-xx` - Returns BootTarget template if Provision exists, 404 otherwise
 - `GET /boot/done?mac={mac}` - Marks Provision as completed (call from preseed late_command with `{{ .MAC }}`)
 
-Template variables: Host, Port, MachineName, Hostname, Domain, BootTarget, BootMedia, UseDebianFirmware, ProvisionName, KernelFilename, InitrdFilename, HasFirmware
+Template variables: Host, Port, MachineName, Hostname, Domain, BootTarget, BootMedia, UseFirmware, ProvisionName, KernelFilename, InitrdFilename, HasFirmware
 
 ### ISOHandler (iso.go)
 - `GET /iso/content/{bootTarget}/{isoFile}/{path...}` - Serves extracted ISO contents

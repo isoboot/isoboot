@@ -117,7 +117,7 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 		Found:             true,
 		Template:          bt.Template,
 		BootMediaRef:      bt.BootMediaRef,
-		UseDebianFirmware: bt.UseDebianFirmware,
+		UseFirmware: bt.UseFirmware,
 	}
 
 	// Resolve BootMedia to populate filename fields

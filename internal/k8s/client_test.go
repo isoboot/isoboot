@@ -377,13 +377,13 @@ func TestParseBootTarget(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "valid BootTarget with bootMediaRef and useDebianFirmware",
+			name: "valid BootTarget with bootMediaRef and useFirmware",
 			obj: &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"metadata": map[string]interface{}{"name": "debian-13-firmware"},
 					"spec": map[string]interface{}{
 						"bootMediaRef":      "debian-13",
-						"useDebianFirmware": true,
+						"useFirmware": true,
 						"template":          "kernel /linux\ninitrd /firmware-initrd.gz",
 					},
 				},
@@ -391,7 +391,7 @@ func TestParseBootTarget(t *testing.T) {
 			expected: &BootTarget{
 				Name:              "debian-13-firmware",
 				BootMediaRef:      "debian-13",
-				UseDebianFirmware: true,
+				UseFirmware: true,
 				Template:          "kernel /linux\ninitrd /firmware-initrd.gz",
 			},
 			expectError: false,
@@ -410,7 +410,7 @@ func TestParseBootTarget(t *testing.T) {
 			expected: &BootTarget{
 				Name:              "debian-13",
 				BootMediaRef:      "debian-13",
-				UseDebianFirmware: false,
+				UseFirmware: false,
 				Template:          "kernel /linux\ninitrd /initrd.gz",
 			},
 			expectError: false,
@@ -445,8 +445,8 @@ func TestParseBootTarget(t *testing.T) {
 			if result.BootMediaRef != tt.expected.BootMediaRef {
 				t.Errorf("BootMediaRef = %q, want %q", result.BootMediaRef, tt.expected.BootMediaRef)
 			}
-			if result.UseDebianFirmware != tt.expected.UseDebianFirmware {
-				t.Errorf("UseDebianFirmware = %v, want %v", result.UseDebianFirmware, tt.expected.UseDebianFirmware)
+			if result.UseFirmware != tt.expected.UseFirmware {
+				t.Errorf("UseFirmware = %v, want %v", result.UseFirmware, tt.expected.UseFirmware)
 			}
 			if result.Template != tt.expected.Template {
 				t.Errorf("Template = %q, want %q", result.Template, tt.expected.Template)

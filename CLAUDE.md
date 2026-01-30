@@ -71,7 +71,7 @@ Available variables in BootTarget (iPXE scripts):
 - `.Domain` - everything after first dot (e.g., "lan")
 - `.BootTarget` - BootTarget resource name
 - `.BootMedia` - BootMedia resource name (for static file paths, e.g., `/static/{{ .BootMedia }}/linux`)
-- `.UseDebianFirmware` - bool, whether to use firmware-combined initrd
+- `.UseFirmware` - bool, whether to use firmware-combined initrd
 - `.ProvisionName` - Provision resource name (use for answer file URLs)
 - `.KernelFilename` - kernel filename (e.g., "linux", "vmlinuz") resolved from BootMedia
 - `.InitrdFilename` - initrd filename (e.g., "initrd.gz") resolved from BootMedia
@@ -79,7 +79,7 @@ Available variables in BootTarget (iPXE scripts):
 
 ### CRD Architecture: BootMedia + BootTarget
 - **BootMedia** owns file downloads via named fields: `kernel`, `initrd` (direct URLs), or `iso` (ISO download + extraction with `iso.kernel`/`iso.initrd` paths). Optional `firmware` for initrd concatenation. One per OS version. Names: `debian-12`, `debian-13`.
-- **BootTarget** references a BootMedia via `bootMediaRef`. Adds `useDebianFirmware: bool` and `template`. Multiple BootTargets can share one BootMedia. Names: `debian-12`, `debian-12-firmware`, `debian-13`, `debian-13-firmware`.
+- **BootTarget** references a BootMedia via `bootMediaRef`. Adds `useFirmware: bool` and `template`. Multiple BootTargets can share one BootMedia. Names: `debian-12`, `debian-12-firmware`, `debian-13`, `debian-13-firmware`.
 - Static files served at `/static/{bootMedia}/`.
 - Provision still references `bootTargetRef`.
 

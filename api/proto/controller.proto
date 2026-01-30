@@ -99,7 +99,7 @@ message GetBootTargetResponse {
   bool found = 1;
   string template = 2;
   string boot_media_ref = 3;
-  bool use_debian_firmware = 4;
+  bool use_firmware = 4;
   string kernel_filename = 5;
   string initrd_filename = 6;
   bool has_firmware = 7;

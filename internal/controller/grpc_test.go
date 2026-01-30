@@ -220,7 +220,7 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
 		Name:              "debian-13",
 		BootMediaRef:      "debian-13",
-		UseDebianFirmware: false,
+		UseFirmware: false,
 		Template:          "#!ipxe\nkernel ...\n",
 	}
 	fake.bootMedias["debian-13"] = &k8s.BootMedia{
@@ -243,8 +243,8 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	if resp.BootMediaRef != "debian-13" {
 		t.Errorf("expected BootMediaRef debian-13, got %q", resp.BootMediaRef)
 	}
-	if resp.UseDebianFirmware {
-		t.Error("expected UseDebianFirmware=false")
+	if resp.UseFirmware {
+		t.Error("expected UseFirmware=false")
 	}
 	if resp.KernelFilename != "linux" {
 		t.Errorf("expected KernelFilename=linux, got %q", resp.KernelFilename)
@@ -262,7 +262,7 @@ func TestGRPC_GetBootTarget_WithFirmware(t *testing.T) {
 	fake.bootTargets["debian-13-firmware"] = &k8s.BootTarget{
 		Name:              "debian-13-firmware",
 		BootMediaRef:      "debian-13",
-		UseDebianFirmware: true,
+		UseFirmware: true,
 		Template:          "#!ipxe\nkernel ...\n",
 	}
 	fake.bootMedias["debian-13"] = &k8s.BootMedia{
@@ -283,8 +283,8 @@ func TestGRPC_GetBootTarget_WithFirmware(t *testing.T) {
 	if resp.BootMediaRef != "debian-13" {
 		t.Errorf("expected BootMediaRef debian-13, got %q", resp.BootMediaRef)
 	}
-	if !resp.UseDebianFirmware {
-		t.Error("expected UseDebianFirmware=true")
+	if !resp.UseFirmware {
+		t.Error("expected UseFirmware=true")
 	}
 	if !resp.HasFirmware {
 		t.Error("expected HasFirmware=true")

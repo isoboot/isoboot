@@ -266,7 +266,7 @@ func FilenameFromURL(rawURL string) (string, error) {
 type BootTarget struct {
 	Name              string
 	BootMediaRef      string
-	UseDebianFirmware bool
+	UseFirmware bool
 	Template          string
 }
 
@@ -376,7 +376,7 @@ func parseBootTarget(obj *unstructured.Unstructured) (*BootTarget, error) {
 	bt := &BootTarget{
 		Name:              obj.GetName(),
 		BootMediaRef:      getString(spec, "bootMediaRef"),
-		UseDebianFirmware: getBool(spec, "useDebianFirmware"),
+		UseFirmware: getBool(spec, "useFirmware"),
 		Template:          getString(spec, "template"),
 	}
 

@@ -141,7 +141,7 @@ func TestServeConditionalBoot_PendingProvision(t *testing.T) {
 			return &controllerclient.BootTargetInfo{
 				Template:          "#!ipxe\nkernel http://{{ .Host }}:{{ .Port }}/static/{{ .BootMedia }}/linux\nboot\n",
 				BootMediaRef:      "debian-13",
-				UseDebianFirmware: false,
+				UseFirmware: false,
 			}, nil
 		},
 		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
@@ -184,9 +184,9 @@ func TestServeConditionalBoot_BootMediaAndFirmwareRendered(t *testing.T) {
 		},
 		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
 			return &controllerclient.BootTargetInfo{
-				Template:          "#!ipxe\n{{ if .UseDebianFirmware }}firmware{{ else }}nofirmware{{ end }}\nstatic/{{ .BootMedia }}/linux\n",
+				Template:          "#!ipxe\n{{ if .UseFirmware }}firmware{{ else }}nofirmware{{ end }}\nstatic/{{ .BootMedia }}/linux\n",
 				BootMediaRef:      "debian-13",
-				UseDebianFirmware: true,
+				UseFirmware: true,
 				KernelFilename:    "linux",
 				InitrdFilename:    "initrd.gz",
 				HasFirmware:       true,
@@ -208,7 +208,7 @@ func TestServeConditionalBoot_BootMediaAndFirmwareRendered(t *testing.T) {
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, "firmware") {
-		t.Errorf("expected 'firmware' in body (UseDebianFirmware=true), got %q", body)
+		t.Errorf("expected 'firmware' in body (UseFirmware=true), got %q", body)
 	}
 	if !strings.Contains(body, "static/debian-13/linux") {
 		t.Errorf("expected 'static/debian-13/linux' in body (BootMedia=debian-13), got %q", body)

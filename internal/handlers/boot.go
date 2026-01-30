@@ -50,7 +50,7 @@ type TemplateData struct {
 	Domain            string // Everything after first dot (e.g., "lan")
 	BootTarget        string
 	BootMedia         string // BootMedia resource name (for static file paths)
-	UseDebianFirmware bool   // Whether to use firmware-combined initrd
+	UseFirmware bool   // Whether to use firmware-combined initrd
 	ProvisionName     string // Provision resource name (use for answer file URLs)
 	KernelFilename    string // e.g., "linux" or "vmlinuz"
 	InitrdFilename    string // e.g., "initrd.gz"
@@ -194,7 +194,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		Domain:            domain,
 		BootTarget:        pendingProvision.BootTargetRef,
 		BootMedia:         bootTarget.BootMediaRef,
-		UseDebianFirmware: bootTarget.UseDebianFirmware,
+		UseFirmware: bootTarget.UseFirmware,
 		ProvisionName:     pendingProvision.Name,
 		KernelFilename:    bootTarget.KernelFilename,
 		InitrdFilename:    bootTarget.InitrdFilename,
