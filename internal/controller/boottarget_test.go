@@ -165,57 +165,39 @@ ghi789  dir3/file.iso`
 	}
 }
 
-func TestLookupChecksum(t *testing.T) {
-	checksums := map[string]string{
-		"mini.iso":           "hash1",
-		"netboot/mini.iso":   "hash2",
-		"subdir/firmware.gz": "hash3",
-	}
-
+func TestChecksumKey(t *testing.T) {
 	tests := []struct {
-		name         string
-		filename     string
-		expectedHash string
-		expectedOK   bool
+		name        string
+		fileURL     string
+		checksumURL string
+		expected    string
 	}{
 		{
-			name:         "exact match",
-			filename:     "mini.iso",
-			expectedHash: "hash1",
-			expectedOK:   true,
+			name:        "same directory",
+			fileURL:     "https://cdimage.debian.org/cdimage/firmware/trixie/current/firmware.cpio.gz",
+			checksumURL: "https://cdimage.debian.org/cdimage/firmware/trixie/current/SHA256SUMS",
+			expected:    "firmware.cpio.gz",
 		},
 		{
-			name:         "path match",
-			filename:     "netboot/mini.iso",
-			expectedHash: "hash2",
-			expectedOK:   true,
+			name:        "subdirectory",
+			fileURL:     "https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux",
+			checksumURL: "https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/SHA256SUMS",
+			expected:    "netboot/debian-installer/amd64/linux",
 		},
 		{
-			name:         "basename fallback from path",
-			filename:     "subdir/mini.iso",
-			expectedHash: "hash1", // falls back to base "mini.iso"
-			expectedOK:   true,
-		},
-		{
-			name:         "basename scan of map keys",
-			filename:     "firmware.gz",
-			expectedHash: "hash3", // finds "subdir/firmware.gz" by basename scan
-			expectedOK:   true,
-		},
-		{
-			name:         "not found",
-			filename:     "other.iso",
-			expectedHash: "",
-			expectedOK:   false,
+			name:        "subdirectory initrd",
+			fileURL:     "https://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz",
+			checksumURL: "https://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/SHA256SUMS",
+			expected:    "netboot/debian-installer/amd64/initrd.gz",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hash, ok := lookupChecksum(checksums, tt.filename)
-			if hash != tt.expectedHash || ok != tt.expectedOK {
-				t.Errorf("lookupChecksum(%q) = (%q, %v), want (%q, %v)",
-					tt.filename, hash, ok, tt.expectedHash, tt.expectedOK)
+			key := checksumKey(tt.fileURL, tt.checksumURL)
+			if key != tt.expected {
+				t.Errorf("checksumKey(%q, %q) = %q, want %q",
+					tt.fileURL, tt.checksumURL, key, tt.expected)
 			}
 		})
 	}

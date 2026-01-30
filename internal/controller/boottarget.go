@@ -199,15 +199,15 @@ func (c *Controller) downloadFile(ctx context.Context, fileURL, checksumURL, des
 		sha, err := computeSHA256(destPath)
 		if err == nil {
 			if checksums != nil {
-				fname, _ := filenameFromURL(fileURL)
-				if expected, ok := lookupChecksum(checksums, fname); ok {
+				key := checksumKey(fileURL, checksumURL)
+				if expected, ok := checksums[key]; ok {
 					if strings.EqualFold(sha, expected) {
 						log.Printf("Controller: existing file %s matches checksum, skipping download", filepath.Base(destPath))
 						return sha, nil
 					}
 					log.Printf("Controller: existing file %s checksum mismatch, re-downloading", filepath.Base(destPath))
 				} else {
-					log.Printf("Controller: no checksum entry for existing file %s, re-downloading", filepath.Base(destPath))
+					log.Printf("Controller: no checksum entry for %s in %s, re-downloading", key, checksumURL)
 				}
 			} else {
 				log.Printf("Controller: existing file %s verified (no remote checksum), skipping download", filepath.Base(destPath))
@@ -256,13 +256,13 @@ func (c *Controller) downloadFile(ctx context.Context, fileURL, checksumURL, des
 
 	// Verify checksum if available
 	if checksums != nil {
-		fname, _ := filenameFromURL(fileURL)
-		if expected, ok := lookupChecksum(checksums, fname); ok {
+		key := checksumKey(fileURL, checksumURL)
+		if expected, ok := checksums[key]; ok {
 			if !strings.EqualFold(sha, expected) {
 				os.Remove(tmpPath)
 				return "", fmt.Errorf("checksum mismatch: expected %s, got %s", truncHash(expected), truncHash(sha))
 			}
-			log.Printf("Controller: checksum verified for %s", fname)
+			log.Printf("Controller: checksum verified for %s", key)
 		}
 	}
 
@@ -383,23 +383,24 @@ func parseChecksumFile(r io.Reader) map[string]string {
 	return result
 }
 
-// lookupChecksum looks up a checksum by filename.
-// Tries: exact match, basename of input, then scans map keys by basename
-// (handles SHA256SUMS with relative paths like "netboot/debian-installer/amd64/linux").
-func lookupChecksum(checksums map[string]string, filename string) (string, bool) {
-	if h, ok := checksums[filename]; ok {
-		return h, true
+// checksumKey computes the key to look up in the parsed checksums map.
+// It calculates the file's path relative to the checksum file's directory.
+// Example: checksumURL "https://host/images/SHA256SUMS" + fileURL
+// "https://host/images/netboot/amd64/linux" → "netboot/amd64/linux"
+func checksumKey(fileURL, checksumURL string) string {
+	fu, err := url.Parse(fileURL)
+	if err != nil {
+		return path.Base(fileURL)
 	}
-	basename := path.Base(filename)
-	if h, ok := checksums[basename]; ok {
-		return h, true
+	cu, err := url.Parse(checksumURL)
+	if err != nil {
+		return path.Base(fu.Path)
 	}
-	for key, h := range checksums {
-		if path.Base(key) == basename {
-			return h, true
-		}
+	checksumDir := path.Dir(cu.Path) + "/"
+	if strings.HasPrefix(fu.Path, checksumDir) {
+		return strings.TrimPrefix(fu.Path, checksumDir)
 	}
-	return "", false
+	return path.Base(fu.Path)
 }
 
 // computeSHA256 computes the SHA256 hash of a file
