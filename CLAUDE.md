@@ -26,7 +26,7 @@ internal/
 ├── controllerclient/    # gRPC client for HTTP→controller communication
 ├── handlers/            # HTTP handlers (boot, iso, answer)
 ├── iso/                 # ISO extraction utilities
-└── k8s/                 # Kubernetes client and CR types
+└── k8s/                 # Kubernetes typed client (controller-runtime) and CRD types
 
 api/
 ├── controllerpb/        # Generated protobuf code
@@ -70,7 +70,36 @@ Available variables in BootTarget (iPXE scripts):
 - `.Hostname` - first part before dot (e.g., "vm-01")
 - `.Domain` - everything after first dot (e.g., "lan")
 - `.BootTarget` - BootTarget resource name
+- `.BootMedia` - BootMedia resource name (for static file paths, e.g., `/static/{{ .BootMedia }}/linux`)
+- `.UseFirmware` - bool, whether to use firmware-combined initrd
 - `.ProvisionName` - Provision resource name (use for answer file URLs)
+- `.KernelFilename` - kernel filename (e.g., "linux", "vmlinuz") resolved from BootMedia
+- `.InitrdFilename` - initrd filename (e.g., "initrd.gz") resolved from BootMedia
+- `.HasFirmware` - bool, whether BootMedia has firmware defined
+
+### CRD Architecture: BootMedia + BootTarget
+- **BootMedia** owns file downloads via named fields: `kernel`, `initrd` (direct URLs), or `iso` (ISO download + extraction with `iso.kernel`/`iso.initrd` paths). Optional `firmware` for initrd concatenation. One per OS version. Names: `debian-12`, `debian-13`.
+- **BootTarget** references a BootMedia via `bootMediaRef`. Adds `useFirmware: bool` and `template`. Multiple BootTargets can share one BootMedia. Names: `debian-12`, `debian-12-firmware`, `debian-13`, `debian-13-firmware`.
+- Static files served at `/static/{bootMedia}/`.
+- Provision still references `bootTargetRef`.
+
+### BootMedia Directory Structure
+Without firmware (flat layout):
+```
+debian-12/
+  linux           ← kernel
+  initrd.gz       ← initrd
+```
+
+With firmware (subdirectory layout):
+```
+debian-12/
+  linux                    ← kernel (always top-level)
+  no-firmware/
+    initrd.gz              ← original initrd
+  with-firmware/
+    initrd.gz              ← initrd + firmware.cpio.gz concatenated
+```
 
 ### Error Handling in HTTP Handlers
 - Return 502 Bad Gateway for gRPC/transport errors
@@ -95,7 +124,26 @@ protoc --go_out=. --go-grpc_out=. api/proto/controller.proto
 
 - Unit tests alongside code: `foo_test.go`
 - Use `httptest.NewRecorder()` for HTTP handler tests
-- Mock external dependencies (k8s client, gRPC client)
+- Use controller-runtime fake client (`sigs.k8s.io/controller-runtime/pkg/client/fake`) for k8s tests
+- Mock gRPC client for HTTP handler tests
+
+## PR Reviews
+
+### Re-requesting Copilot review (without a new push)
+```bash
+gh api repos/isoboot/isoboot/pulls/{PR}/requested_reviewers \
+  -X POST -f'reviewers[]=copilot-pull-request-reviewer[bot]'
+```
+The `[bot]` suffix is required — without it the API returns 422.
+
+### Resolving review threads
+```bash
+gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "THREAD_ID"}) { thread { isResolved } } }'
+```
+Thread IDs look like `PRRT_kwDOQ_1gNM5r...` and can be found via:
+```bash
+gh api graphql -f query='query { repository(owner: "isoboot", name: "isoboot") { pullRequest(number: PR) { reviewThreads(first: 50) { nodes { id isResolved comments(first: 1) { nodes { body } } } } } } }'
+```
 
 ## Before Committing
 
