@@ -273,7 +273,7 @@ func (c *Controller) downloadFile(ctx context.Context, fileURL, checksumURL, des
 
 	// Write to temp file while computing hash
 	tmpPath := destPath + ".tmp"
-	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
