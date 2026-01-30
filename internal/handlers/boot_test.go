@@ -376,6 +376,38 @@ func TestServeConditionalBoot_EmptyStatusTreatedAsPending(t *testing.T) {
 	}
 }
 
+func TestServeConditionalBoot_BootMediaNotFound(t *testing.T) {
+	mock := &mockBootClient{
+		getMachineByMAC: func(ctx context.Context, mac string) (string, error) {
+			return "vm-01.lan", nil
+		},
+		getProvisionsByMachine: func(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error) {
+			return []controllerclient.ProvisionSummary{
+				{Name: "prov-1", Status: "Pending", BootTargetRef: "debian-13"},
+			}, nil
+		},
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return &controllerclient.BootTargetInfo{
+				BootMediaRef: "missing-media",
+				Template:     "#!ipxe\nboot\n",
+			}, nil
+		},
+		getBootMedia: func(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error) {
+			return nil, fmt.Errorf("not found")
+		},
+	}
+
+	h := NewBootHandler("10.0.0.1", "3128", mock, "cm")
+	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeConditionalBoot(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", w.Code)
+	}
+}
+
 func TestServeBootDone_NoMAC(t *testing.T) {
 	h := NewBootHandler("10.0.0.1", "3128", &mockBootClient{}, "cm")
 	req := httptest.NewRequest("GET", "/boot/done", nil)
