@@ -170,10 +170,10 @@ func (bm *BootMedia) Validate() error {
 	// Direct mode: both kernel and initrd required
 	if hasDirect {
 		if bm.Spec.Kernel == nil {
-			return fmt.Errorf("kernel requires initrd")
+			return fmt.Errorf("initrd requires kernel")
 		}
 		if bm.Spec.Initrd == nil {
-			return fmt.Errorf("initrd requires kernel")
+			return fmt.Errorf("kernel requires initrd")
 		}
 		if bm.Spec.Kernel.URL == "" {
 			return fmt.Errorf("kernel.url is required")

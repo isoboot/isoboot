@@ -146,14 +146,14 @@ func TestBootMedia_Validate(t *testing.T) {
 			bm: &BootMedia{Spec: BootMediaSpec{
 				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
 			}},
-			expectErr: "initrd requires kernel",
+			expectErr: "kernel requires initrd",
 		},
 		{
 			name: "initrd only",
 			bm: &BootMedia{Spec: BootMediaSpec{
 				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 			}},
-			expectErr: "kernel requires initrd",
+			expectErr: "initrd requires kernel",
 		},
 		{
 			name: "duplicate basenames",
