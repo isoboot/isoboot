@@ -41,25 +41,26 @@ func NewBootHandler(host, proxyPort string, ctrlClient BootClient, configMap str
 
 // TemplateData is passed to boot templates
 type TemplateData struct {
-	Host           string
-	Port           string
-	ProxyPort      string // Squid proxy port for mirror/http/proxy
-	MachineName    string // Full machine name (e.g., "vm-deb-0099.lan")
-	Hostname       string // First part before dot (e.g., "vm-deb-0099")
-	Domain         string // Everything after first dot (e.g., "lan")
-	BootTarget     string
-	ProvisionName  string // Provision resource name (use for answer file URLs)
-	BootMedia      string // BootMedia resource name (for static file paths)
-	UseFirmware    bool   // Whether to use firmware-combined initrd
-	KernelFilename string // Kernel filename (e.g., "linux" or "vmlinuz")
-	InitrdFilename string // Initrd filename (e.g., "initrd.gz")
-	HasFirmware    bool   // Whether BootMedia has firmware
+	Host              string
+	Port              string
+	ProxyPort         string // Squid proxy port for mirror/http/proxy
+	MachineName       string // Full machine name (e.g., "vm-deb-0099.lan")
+	Hostname          string // First part before dot (e.g., "vm-deb-0099")
+	Domain            string // Everything after first dot (e.g., "lan")
+	BootTarget        string
+	BootMedia         string // BootMedia resource name (for static file paths)
+	UseFirmware bool   // Whether to use firmware-combined initrd
+	ProvisionName     string // Provision resource name (use for answer file URLs)
+	KernelFilename    string // e.g., "linux" or "vmlinuz"
+	InitrdFilename    string // e.g., "initrd.gz"
+	HasFirmware       bool   // Whether BootMedia has firmware
 }
 
-// portFromRequest extracts the port from the request, checking X-Forwarded-Port first.
+// portFromRequest returns the X-Forwarded-Port header if present,
+// otherwise extracts the port from the Host header.
 func portFromRequest(r *http.Request) string {
-	if p := r.Header.Get("X-Forwarded-Port"); p != "" {
-		return p
+	if fwd := r.Header.Get("X-Forwarded-Port"); fwd != "" {
+		return fwd
 	}
 	_, port, err := net.SplitHostPort(r.Host)
 	if err == nil && port != "" {
@@ -77,6 +78,14 @@ func splitHostDomain(name string) (hostname, domain string) {
 		return name[:idx], name[idx+1:]
 	}
 	return name, ""
+}
+
+func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.Template, error) {
+	value, err := h.ctrlClient.GetConfigMapValue(ctx, h.configMap, name)
+	if err != nil {
+		return nil, err
+	}
+	return template.New(name).Parse(value)
 }
 
 // ServeConditionalBoot checks Provision CRDs and returns appropriate boot script
@@ -148,17 +157,13 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// 5. Get BootMedia info
-	var bootMediaInfo *controllerclient.BootMediaInfo
-	if bootTarget.BootMediaRef != "" {
-		var err error
-		bootMediaInfo, err = h.ctrlClient.GetBootMedia(ctx, bootTarget.BootMediaRef)
-		if err != nil {
-			log.Printf("Error loading BootMedia %s for BootTarget %s: %v", bootTarget.BootMediaRef, pendingProvision.BootTargetRef, err)
-			w.Header().Set("Content-Length", "0")
-			w.WriteHeader(http.StatusBadGateway)
-			return
-		}
+	// 5. Get BootMedia
+	bootMedia, err := h.ctrlClient.GetBootMedia(ctx, bootTarget.BootMediaRef)
+	if err != nil {
+		log.Printf("Error loading BootMedia %s: %v", bootTarget.BootMediaRef, err)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusBadGateway)
+		return
 	}
 
 	// 6. Parse and render template
@@ -172,21 +177,19 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 
 	hostname, domain := splitHostDomain(machineName)
 	data := TemplateData{
-		Host:          h.host,
-		Port:          portFromRequest(r),
-		ProxyPort:     h.proxyPort,
-		MachineName:   machineName,
-		Hostname:      hostname,
-		Domain:        domain,
-		BootTarget:    pendingProvision.BootTargetRef,
-		ProvisionName: pendingProvision.Name,
-		BootMedia:     bootTarget.BootMediaRef,
-		UseFirmware:   bootTarget.UseFirmware,
-	}
-	if bootMediaInfo != nil {
-		data.KernelFilename = bootMediaInfo.KernelFilename
-		data.InitrdFilename = bootMediaInfo.InitrdFilename
-		data.HasFirmware = bootMediaInfo.HasFirmware
+		Host:           h.host,
+		Port:           portFromRequest(r),
+		ProxyPort:      h.proxyPort,
+		MachineName:    machineName,
+		Hostname:       hostname,
+		Domain:         domain,
+		BootTarget:     pendingProvision.BootTargetRef,
+		BootMedia:      bootTarget.BootMediaRef,
+		UseFirmware:    bootTarget.UseFirmware,
+		ProvisionName:  pendingProvision.Name,
+		KernelFilename: bootMedia.KernelFilename,
+		InitrdFilename: bootMedia.InitrdFilename,
+		HasFirmware:    bootMedia.HasFirmware,
 	}
 
 	var buf bytes.Buffer
@@ -201,7 +204,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	w.Write(buf.Bytes())
 
-	// 6. Mark provision as InProgress
+	// 7. Mark provision as InProgress
 	if err := h.ctrlClient.UpdateProvisionStatus(ctx, pendingProvision.Name, "InProgress", "Boot script served", ""); err != nil {
 		log.Printf("Warning: failed to mark boot started for %s: %v", pendingProvision.Name, err)
 	}
