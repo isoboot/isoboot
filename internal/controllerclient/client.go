@@ -135,11 +135,9 @@ func (c *Client) GetConfigMapValue(ctx context.Context, configMapName, key strin
 
 // BootTargetInfo returned by GetBootTarget
 type BootTargetInfo struct {
-	DiskImage           string // deprecated: use BootMediaRef
-	IncludeFirmwarePath string // deprecated: use UseFirmware
-	Template            string
-	BootMediaRef        string
-	UseFirmware         bool
+	Template     string
+	BootMediaRef string
+	UseFirmware  bool
 }
 
 // GetBootTarget retrieves a BootTarget by name
@@ -154,32 +152,9 @@ func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInf
 	}
 
 	return &BootTargetInfo{
-		DiskImage:           resp.DiskImage,
-		IncludeFirmwarePath: resp.IncludeFirmwarePath,
-		Template:            resp.Template,
-		BootMediaRef:        resp.BootMediaRef,
-		UseFirmware:         resp.UseFirmware,
-	}, nil
-}
-
-// DiskImageInfo returned by GetDiskImage
-type DiskImageInfo struct {
-	ISOFilename string
-}
-
-// GetDiskImage retrieves a DiskImage by name
-func (c *Client) GetDiskImage(ctx context.Context, name string) (*DiskImageInfo, error) {
-	resp, err := c.client.GetDiskImage(ctx, &pb.GetDiskImageRequest{Name: name})
-	if err != nil {
-		return nil, fmt.Errorf("grpc call: %w", err)
-	}
-
-	if !resp.Found {
-		return nil, fmt.Errorf("diskimage %s: %w", name, ErrNotFound)
-	}
-
-	return &DiskImageInfo{
-		ISOFilename: resp.IsoFilename,
+		Template:     resp.Template,
+		BootMediaRef: resp.BootMediaRef,
+		UseFirmware:  resp.UseFirmware,
 	}, nil
 }
 
