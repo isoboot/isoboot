@@ -116,12 +116,12 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 		return
 	}
 
-	// Check if BootMedia is ready
-	bootMediaReady, bootMediaMsg := c.checkBootMediaReady(ctx, provision)
-	if !bootMediaReady {
-		if provision.Status.Phase != "WaitingForBootMedia" || provision.Status.Message != bootMediaMsg {
-			log.Printf("Controller: %s waiting for BootMedia: %s", provision.Name, bootMediaMsg)
-			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "WaitingForBootMedia", bootMediaMsg, ""); err != nil {
+	// Check if BootTarget is ready
+	bootTargetReady, bootTargetMsg := c.checkBootTargetReady(ctx, provision)
+	if !bootTargetReady {
+		if provision.Status.Phase != "WaitingForBootMedia" || provision.Status.Message != bootTargetMsg {
+			log.Printf("Controller: %s waiting for BootTarget: %s", provision.Name, bootTargetMsg)
+			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "WaitingForBootMedia", bootTargetMsg, ""); err != nil {
 				log.Printf("Controller: failed to set WaitingForBootMedia for %s: %v", provision.Name, err)
 			}
 		}
@@ -158,15 +158,13 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 	}
 }
 
-// checkBootMediaReady checks if the BootMedia for this Provision's BootTarget is ready
-func (c *Controller) checkBootMediaReady(ctx context.Context, provision *k8s.Provision) (bool, string) {
-	// Get BootTarget to find BootMedia reference
+// checkBootTargetReady checks if the BootMedia for this Provision's BootTarget is ready
+func (c *Controller) checkBootTargetReady(ctx context.Context, provision *k8s.Provision) (bool, string) {
 	var bootTarget typed.BootTarget
 	if err := c.typedK8s.Get(ctx, c.typedK8s.Key(provision.Spec.BootTargetRef), &bootTarget); err != nil {
 		return false, fmt.Sprintf("BootTarget '%s' not found", provision.Spec.BootTargetRef)
 	}
 
-	// Get BootMedia
 	var bootMedia typed.BootMedia
 	if err := c.typedK8s.Get(ctx, c.typedK8s.Key(bootTarget.Spec.BootMediaRef), &bootMedia); err != nil {
 		return false, fmt.Sprintf("BootMedia '%s' not found (referenced by BootTarget '%s')", bootTarget.Spec.BootMediaRef, bootTarget.Name)
