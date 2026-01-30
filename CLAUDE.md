@@ -26,7 +26,7 @@ internal/
 ├── controllerclient/    # gRPC client for HTTP→controller communication
 ├── handlers/            # HTTP handlers (boot, iso, answer)
 ├── iso/                 # ISO extraction utilities
-└── k8s/                 # Kubernetes client and CR types
+└── k8s/                 # Kubernetes typed client (controller-runtime) and CRD types
 
 api/
 ├── controllerpb/        # Generated protobuf code
@@ -124,7 +124,8 @@ protoc --go_out=. --go-grpc_out=. api/proto/controller.proto
 
 - Unit tests alongside code: `foo_test.go`
 - Use `httptest.NewRecorder()` for HTTP handler tests
-- Mock external dependencies (k8s client, gRPC client)
+- Use controller-runtime fake client (`sigs.k8s.io/controller-runtime/pkg/client/fake`) for k8s tests
+- Mock gRPC client for HTTP handler tests
 
 ## PR Reviews
 

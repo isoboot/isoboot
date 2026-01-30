@@ -18,6 +18,7 @@ import (
 
 	"github.com/isoboot/isoboot/internal/iso"
 	"github.com/isoboot/isoboot/internal/k8s"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // downloadRequestTimeout is the timeout for the entire download operation.
@@ -28,14 +29,14 @@ const checksumDiscoveryTimeout = 30 * time.Second
 
 // reconcileBootMedias reconciles all BootMedia resources
 func (c *Controller) reconcileBootMedias(ctx context.Context) {
-	bootMedias, err := c.k8sClient.ListBootMedias(ctx)
-	if err != nil {
+	var bmList k8s.BootMediaList
+	if err := c.k8sClient.List(ctx, &bmList, client.InNamespace(c.k8sClient.Namespace())); err != nil {
 		log.Printf("Controller: failed to list bootmedias: %v", err)
 		return
 	}
 
-	for _, bm := range bootMedias {
-		c.reconcileBootMedia(ctx, bm)
+	for i := range bmList.Items {
+		c.reconcileBootMedia(ctx, &bmList.Items[i])
 	}
 }
 
@@ -96,7 +97,7 @@ func (c *Controller) downloadBootMedia(parentCtx context.Context, bm *k8s.BootMe
 	}
 
 	// Dispatch to the appropriate download flow
-	if bm.ISO != nil {
+	if bm.Spec.ISO != nil {
 		c.downloadBootMediaISO(parentCtx, bm, status, bmDir, hasFirmware)
 	} else {
 		c.downloadBootMediaDirect(parentCtx, bm, status, bmDir, hasFirmware)
@@ -110,22 +111,22 @@ func initDownloadStatus(bm *k8s.BootMedia) *k8s.BootMediaStatus {
 		Message: "Starting downloads",
 	}
 
-	if bm.Kernel != nil {
-		name, _ := k8s.FilenameFromURL(bm.Kernel.URL)
+	if bm.Spec.Kernel != nil {
+		name, _ := k8s.FilenameFromURL(bm.Spec.Kernel.URL)
 		status.Kernel = &k8s.FileStatus{Name: name, Phase: "Pending"}
 	}
-	if bm.Initrd != nil {
-		name, _ := k8s.FilenameFromURL(bm.Initrd.URL)
+	if bm.Spec.Initrd != nil {
+		name, _ := k8s.FilenameFromURL(bm.Spec.Initrd.URL)
 		status.Initrd = &k8s.FileStatus{Name: name, Phase: "Pending"}
 	}
-	if bm.ISO != nil {
-		name, _ := k8s.FilenameFromURL(bm.ISO.URL)
+	if bm.Spec.ISO != nil {
+		name, _ := k8s.FilenameFromURL(bm.Spec.ISO.URL)
 		status.ISO = &k8s.FileStatus{Name: name, Phase: "Pending"}
-		status.Kernel = &k8s.FileStatus{Name: path.Base(bm.ISO.Kernel), Phase: "Pending"}
-		status.Initrd = &k8s.FileStatus{Name: path.Base(bm.ISO.Initrd), Phase: "Pending"}
+		status.Kernel = &k8s.FileStatus{Name: path.Base(bm.Spec.ISO.Kernel), Phase: "Pending"}
+		status.Initrd = &k8s.FileStatus{Name: path.Base(bm.Spec.ISO.Initrd), Phase: "Pending"}
 	}
-	if bm.Firmware != nil {
-		name, _ := k8s.FilenameFromURL(bm.Firmware.URL)
+	if bm.Spec.Firmware != nil {
+		name, _ := k8s.FilenameFromURL(bm.Spec.Firmware.URL)
 		status.Firmware = &k8s.FileStatus{Name: name, Phase: "Pending"}
 		status.FirmwareInitrd = &k8s.FileStatus{Name: bm.InitrdFilename(), Phase: "Pending"}
 	}
@@ -147,7 +148,7 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *k8s.
 	}
 
 	dlCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
-	sha, err := c.downloadFile(dlCtx, bm.Kernel.URL, bm.Kernel.ChecksumURL, kernelDest)
+	sha, err := c.downloadFile(dlCtx, bm.Spec.Kernel.URL, bm.Spec.Kernel.ChecksumURL, kernelDest)
 	cancel()
 	if err != nil {
 		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Kernel, fmt.Sprintf("Failed to download kernel: %v", err))
@@ -171,7 +172,7 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *k8s.
 	}
 
 	dlCtx, cancel = context.WithTimeout(parentCtx, downloadRequestTimeout)
-	sha, err = c.downloadFile(dlCtx, bm.Initrd.URL, bm.Initrd.ChecksumURL, initrdDest)
+	sha, err = c.downloadFile(dlCtx, bm.Spec.Initrd.URL, bm.Spec.Initrd.ChecksumURL, initrdDest)
 	cancel()
 	if err != nil {
 		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Initrd, fmt.Sprintf("Failed to download initrd: %v", err))
@@ -213,7 +214,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 	}
 	defer os.RemoveAll(tmpDir)
 
-	isoFilename, _ := k8s.FilenameFromURL(bm.ISO.URL)
+	isoFilename, _ := k8s.FilenameFromURL(bm.Spec.ISO.URL)
 	isoDest := filepath.Join(tmpDir, isoFilename)
 
 	status.ISO.Phase = "Downloading"
@@ -222,7 +223,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 	}
 
 	dlCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
-	sha, err := c.downloadFile(dlCtx, bm.ISO.URL, bm.ISO.ChecksumURL, isoDest)
+	sha, err := c.downloadFile(dlCtx, bm.Spec.ISO.URL, bm.Spec.ISO.ChecksumURL, isoDest)
 	cancel()
 	if err != nil {
 		c.failBootMediaStatus(statusCtx, bm.Name, status, status.ISO, fmt.Sprintf("Failed to download ISO: %v", err))
@@ -245,13 +246,13 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
-	kernelData, err := isoReader.ReadFile(bm.ISO.Kernel)
+	kernelData, err := isoReader.ReadFile(bm.Spec.ISO.Kernel)
 	if err != nil {
 		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Kernel, fmt.Sprintf("Failed to extract kernel from ISO: %v", err))
 		return
 	}
 
-	kernelFilename := path.Base(bm.ISO.Kernel)
+	kernelFilename := path.Base(bm.Spec.ISO.Kernel)
 	kernelDest := filepath.Join(bmDir, kernelFilename)
 	sha, err = writeFileAtomic(kernelDest, kernelData)
 	if err != nil {
@@ -267,13 +268,13 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
-	initrdData, err := isoReader.ReadFile(bm.ISO.Initrd)
+	initrdData, err := isoReader.ReadFile(bm.Spec.ISO.Initrd)
 	if err != nil {
 		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Initrd, fmt.Sprintf("Failed to extract initrd from ISO: %v", err))
 		return
 	}
 
-	initrdFilename := path.Base(bm.ISO.Initrd)
+	initrdFilename := path.Base(bm.Spec.ISO.Initrd)
 	var initrdDest string
 	if hasFirmware {
 		initrdDest = filepath.Join(bmDir, "no-firmware", initrdFilename)
@@ -321,7 +322,7 @@ func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, b
 	}
 	defer os.RemoveAll(tmpDir)
 
-	fwFilename, _ := k8s.FilenameFromURL(bm.Firmware.URL)
+	fwFilename, _ := k8s.FilenameFromURL(bm.Spec.Firmware.URL)
 	fwDest := filepath.Join(tmpDir, fwFilename)
 
 	status.Firmware.Phase = "Downloading"
@@ -330,7 +331,7 @@ func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, b
 	}
 
 	dlCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
-	sha, err := c.downloadFile(dlCtx, bm.Firmware.URL, bm.Firmware.ChecksumURL, fwDest)
+	sha, err := c.downloadFile(dlCtx, bm.Spec.Firmware.URL, bm.Spec.Firmware.ChecksumURL, fwDest)
 	cancel()
 	if err != nil {
 		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Firmware, fmt.Sprintf("Failed to download firmware: %v", err))

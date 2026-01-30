@@ -42,6 +42,12 @@ Derives public keys from private SSH host keys in secrets:
 - Supports RSA, ECDSA, Ed25519 key types
 - Auto-generates `.ssh_host_*_key_pub` template variables
 
+## Testing
+
+Tests use controller-runtime's fake client (`sigs.k8s.io/controller-runtime/pkg/client/fake`) with
+`WithStatusSubresource(&k8s.Provision{}, &k8s.BootMedia{})` for proper status subresource testing.
+See `testhelpers_test.go` for shared test setup (`newTestK8sClient`, `newConfigMap`, `newSecret`).
+
 ## Validation
 
 ### machineId Format

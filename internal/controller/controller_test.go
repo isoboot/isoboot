@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/isoboot/isoboot/internal/k8s"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // TestCheckBootMediaStatus tests the BootMedia status checking logic
@@ -20,10 +21,8 @@ func TestCheckBootMediaStatus(t *testing.T) {
 		{
 			name: "Complete BootMedia is ready",
 			bootMedia: &k8s.BootMedia{
-				Name: "debian-13",
-				Status: k8s.BootMediaStatus{
-					Phase: "Complete",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "debian-13"},
+				Status:     k8s.BootMediaStatus{Phase: "Complete"},
 			},
 			expectReady:   true,
 			expectMsgPart: "",
@@ -31,11 +30,8 @@ func TestCheckBootMediaStatus(t *testing.T) {
 		{
 			name: "Failed BootMedia returns error message",
 			bootMedia: &k8s.BootMedia{
-				Name: "failed-media",
-				Status: k8s.BootMediaStatus{
-					Phase:   "Failed",
-					Message: "HTTP 404",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "failed-media"},
+				Status:     k8s.BootMediaStatus{Phase: "Failed", Message: "HTTP 404"},
 			},
 			expectReady:   false,
 			expectMsgPart: "failed: HTTP 404",
@@ -43,10 +39,8 @@ func TestCheckBootMediaStatus(t *testing.T) {
 		{
 			name: "Downloading BootMedia",
 			bootMedia: &k8s.BootMedia{
-				Name: "downloading-media",
-				Status: k8s.BootMediaStatus{
-					Phase: "Downloading",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "downloading-media"},
+				Status:     k8s.BootMediaStatus{Phase: "Downloading"},
 			},
 			expectReady:   false,
 			expectMsgPart: "downloading",
@@ -54,10 +48,8 @@ func TestCheckBootMediaStatus(t *testing.T) {
 		{
 			name: "Pending BootMedia",
 			bootMedia: &k8s.BootMedia{
-				Name: "pending-media",
-				Status: k8s.BootMediaStatus{
-					Phase: "Pending",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "pending-media"},
+				Status:     k8s.BootMediaStatus{Phase: "Pending"},
 			},
 			expectReady:   false,
 			expectMsgPart: "pending",
@@ -65,8 +57,8 @@ func TestCheckBootMediaStatus(t *testing.T) {
 		{
 			name: "Empty phase treated as pending",
 			bootMedia: &k8s.BootMedia{
-				Name:   "new-media",
-				Status: k8s.BootMediaStatus{},
+				ObjectMeta: metav1.ObjectMeta{Name: "new-media"},
+				Status:     k8s.BootMediaStatus{},
 			},
 			expectReady:   false,
 			expectMsgPart: "pending",
@@ -114,120 +106,143 @@ func TestValidMachineId(t *testing.T) {
 }
 
 func TestReconcileProvision_InitializePending(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
 		},
-		Status: k8s.ProvisionStatus{Phase: ""},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-		Template:     "#!ipxe\n",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Complete"},
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13", Template: "#!ipxe\n"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, ok := fake.getProvisionStatus("prov-1")
-	if !ok {
-		t.Fatal("expected provision status to be set")
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
 	}
-	if s.Phase != "Pending" {
-		t.Errorf("expected phase Pending, got %q", s.Phase)
+	if updated.Status.Phase != "Pending" {
+		t.Errorf("expected phase Pending, got %q", updated.Status.Phase)
 	}
 }
 
 func TestReconcileProvision_ConfigError_MissingMachine(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "missing-machine",
 			BootTargetRef: "debian-13",
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
+	k := newTestK8sClient(provision)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, ok := fake.getProvisionStatus("prov-1")
-	if !ok {
-		t.Fatal("expected provision status to be set")
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
 	}
-	if s.Phase != "ConfigError" {
-		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	if updated.Status.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", updated.Status.Phase)
 	}
-	if !strings.Contains(s.Message, "Machine") {
-		t.Errorf("expected message about Machine, got %q", s.Message)
+	if !strings.Contains(updated.Status.Message, "Machine") {
+		t.Errorf("expected message about Machine, got %q", updated.Status.Message)
 	}
 }
 
 func TestReconcileProvision_ConfigError_MissingBootTarget(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "missing-bt",
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "ConfigError" {
-		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
 	}
-	if !strings.Contains(s.Message, "BootTarget") {
-		t.Errorf("expected message about BootTarget, got %q", s.Message)
+	if updated.Status.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", updated.Status.Phase)
+	}
+	if !strings.Contains(updated.Status.Message, "BootTarget") {
+		t.Errorf("expected message about BootTarget, got %q", updated.Status.Message)
 	}
 }
 
 func TestReconcileProvision_ConfigError_MissingBootMedia(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "missing-bm",
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "missing-bm"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "ConfigError" {
-		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
 	}
-	if !strings.Contains(s.Message, "BootMedia") {
-		t.Errorf("expected message about BootMedia, got %q", s.Message)
+	if updated.Status.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", updated.Status.Phase)
+	}
+	if !strings.Contains(updated.Status.Message, "BootMedia") {
+		t.Errorf("expected message about BootMedia, got %q", updated.Status.Message)
 	}
 }
 
 func TestReconcileProvision_ConfigError_InvalidMachineId(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
@@ -235,32 +250,41 @@ func TestReconcileProvision_ConfigError_InvalidMachineId(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Complete"},
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "ConfigError" {
-		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
 	}
-	if !strings.Contains(s.Message, "machineId") {
-		t.Errorf("expected message about machineId, got %q", s.Message)
+	if updated.Status.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", updated.Status.Phase)
+	}
+	if !strings.Contains(updated.Status.Message, "machineId") {
+		t.Errorf("expected message about machineId, got %q", updated.Status.Message)
 	}
 }
 
 func TestReconcileProvision_ConfigError_MissingConfigMap(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
@@ -268,32 +292,41 @@ func TestReconcileProvision_ConfigError_MissingConfigMap(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Complete"},
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "ConfigError" {
-		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
 	}
-	if !strings.Contains(s.Message, "ConfigMap") {
-		t.Errorf("expected message about ConfigMap, got %q", s.Message)
+	if updated.Status.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", updated.Status.Phase)
+	}
+	if !strings.Contains(updated.Status.Message, "ConfigMap") {
+		t.Errorf("expected message about ConfigMap, got %q", updated.Status.Message)
 	}
 }
 
 func TestReconcileProvision_ConfigError_MissingSecret(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
@@ -301,200 +334,264 @@ func TestReconcileProvision_ConfigError_MissingSecret(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Complete"},
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "ConfigError" {
-		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
 	}
-	if !strings.Contains(s.Message, "Secret") {
-		t.Errorf("expected message about Secret, got %q", s.Message)
+	if updated.Status.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", updated.Status.Phase)
+	}
+	if !strings.Contains(updated.Status.Message, "Secret") {
+		t.Errorf("expected message about Secret, got %q", updated.Status.Message)
 	}
 }
 
 func TestReconcileProvision_WaitingForBootMedia(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Downloading"},
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Downloading"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "WaitingForBootMedia" {
-		t.Errorf("expected phase WaitingForBootMedia, got %q", s.Phase)
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
+	}
+	if updated.Status.Phase != "WaitingForBootMedia" {
+		t.Errorf("expected phase WaitingForBootMedia, got %q", updated.Status.Phase)
 	}
 }
 
 func TestReconcileProvision_ConfigErrorRecovery(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
 		},
 		Status: k8s.ProvisionStatus{Phase: "ConfigError", Message: "old error"},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Complete"},
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "Pending" {
-		t.Errorf("expected recovery to Pending, got %q", s.Phase)
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
+	}
+	if updated.Status.Phase != "Pending" {
+		t.Errorf("expected recovery to Pending, got %q", updated.Status.Phase)
 	}
 }
 
 func TestReconcileProvision_TimeoutInProgress(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
 		},
 		Status: k8s.ProvisionStatus{
 			Phase:       "InProgress",
-			LastUpdated: time.Now().Add(-31 * time.Minute),
+			LastUpdated: metav1.NewTime(time.Now().Add(-31 * time.Minute)),
 		},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Complete"},
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "Failed" {
-		t.Errorf("expected phase Failed (timeout), got %q", s.Phase)
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
 	}
-	if !strings.Contains(s.Message, "Timed out") {
-		t.Errorf("expected timeout message, got %q", s.Message)
+	if updated.Status.Phase != "Failed" {
+		t.Errorf("expected phase Failed (timeout), got %q", updated.Status.Phase)
+	}
+	if !strings.Contains(updated.Status.Message, "Timed out") {
+		t.Errorf("expected timeout message, got %q", updated.Status.Message)
 	}
 }
 
 func TestReconcileProvision_InProgressNotTimedOut(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
 		},
 		Status: k8s.ProvisionStatus{
 			Phase:       "InProgress",
-			LastUpdated: time.Now().Add(-5 * time.Minute),
+			LastUpdated: metav1.NewTime(time.Now().Add(-5 * time.Minute)),
 		},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Complete"},
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
 	// Should NOT have updated the status (still within timeout)
-	if _, ok := fake.getProvisionStatus("prov-1"); ok {
-		t.Error("expected no status update for non-timed-out InProgress provision")
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
+	}
+	if updated.Status.Phase != "InProgress" {
+		t.Errorf("expected phase to remain InProgress, got %q", updated.Status.Phase)
 	}
 }
 
 func TestReconcileProvision_CompleteIsNoop(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
+	ctx := context.Background()
+	provision := &k8s.Provision{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:    "vm-01",
 			BootTargetRef: "debian-13",
 		},
 		Status: k8s.ProvisionStatus{Phase: "Complete"},
 	}
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Complete"},
-	}
+	k := newTestK8sClient(
+		provision,
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 
-	ctrl := New(fake)
-	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+	ctrl := New(k)
+	ctrl.reconcileProvision(ctx, provision)
 
-	// Complete provisions should not trigger any status update
-	if _, ok := fake.getProvisionStatus("prov-1"); ok {
-		t.Error("expected no status update for Complete provision")
+	// Complete provisions should not trigger any status change
+	var updated k8s.Provision
+	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
+	}
+	if updated.Status.Phase != "Complete" {
+		t.Errorf("expected phase to remain Complete, got %q", updated.Status.Phase)
 	}
 }
 
 func TestValidateProvisionRefs_AllValid(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "debian-13",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Status: k8s.BootMediaStatus{Phase: "Complete"},
-	}
-	fake.responseTemplates["preseed"] = &k8s.ResponseTemplate{Name: "preseed", Files: map[string]string{"preseed.cfg": "content"}}
-	fake.configMaps["net-cfg"] = newConfigMap("net-cfg", map[string]string{"gateway": "10.0.0.1"})
-	fake.secrets["ssh-keys"] = newSecret("ssh-keys", map[string][]byte{"key": []byte("data")})
+	ctx := context.Background()
+	k := newTestK8sClient(
+		&k8s.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+		&k8s.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-13"},
+		},
+		&k8s.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+		},
+		&k8s.ResponseTemplate{
+			ObjectMeta: metav1.ObjectMeta{Name: "preseed", Namespace: "default"},
+			Spec:       k8s.ResponseTemplateSpec{Files: map[string]string{"preseed.cfg": "content"}},
+		},
+		newConfigMap("net-cfg", map[string]string{"gateway": "10.0.0.1"}),
+		newSecret("ssh-keys", map[string][]byte{"key": []byte("data")}),
+	)
 
-	ctrl := New(fake)
+	ctrl := New(k)
 	provision := &k8s.Provision{
-		Name: "prov-1",
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
 		Spec: k8s.ProvisionSpec{
 			MachineRef:          "vm-01",
 			BootTargetRef:       "debian-13",
@@ -504,7 +601,7 @@ func TestValidateProvisionRefs_AllValid(t *testing.T) {
 		},
 	}
 
-	err := ctrl.validateProvisionRefs(context.Background(), provision)
+	err := ctrl.validateProvisionRefs(ctx, provision)
 	if err != nil {
 		t.Errorf("expected no error for valid refs, got %v", err)
 	}
