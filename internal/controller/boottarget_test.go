@@ -197,6 +197,12 @@ func TestLookupChecksum(t *testing.T) {
 			expectedOK:   true,
 		},
 		{
+			name:         "basename scan of map keys",
+			filename:     "firmware.gz",
+			expectedHash: "hash3", // finds "subdir/firmware.gz" by basename scan
+			expectedOK:   true,
+		},
+		{
 			name:         "not found",
 			filename:     "other.iso",
 			expectedHash: "",

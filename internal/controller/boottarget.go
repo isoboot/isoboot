@@ -383,7 +383,9 @@ func parseChecksumFile(r io.Reader) map[string]string {
 	return result
 }
 
-// lookupChecksum looks up a checksum by filename (tries basename and full path)
+// lookupChecksum looks up a checksum by filename.
+// Tries: exact match, basename of input, then scans map keys by basename
+// (handles SHA256SUMS with relative paths like "netboot/debian-installer/amd64/linux").
 func lookupChecksum(checksums map[string]string, filename string) (string, bool) {
 	if h, ok := checksums[filename]; ok {
 		return h, true
@@ -391,6 +393,11 @@ func lookupChecksum(checksums map[string]string, filename string) (string, bool)
 	basename := path.Base(filename)
 	if h, ok := checksums[basename]; ok {
 		return h, true
+	}
+	for key, h := range checksums {
+		if path.Base(key) == basename {
+			return h, true
+		}
 	}
 	return "", false
 }
