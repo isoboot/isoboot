@@ -97,6 +97,24 @@ protoc --go_out=. --go-grpc_out=. api/proto/controller.proto
 - Use `httptest.NewRecorder()` for HTTP handler tests
 - Mock external dependencies (k8s client, gRPC client)
 
+## PR Reviews
+
+### Re-requesting Copilot review (without a new push)
+```bash
+gh api repos/isoboot/isoboot/pulls/{PR}/requested_reviewers \
+  -X POST -f'reviewers[]=copilot-pull-request-reviewer[bot]'
+```
+The `[bot]` suffix is required — without it the API returns 422.
+
+### Resolving review threads
+```bash
+gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "THREAD_ID"}) { thread { isResolved } } }'
+```
+Thread IDs look like `PRRT_kwDOQ_1gNM5r...` and can be found via:
+```bash
+gh api graphql -f query='query { repository(owner: "isoboot", name: "isoboot") { pullRequest(number: PR) { reviewThreads(first: 50) { nodes { id isResolved comments(first: 1) { nodes { body } } } } } } }'
+```
+
 ## Before Committing
 
 - Run `go test ./...`

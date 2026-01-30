@@ -27,11 +27,6 @@ var (
 		Version:  "v1alpha1",
 		Resource: "provisions",
 	}
-	diskImageGVR = schema.GroupVersionResource{
-		Group:    "isoboot.io",
-		Version:  "v1alpha1",
-		Resource: "diskimages",
-	}
 	bootTargetGVR = schema.GroupVersionResource{
 		Group:    "isoboot.io",
 		Version:  "v1alpha1",
@@ -73,36 +68,40 @@ type ProvisionStatus struct {
 	IP          string
 }
 
-// DiskImage represents a DiskImage CRD
-type DiskImage struct {
-	Name     string
-	ISO      string
-	Firmware string
-	Status   DiskImageStatus
-}
-
-// DiskImageStatus represents the status of a DiskImage
-type DiskImageStatus struct {
-	Phase    string // Pending, Downloading, Complete, Failed
-	Progress int    // 0-100
-	Message  string
-	ISO      *DiskImageVerification
-	Firmware *DiskImageVerification
-}
-
-// DiskImageVerification represents verification status for a file
-type DiskImageVerification struct {
-	FileSizeMatch string // pending, processing, verified, failed
-	DigestSha256  string // pending, processing, verified, failed, not_found
-	DigestSha512  string // pending, processing, verified, failed, not_found
-}
-
 // BootTarget represents a BootTarget CRD
 type BootTarget struct {
-	Name                string
-	DiskImageRef        string
-	IncludeFirmwarePath string
-	Template            string
+	Name          string
+	Files         []BootTargetFile
+	CombinedFiles []CombinedFile
+	Template      string
+	Status        BootTargetStatus
+}
+
+// BootTargetFile represents a file to download
+type BootTargetFile struct {
+	URL         string
+	ChecksumURL string
+}
+
+// CombinedFile represents a file built by concatenating other files
+type CombinedFile struct {
+	Name    string
+	Sources []string
+}
+
+// BootTargetStatus represents the status of a BootTarget
+type BootTargetStatus struct {
+	Phase         string // Pending, Downloading, Complete, Failed
+	Message       string
+	Files         []FileStatus
+	CombinedFiles []FileStatus
+}
+
+// FileStatus represents the download status of a single file
+type FileStatus struct {
+	Name   string
+	Phase  string // Pending, Downloading, Complete, Failed
+	SHA256 string
 }
 
 // ResponseTemplate represents a ResponseTemplate CRD
@@ -192,54 +191,6 @@ func parseMachine(obj *unstructured.Unstructured) (*Machine, error) {
 	}, nil
 }
 
-// GetDiskImage retrieves a DiskImage by name
-func (c *Client) GetDiskImage(ctx context.Context, name string) (*DiskImage, error) {
-	obj, err := c.dynamicClient.Resource(diskImageGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return parseDiskImage(obj)
-}
-
-func parseDiskImage(obj *unstructured.Unstructured) (*DiskImage, error) {
-	spec, ok := obj.Object["spec"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid diskimage spec")
-	}
-
-	di := &DiskImage{
-		Name:     obj.GetName(),
-		ISO:      getString(spec, "iso"),
-		Firmware: getString(spec, "firmware"),
-	}
-
-	// Parse status if present
-	if status, ok := obj.Object["status"].(map[string]interface{}); ok {
-		di.Status = DiskImageStatus{
-			Phase:    getString(status, "phase"),
-			Progress: getInt(status, "progress"),
-			Message:  getString(status, "message"),
-		}
-		if isoStatus, ok := status["iso"].(map[string]interface{}); ok {
-			di.Status.ISO = &DiskImageVerification{
-				FileSizeMatch: getString(isoStatus, "fileSizeMatch"),
-				DigestSha256:  getString(isoStatus, "digestSha256"),
-				DigestSha512:  getString(isoStatus, "digestSha512"),
-			}
-		}
-		if fwStatus, ok := status["firmware"].(map[string]interface{}); ok {
-			di.Status.Firmware = &DiskImageVerification{
-				FileSizeMatch: getString(fwStatus, "fileSizeMatch"),
-				DigestSha256:  getString(fwStatus, "digestSha256"),
-				DigestSha512:  getString(fwStatus, "digestSha512"),
-			}
-		}
-	}
-
-	return di, nil
-}
-
 // GetBootTarget retrieves a BootTarget by name
 func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTarget, error) {
 	obj, err := c.dynamicClient.Resource(bootTargetGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
@@ -256,17 +207,73 @@ func parseBootTarget(obj *unstructured.Unstructured) (*BootTarget, error) {
 		return nil, fmt.Errorf("invalid boottarget spec")
 	}
 
-	diskImageRef := getString(spec, "diskImageRef")
-	if diskImageRef == "" {
-		return nil, fmt.Errorf("diskImageRef is required")
+	bt := &BootTarget{
+		Name:     obj.GetName(),
+		Template: getString(spec, "template"),
 	}
 
-	return &BootTarget{
-		Name:                obj.GetName(),
-		DiskImageRef:        diskImageRef,
-		IncludeFirmwarePath: getString(spec, "includeFirmwarePath"),
-		Template:            getString(spec, "template"),
-	}, nil
+	// Parse files array
+	if filesRaw, ok := spec["files"].([]interface{}); ok {
+		for _, item := range filesRaw {
+			if m, ok := item.(map[string]interface{}); ok {
+				bt.Files = append(bt.Files, BootTargetFile{
+					URL:         getString(m, "url"),
+					ChecksumURL: getString(m, "checksumURL"),
+				})
+			}
+		}
+	}
+
+	// Parse combinedFiles array
+	if combinedRaw, ok := spec["combinedFiles"].([]interface{}); ok {
+		for _, item := range combinedRaw {
+			if m, ok := item.(map[string]interface{}); ok {
+				cf := CombinedFile{
+					Name: getString(m, "name"),
+				}
+				if sources, ok := m["sources"].([]interface{}); ok {
+					for _, s := range sources {
+						if str, ok := s.(string); ok {
+							cf.Sources = append(cf.Sources, str)
+						}
+					}
+				}
+				bt.CombinedFiles = append(bt.CombinedFiles, cf)
+			}
+		}
+	}
+
+	// Parse status if present
+	if status, ok := obj.Object["status"].(map[string]interface{}); ok {
+		bt.Status = BootTargetStatus{
+			Phase:   getString(status, "phase"),
+			Message: getString(status, "message"),
+		}
+		if filesStatus, ok := status["files"].([]interface{}); ok {
+			for _, item := range filesStatus {
+				if m, ok := item.(map[string]interface{}); ok {
+					bt.Status.Files = append(bt.Status.Files, FileStatus{
+						Name:   getString(m, "name"),
+						Phase:  getString(m, "phase"),
+						SHA256: getString(m, "sha256"),
+					})
+				}
+			}
+		}
+		if combinedStatus, ok := status["combinedFiles"].([]interface{}); ok {
+			for _, item := range combinedStatus {
+				if m, ok := item.(map[string]interface{}); ok {
+					bt.Status.CombinedFiles = append(bt.Status.CombinedFiles, FileStatus{
+						Name:   getString(m, "name"),
+						Phase:  getString(m, "phase"),
+						SHA256: getString(m, "sha256"),
+					})
+				}
+			}
+		}
+	}
+
+	return bt, nil
 }
 
 // GetResponseTemplate retrieves a ResponseTemplate by name
@@ -576,68 +583,71 @@ func (c *Client) UpdateProvisionStatus(ctx context.Context, name, phase, message
 	return nil
 }
 
-// ListDiskImages lists all DiskImages
-func (c *Client) ListDiskImages(ctx context.Context) ([]*DiskImage, error) {
-	list, err := c.dynamicClient.Resource(diskImageGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
+// ListBootTargets lists all BootTargets
+func (c *Client) ListBootTargets(ctx context.Context) ([]*BootTarget, error) {
+	list, err := c.dynamicClient.Resource(bootTargetGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	var diskImages []*DiskImage
+	var bootTargets []*BootTarget
 	for _, item := range list.Items {
-		di, err := parseDiskImage(&item)
+		bt, err := parseBootTarget(&item)
 		if err != nil {
-			log.Printf("k8s: failed to parse DiskImage %s (skipping): %v", item.GetName(), err)
+			log.Printf("k8s: failed to parse BootTarget %s (skipping): %v", item.GetName(), err)
 			continue
 		}
-		diskImages = append(diskImages, di)
+		bootTargets = append(bootTargets, bt)
 	}
-	return diskImages, nil
+	return bootTargets, nil
 }
 
-// UpdateDiskImageStatus updates the status of a DiskImage.
-// Note: This performs a full replacement of the status subresource.
-// Callers should provide the complete desired status; any fields not
-// included (e.g., ISO/Firmware set to nil) will be cleared.
-func (c *Client) UpdateDiskImageStatus(ctx context.Context, name string, status *DiskImageStatus) error {
+// UpdateBootTargetStatus updates the status of a BootTarget.
+func (c *Client) UpdateBootTargetStatus(ctx context.Context, name string, status *BootTargetStatus) error {
 	if status == nil {
 		return fmt.Errorf("status cannot be nil")
 	}
 
-	obj, err := c.dynamicClient.Resource(diskImageGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
+	obj, err := c.dynamicClient.Resource(bootTargetGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("get diskimage: %w", err)
+		return fmt.Errorf("get boottarget: %w", err)
 	}
 
 	statusMap := map[string]interface{}{
-		"phase":    status.Phase,
-		"progress": status.Progress,
-		"message":  status.Message,
+		"phase":   status.Phase,
+		"message": status.Message,
 	}
 
-	if status.ISO != nil {
-		statusMap["iso"] = verificationToMap(status.ISO)
+	if len(status.Files) > 0 {
+		var filesArr []interface{}
+		for _, f := range status.Files {
+			filesArr = append(filesArr, map[string]interface{}{
+				"name":   f.Name,
+				"phase":  f.Phase,
+				"sha256": f.SHA256,
+			})
+		}
+		statusMap["files"] = filesArr
 	}
 
-	if status.Firmware != nil {
-		statusMap["firmware"] = verificationToMap(status.Firmware)
+	if len(status.CombinedFiles) > 0 {
+		var combinedArr []interface{}
+		for _, f := range status.CombinedFiles {
+			combinedArr = append(combinedArr, map[string]interface{}{
+				"name":   f.Name,
+				"phase":  f.Phase,
+				"sha256": f.SHA256,
+			})
+		}
+		statusMap["combinedFiles"] = combinedArr
 	}
 
 	obj.Object["status"] = statusMap
 
-	_, err = c.dynamicClient.Resource(diskImageGVR).Namespace(c.namespace).UpdateStatus(ctx, obj, metav1.UpdateOptions{})
+	_, err = c.dynamicClient.Resource(bootTargetGVR).Namespace(c.namespace).UpdateStatus(ctx, obj, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
 
 	return nil
-}
-
-// verificationToMap converts a DiskImageVerification to a map for status updates
-func verificationToMap(v *DiskImageVerification) map[string]interface{} {
-	return map[string]interface{}{
-		"fileSizeMatch": v.FileSizeMatch,
-		"digestSha256":  v.DigestSha256,
-		"digestSha512":  v.DigestSha512,
-	}
 }

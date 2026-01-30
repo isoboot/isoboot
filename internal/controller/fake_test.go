@@ -12,29 +12,27 @@ import (
 
 // fakeK8sClient implements KubernetesClient with in-memory data for testing.
 type fakeK8sClient struct {
-	mu                 sync.Mutex
-	provisions         map[string]*k8s.Provision
-	machines           map[string]*k8s.Machine
-	bootTargets        map[string]*k8s.BootTarget
-	responseTemplates  map[string]*k8s.ResponseTemplate
-	configMaps         map[string]*corev1.ConfigMap
-	secrets            map[string]*corev1.Secret
-	diskImages         map[string]*k8s.DiskImage
-	diskImageStatuses  map[string]*k8s.DiskImageStatus
-	provisionStatuses  map[string]k8s.ProvisionStatus
+	mu                  sync.Mutex
+	provisions          map[string]*k8s.Provision
+	machines            map[string]*k8s.Machine
+	bootTargets         map[string]*k8s.BootTarget
+	responseTemplates   map[string]*k8s.ResponseTemplate
+	configMaps          map[string]*corev1.ConfigMap
+	secrets             map[string]*corev1.Secret
+	bootTargetStatuses  map[string]*k8s.BootTargetStatus
+	provisionStatuses   map[string]k8s.ProvisionStatus
 }
 
 func newFakeK8sClient() *fakeK8sClient {
 	return &fakeK8sClient{
-		provisions:        make(map[string]*k8s.Provision),
-		machines:          make(map[string]*k8s.Machine),
-		bootTargets:       make(map[string]*k8s.BootTarget),
-		responseTemplates: make(map[string]*k8s.ResponseTemplate),
-		configMaps:        make(map[string]*corev1.ConfigMap),
-		secrets:           make(map[string]*corev1.Secret),
-		diskImages:        make(map[string]*k8s.DiskImage),
-		diskImageStatuses: make(map[string]*k8s.DiskImageStatus),
-		provisionStatuses: make(map[string]k8s.ProvisionStatus),
+		provisions:         make(map[string]*k8s.Provision),
+		machines:           make(map[string]*k8s.Machine),
+		bootTargets:        make(map[string]*k8s.BootTarget),
+		responseTemplates:  make(map[string]*k8s.ResponseTemplate),
+		configMaps:         make(map[string]*corev1.ConfigMap),
+		secrets:            make(map[string]*corev1.Secret),
+		bootTargetStatuses: make(map[string]*k8s.BootTargetStatus),
+		provisionStatuses:  make(map[string]k8s.ProvisionStatus),
 	}
 }
 
@@ -127,7 +125,35 @@ func (f *fakeK8sClient) GetBootTarget(_ context.Context, name string) (*k8s.Boot
 	if !ok {
 		return nil, fmt.Errorf("boottarget %q not found", name)
 	}
-	return bt, nil
+	cp := *bt
+	if s, ok := f.bootTargetStatuses[name]; ok {
+		cp.Status = *s
+	}
+	return &cp, nil
+}
+
+func (f *fakeK8sClient) ListBootTargets(_ context.Context) ([]*k8s.BootTarget, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var result []*k8s.BootTarget
+	for _, bt := range f.bootTargets {
+		cp := *bt
+		if s, ok := f.bootTargetStatuses[bt.Name]; ok {
+			cp.Status = *s
+		}
+		result = append(result, &cp)
+	}
+	return result, nil
+}
+
+func (f *fakeK8sClient) UpdateBootTargetStatus(_ context.Context, name string, status *k8s.BootTargetStatus) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.bootTargets[name]; !ok {
+		return fmt.Errorf("boottarget %q not found", name)
+	}
+	f.bootTargetStatuses[name] = status
+	return nil
 }
 
 func (f *fakeK8sClient) GetResponseTemplate(_ context.Context, name string) (*k8s.ResponseTemplate, error) {
@@ -160,44 +186,6 @@ func (f *fakeK8sClient) GetSecret(_ context.Context, name string) (*corev1.Secre
 	return s, nil
 }
 
-func (f *fakeK8sClient) GetDiskImage(_ context.Context, name string) (*k8s.DiskImage, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	di, ok := f.diskImages[name]
-	if !ok {
-		return nil, fmt.Errorf("diskimage %q not found", name)
-	}
-	cp := *di
-	if s, ok := f.diskImageStatuses[name]; ok {
-		cp.Status = *s
-	}
-	return &cp, nil
-}
-
-func (f *fakeK8sClient) ListDiskImages(_ context.Context) ([]*k8s.DiskImage, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	var result []*k8s.DiskImage
-	for _, di := range f.diskImages {
-		cp := *di
-		if s, ok := f.diskImageStatuses[di.Name]; ok {
-			cp.Status = *s
-		}
-		result = append(result, &cp)
-	}
-	return result, nil
-}
-
-func (f *fakeK8sClient) UpdateDiskImageStatus(_ context.Context, name string, status *k8s.DiskImageStatus) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if _, ok := f.diskImages[name]; !ok {
-		return fmt.Errorf("diskimage %q not found", name)
-	}
-	f.diskImageStatuses[name] = status
-	return nil
-}
-
 // helper to get the current provision status recorded by the fake
 func (f *fakeK8sClient) getProvisionStatus(name string) (k8s.ProvisionStatus, bool) {
 	f.mu.Lock()
@@ -206,11 +194,11 @@ func (f *fakeK8sClient) getProvisionStatus(name string) (k8s.ProvisionStatus, bo
 	return s, ok
 }
 
-// helper to get the current disk image status recorded by the fake
-func (f *fakeK8sClient) getDiskImageStatus(name string) (*k8s.DiskImageStatus, bool) {
+// helper to get the current boot target status recorded by the fake
+func (f *fakeK8sClient) getBootTargetStatus(name string) (*k8s.BootTargetStatus, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	s, ok := f.diskImageStatuses[name]
+	s, ok := f.bootTargetStatuses[name]
 	return s, ok
 }
 

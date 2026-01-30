@@ -24,10 +24,9 @@ type KubernetesClient interface {
 	GetMachine(ctx context.Context, name string) (*k8s.Machine, error)
 	FindMachineByMAC(ctx context.Context, mac string) (*k8s.Machine, error)
 	GetBootTarget(ctx context.Context, name string) (*k8s.BootTarget, error)
+	ListBootTargets(ctx context.Context) ([]*k8s.BootTarget, error)
+	UpdateBootTargetStatus(ctx context.Context, name string, status *k8s.BootTargetStatus) error
 	GetResponseTemplate(ctx context.Context, name string) (*k8s.ResponseTemplate, error)
 	GetConfigMap(ctx context.Context, name string) (*corev1.ConfigMap, error)
 	GetSecret(ctx context.Context, name string) (*corev1.Secret, error)
-	GetDiskImage(ctx context.Context, name string) (*k8s.DiskImage, error)
-	ListDiskImages(ctx context.Context) ([]*k8s.DiskImage, error)
-	UpdateDiskImageStatus(ctx context.Context, name string, status *k8s.DiskImageStatus) error
 }

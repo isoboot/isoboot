@@ -376,54 +376,96 @@ func TestParseBootTarget(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "valid BootTarget with all fields",
+			name: "valid BootTarget with files and combinedFiles",
 			obj: &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"metadata": map[string]interface{}{"name": "debian-13-with-firmware"},
 					"spec": map[string]interface{}{
-						"diskImageRef":        "debian-13",
-						"includeFirmwarePath": "/initrd.gz",
-						"template":            "kernel /linux\ninitrd /initrd.gz",
+						"template": "kernel /linux\ninitrd /initrd.gz",
+						"files": []interface{}{
+							map[string]interface{}{
+								"url":         "http://example.com/linux",
+								"checksumURL": "http://example.com/SHA256SUMS",
+							},
+							map[string]interface{}{
+								"url": "http://example.com/initrd.gz",
+							},
+						},
+						"combinedFiles": []interface{}{
+							map[string]interface{}{
+								"name":    "combined-initrd.gz",
+								"sources": []interface{}{"initrd.gz", "firmware.cpio.gz"},
+							},
+						},
 					},
 				},
 			},
 			expected: &BootTarget{
-				Name:                "debian-13-with-firmware",
-				DiskImageRef:        "debian-13",
-				IncludeFirmwarePath: "/initrd.gz",
-				Template:            "kernel /linux\ninitrd /initrd.gz",
+				Name:     "debian-13-with-firmware",
+				Template: "kernel /linux\ninitrd /initrd.gz",
+				Files: []BootTargetFile{
+					{URL: "http://example.com/linux", ChecksumURL: "http://example.com/SHA256SUMS"},
+					{URL: "http://example.com/initrd.gz"},
+				},
+				CombinedFiles: []CombinedFile{
+					{Name: "combined-initrd.gz", Sources: []string{"initrd.gz", "firmware.cpio.gz"}},
+				},
 			},
 			expectError: false,
 		},
 		{
-			name: "missing diskImageRef returns error",
+			name: "BootTarget with template only (no files)",
 			obj: &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "invalid-target"},
+					"metadata": map[string]interface{}{"name": "simple-target"},
 					"spec": map[string]interface{}{
 						"template": "kernel /linux",
 					},
 				},
 			},
-			expected:    nil,
-			expectError: true,
+			expected: &BootTarget{
+				Name:     "simple-target",
+				Template: "kernel /linux",
+			},
+			expectError: false,
 		},
 		{
-			name: "missing includeFirmwarePath is OK (optional)",
+			name: "BootTarget with status",
 			obj: &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "debian-13"},
+					"metadata": map[string]interface{}{"name": "complete-target"},
 					"spec": map[string]interface{}{
-						"diskImageRef": "debian-13",
-						"template":     "kernel /linux",
+						"template": "kernel /linux",
+						"files": []interface{}{
+							map[string]interface{}{"url": "http://example.com/linux"},
+						},
+					},
+					"status": map[string]interface{}{
+						"phase":   "Complete",
+						"message": "All files downloaded",
+						"files": []interface{}{
+							map[string]interface{}{
+								"name":   "linux",
+								"phase":  "Complete",
+								"sha256": "abc123def456",
+							},
+						},
 					},
 				},
 			},
 			expected: &BootTarget{
-				Name:                "debian-13",
-				DiskImageRef:        "debian-13",
-				IncludeFirmwarePath: "",
-				Template:            "kernel /linux",
+				Name:     "complete-target",
+				Template: "kernel /linux",
+				Files: []BootTargetFile{
+					{URL: "http://example.com/linux"},
+				},
+				Status: BootTargetStatus{
+					Phase:   "Complete",
+					Message: "All files downloaded",
+					Files: []FileStatus{
+						{Name: "linux", Phase: "Complete", SHA256: "abc123def456"},
+					},
+				},
 			},
 			expectError: false,
 		},
@@ -454,14 +496,41 @@ func TestParseBootTarget(t *testing.T) {
 			if result.Name != tt.expected.Name {
 				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
 			}
-			if result.DiskImageRef != tt.expected.DiskImageRef {
-				t.Errorf("DiskImageRef = %q, want %q", result.DiskImageRef, tt.expected.DiskImageRef)
-			}
-			if result.IncludeFirmwarePath != tt.expected.IncludeFirmwarePath {
-				t.Errorf("IncludeFirmwarePath = %q, want %q", result.IncludeFirmwarePath, tt.expected.IncludeFirmwarePath)
-			}
 			if result.Template != tt.expected.Template {
 				t.Errorf("Template = %q, want %q", result.Template, tt.expected.Template)
+			}
+			if len(result.Files) != len(tt.expected.Files) {
+				t.Errorf("Files len = %d, want %d", len(result.Files), len(tt.expected.Files))
+			} else {
+				for i, f := range result.Files {
+					if f.URL != tt.expected.Files[i].URL {
+						t.Errorf("Files[%d].URL = %q, want %q", i, f.URL, tt.expected.Files[i].URL)
+					}
+					if f.ChecksumURL != tt.expected.Files[i].ChecksumURL {
+						t.Errorf("Files[%d].ChecksumURL = %q, want %q", i, f.ChecksumURL, tt.expected.Files[i].ChecksumURL)
+					}
+				}
+			}
+			if len(result.CombinedFiles) != len(tt.expected.CombinedFiles) {
+				t.Errorf("CombinedFiles len = %d, want %d", len(result.CombinedFiles), len(tt.expected.CombinedFiles))
+			} else {
+				for i, cf := range result.CombinedFiles {
+					if cf.Name != tt.expected.CombinedFiles[i].Name {
+						t.Errorf("CombinedFiles[%d].Name = %q, want %q", i, cf.Name, tt.expected.CombinedFiles[i].Name)
+					}
+					if !reflect.DeepEqual(cf.Sources, tt.expected.CombinedFiles[i].Sources) {
+						t.Errorf("CombinedFiles[%d].Sources = %v, want %v", i, cf.Sources, tt.expected.CombinedFiles[i].Sources)
+					}
+				}
+			}
+			if result.Status.Phase != tt.expected.Status.Phase {
+				t.Errorf("Status.Phase = %q, want %q", result.Status.Phase, tt.expected.Status.Phase)
+			}
+			if result.Status.Message != tt.expected.Status.Message {
+				t.Errorf("Status.Message = %q, want %q", result.Status.Message, tt.expected.Status.Message)
+			}
+			if len(result.Status.Files) != len(tt.expected.Status.Files) {
+				t.Errorf("Status.Files len = %d, want %d", len(result.Status.Files), len(tt.expected.Status.Files))
 			}
 		})
 	}
@@ -547,167 +616,6 @@ func TestParseMachine(t *testing.T) {
 			}
 			if result.MAC != tt.expected.MAC {
 				t.Errorf("MAC = %q, want %q", result.MAC, tt.expected.MAC)
-			}
-		})
-	}
-}
-
-func TestParseDiskImage(t *testing.T) {
-	tests := []struct {
-		name        string
-		obj         *unstructured.Unstructured
-		expected    *DiskImage
-		expectError bool
-	}{
-		{
-			name: "full DiskImage with status",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "debian-13"},
-					"spec": map[string]interface{}{
-						"iso":      "https://example.com/debian.iso",
-						"firmware": "https://example.com/firmware.cpio.gz",
-					},
-					"status": map[string]interface{}{
-						"phase":    "Complete",
-						"progress": int64(100),
-						"message":  "Download complete",
-						"iso": map[string]interface{}{
-							"fileSizeMatch": "verified",
-							"digestSha256":  "verified",
-							"digestSha512":  "not_found",
-						},
-						"firmware": map[string]interface{}{
-							"fileSizeMatch": "verified",
-							"digestSha256":  "verified",
-							"digestSha512":  "verified",
-						},
-					},
-				},
-			},
-			expected: &DiskImage{
-				Name:     "debian-13",
-				ISO:      "https://example.com/debian.iso",
-				Firmware: "https://example.com/firmware.cpio.gz",
-				Status: DiskImageStatus{
-					Phase:    "Complete",
-					Progress: 100,
-					Message:  "Download complete",
-					ISO: &DiskImageVerification{
-						FileSizeMatch: "verified",
-						DigestSha256:  "verified",
-						DigestSha512:  "not_found",
-					},
-					Firmware: &DiskImageVerification{
-						FileSizeMatch: "verified",
-						DigestSha256:  "verified",
-						DigestSha512:  "verified",
-					},
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "DiskImage without status",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "new-image"},
-					"spec": map[string]interface{}{
-						"iso": "https://example.com/image.iso",
-					},
-				},
-			},
-			expected: &DiskImage{
-				Name:     "new-image",
-				ISO:      "https://example.com/image.iso",
-				Firmware: "",
-				Status:   DiskImageStatus{},
-			},
-			expectError: false,
-		},
-		{
-			name: "DiskImage with int progress",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "downloading"},
-					"spec": map[string]interface{}{
-						"iso": "https://example.com/image.iso",
-					},
-					"status": map[string]interface{}{
-						"phase":    "Downloading",
-						"progress": int(50),
-						"message":  "Downloading ISO",
-					},
-				},
-			},
-			expected: &DiskImage{
-				Name: "downloading",
-				ISO:  "https://example.com/image.iso",
-				Status: DiskImageStatus{
-					Phase:    "Downloading",
-					Progress: 50,
-					Message:  "Downloading ISO",
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "missing spec",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "no-spec"},
-				},
-			},
-			expected:    nil,
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseDiskImage(tt.obj)
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-			if result.Name != tt.expected.Name {
-				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
-			}
-			if result.ISO != tt.expected.ISO {
-				t.Errorf("ISO = %q, want %q", result.ISO, tt.expected.ISO)
-			}
-			if result.Firmware != tt.expected.Firmware {
-				t.Errorf("Firmware = %q, want %q", result.Firmware, tt.expected.Firmware)
-			}
-			if result.Status.Phase != tt.expected.Status.Phase {
-				t.Errorf("Status.Phase = %q, want %q", result.Status.Phase, tt.expected.Status.Phase)
-			}
-			if result.Status.Progress != tt.expected.Status.Progress {
-				t.Errorf("Status.Progress = %d, want %d", result.Status.Progress, tt.expected.Status.Progress)
-			}
-			if result.Status.Message != tt.expected.Status.Message {
-				t.Errorf("Status.Message = %q, want %q", result.Status.Message, tt.expected.Status.Message)
-			}
-			// Check ISO verification if expected
-			if tt.expected.Status.ISO != nil {
-				if result.Status.ISO == nil {
-					t.Error("Status.ISO is nil, expected non-nil")
-				} else if !reflect.DeepEqual(result.Status.ISO, tt.expected.Status.ISO) {
-					t.Errorf("Status.ISO = %+v, want %+v", result.Status.ISO, tt.expected.Status.ISO)
-				}
-			}
-			// Check Firmware verification if expected
-			if tt.expected.Status.Firmware != nil {
-				if result.Status.Firmware == nil {
-					t.Error("Status.Firmware is nil, expected non-nil")
-				} else if !reflect.DeepEqual(result.Status.Firmware, tt.expected.Status.Firmware) {
-					t.Errorf("Status.Firmware = %+v, want %+v", result.Status.Firmware, tt.expected.Status.Firmware)
-				}
 			}
 		})
 	}

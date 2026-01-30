@@ -35,9 +35,6 @@ service ControllerService {
 
   // GetSecrets retrieves and merges data from multiple Secrets
   rpc GetSecrets(GetSecretsRequest) returns (GetSecretsResponse);
-
-  // GetDiskImage retrieves a DiskImage by name
-  rpc GetDiskImage(GetDiskImageRequest) returns (GetDiskImageResponse);
 }
 
 message GetMachineByMACRequest {
@@ -100,9 +97,7 @@ message GetBootTargetRequest {
 
 message GetBootTargetResponse {
   bool found = 1;
-  string disk_image = 2;
-  string template = 3;
-  string include_firmware_path = 4;
+  string template = 2;
 }
 
 message GetResponseTemplateRequest {
@@ -146,13 +141,4 @@ message GetSecretsResponse {
   bool found = 1;
   map<string, string> data = 2;
   string error = 3;
-}
-
-message GetDiskImageRequest {
-  string name = 1;
-}
-
-message GetDiskImageResponse {
-  bool found = 1;
-  string iso_filename = 2;
 }
