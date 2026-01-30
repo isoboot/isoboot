@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"hash"
 	"io"
 	"log"
 	"net/http"
@@ -20,6 +19,10 @@ import (
 
 // reconcileBootMedias reconciles all BootMedia resources
 func (c *Controller) reconcileBootMedias(ctx context.Context) {
+	if c.typedK8s == nil {
+		return
+	}
+
 	var bmList typed.BootMediaList
 	if err := c.typedK8s.List(ctx, &bmList, client.InNamespace(c.typedK8s.Namespace())); err != nil {
 		log.Printf("Controller: failed to list bootmedias: %v", err)
@@ -395,6 +398,7 @@ func writeFileAtomic(destPath string, data []byte) (string, error) {
 	}
 
 	tmpPath := destPath + ".tmp"
+	defer os.Remove(tmpPath)
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
 		return "", fmt.Errorf("write temp file: %w", err)
 	}
@@ -403,7 +407,6 @@ func writeFileAtomic(destPath string, data []byte) (string, error) {
 	sha := fmt.Sprintf("%x", h[:])
 
 	if err := os.Rename(tmpPath, destPath); err != nil {
-		os.Remove(tmpPath)
 		return "", fmt.Errorf("rename: %w", err)
 	}
 
@@ -455,6 +458,3 @@ func concatenateFiles(destPath string, sources ...string) (string, error) {
 	sha := fmt.Sprintf("%x", h.Sum(nil))
 	return sha, nil
 }
-
-// Keep hash.Hash import used by tests
-var _ hash.Hash = sha256.New()
