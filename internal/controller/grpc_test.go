@@ -219,14 +219,14 @@ func TestGRPC_GetConfigMapValue_ConfigMapNotFound(t *testing.T) {
 
 func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	fake := newFakeK8sClient()
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:                "debian-13",
-		DiskImageRef:        "debian-iso",
-		Template:            "#!ipxe\nkernel ...\n",
-		IncludeFirmwarePath: "/initrd.gz",
-	}
+	typedClient := newTestTypedClient(
+		&typed.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       typed.BootTargetSpec{BootMediaRef: "debian-media", UseFirmware: true, Template: "#!ipxe\nkernel ...\n"},
+		},
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(fake), typedClient)
 	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "debian-13"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -234,21 +234,22 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	if !resp.Found {
 		t.Fatal("expected Found=true")
 	}
-	if resp.DiskImage != "debian-iso" {
-		t.Errorf("expected DiskImage debian-iso, got %q", resp.DiskImage)
-	}
 	if resp.Template != "#!ipxe\nkernel ...\n" {
 		t.Errorf("unexpected template: %q", resp.Template)
 	}
-	if resp.IncludeFirmwarePath != "/initrd.gz" {
-		t.Errorf("unexpected firmware path: %q", resp.IncludeFirmwarePath)
+	if resp.BootMediaRef != "debian-media" {
+		t.Errorf("expected BootMediaRef debian-media, got %q", resp.BootMediaRef)
+	}
+	if !resp.UseFirmware {
+		t.Error("expected UseFirmware=true")
 	}
 }
 
 func TestGRPC_GetBootTarget_NotFound(t *testing.T) {
 	fake := newFakeK8sClient()
+	typedClient := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(fake), typedClient)
 	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -408,56 +409,6 @@ func TestGRPC_GetSecrets_MissingSecret(t *testing.T) {
 	}
 	if resp.Found {
 		t.Error("expected Found=false when a secret is missing")
-	}
-}
-
-func TestGRPC_GetDiskImage_Found(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.diskImages["debian-iso"] = &k8s.DiskImage{
-		Name: "debian-iso",
-		ISO:  "https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/mini.iso",
-	}
-
-	srv := NewGRPCServer(New(fake), nil)
-	resp, err := srv.GetDiskImage(context.Background(), &pb.GetDiskImageRequest{Name: "debian-iso"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !resp.Found {
-		t.Fatal("expected Found=true")
-	}
-	if resp.IsoFilename != "mini.iso" {
-		t.Errorf("expected IsoFilename mini.iso, got %q", resp.IsoFilename)
-	}
-}
-
-func TestGRPC_GetDiskImage_NotFound(t *testing.T) {
-	fake := newFakeK8sClient()
-
-	srv := NewGRPCServer(New(fake), nil)
-	resp, err := srv.GetDiskImage(context.Background(), &pb.GetDiskImageRequest{Name: "missing"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.Found {
-		t.Error("expected Found=false for unknown disk image")
-	}
-}
-
-func TestGRPC_GetDiskImage_InvalidISOURL(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.diskImages["bad-iso"] = &k8s.DiskImage{
-		Name: "bad-iso",
-		ISO:  "https://example.com/", // URL with no filename
-	}
-
-	srv := NewGRPCServer(New(fake), nil)
-	resp, err := srv.GetDiskImage(context.Background(), &pb.GetDiskImageRequest{Name: "bad-iso"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.Found {
-		t.Error("expected Found=false for invalid ISO URL")
 	}
 }
 

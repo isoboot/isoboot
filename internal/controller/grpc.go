@@ -109,17 +109,17 @@ func (s *GRPCServer) GetConfigMapValue(ctx context.Context, req *pb.GetConfigMap
 
 // GetBootTarget retrieves a BootTarget by name
 func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetRequest) (*pb.GetBootTargetResponse, error) {
-	bt, err := s.ctrl.k8sClient.GetBootTarget(ctx, req.Name)
-	if err != nil {
+	var bt typed.BootTarget
+	if err := s.typedK8s.Get(ctx, s.typedK8s.Key(req.Name), &bt); err != nil {
 		log.Printf("gRPC: error getting boottarget %s: %v", req.Name, err)
 		return &pb.GetBootTargetResponse{Found: false}, nil
 	}
 
 	return &pb.GetBootTargetResponse{
-		Found:               true,
-		DiskImage:           bt.DiskImageRef,
-		Template:            bt.Template,
-		IncludeFirmwarePath: bt.IncludeFirmwarePath,
+		Found:        true,
+		Template:     bt.Spec.Template,
+		BootMediaRef: bt.Spec.BootMediaRef,
+		UseFirmware:  bt.Spec.UseFirmware,
 	}, nil
 }
 
@@ -214,22 +214,3 @@ func (s *GRPCServer) GetSecrets(ctx context.Context, req *pb.GetSecretsRequest) 
 	}, nil
 }
 
-// GetDiskImage retrieves a DiskImage by name
-func (s *GRPCServer) GetDiskImage(ctx context.Context, req *pb.GetDiskImageRequest) (*pb.GetDiskImageResponse, error) {
-	di, err := s.ctrl.k8sClient.GetDiskImage(ctx, req.Name)
-	if err != nil {
-		log.Printf("gRPC: error getting diskimage %s: %v", req.Name, err)
-		return &pb.GetDiskImageResponse{Found: false}, nil
-	}
-
-	filename, err := filenameFromURL(di.ISO)
-	if err != nil {
-		log.Printf("gRPC: error extracting filename from DiskImage %s ISO URL: %v", req.Name, err)
-		return &pb.GetDiskImageResponse{Found: false}, nil
-	}
-
-	return &pb.GetDiskImageResponse{
-		Found:       true,
-		IsoFilename: filename,
-	}, nil
-}
