@@ -121,7 +121,9 @@ func (c *Controller) downloadBootTarget(parentCtx context.Context, bt *k8s.BootT
 		destPath := filepath.Join(btDir, fname)
 
 		status.Files[i].Phase = "Downloading"
-		c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status)
+		if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
+			log.Printf("Controller: failed to update BootTarget %s status: %v", bt.Name, err)
+		}
 
 		dlCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
 		sha, err := c.downloadFile(dlCtx, f.URL, f.ChecksumURL, destPath)
@@ -131,19 +133,25 @@ func (c *Controller) downloadBootTarget(parentCtx context.Context, bt *k8s.BootT
 			status.Phase = "Failed"
 			status.Message = fmt.Sprintf("Failed to download %s: %v", fname, err)
 			status.Files[i].Phase = "Failed"
-			c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status)
+			if updateErr := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); updateErr != nil {
+				log.Printf("Controller: failed to update BootTarget %s to Failed: %v", bt.Name, updateErr)
+			}
 			return
 		}
 
 		status.Files[i].Phase = "Complete"
 		status.Files[i].SHA256 = sha
-		c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status)
+		if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
+			log.Printf("Controller: failed to update BootTarget %s status: %v", bt.Name, err)
+		}
 	}
 
 	// Build combined files
 	for i, cf := range bt.CombinedFiles {
 		status.CombinedFiles[i].Phase = "Building"
-		c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status)
+		if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
+			log.Printf("Controller: failed to update BootTarget %s status: %v", bt.Name, err)
+		}
 
 		destPath := filepath.Join(btDir, cf.Name)
 		sha, err := c.buildCombinedFile(btDir, cf, destPath)
@@ -151,13 +159,17 @@ func (c *Controller) downloadBootTarget(parentCtx context.Context, bt *k8s.BootT
 			status.Phase = "Failed"
 			status.Message = fmt.Sprintf("Failed to build %s: %v", cf.Name, err)
 			status.CombinedFiles[i].Phase = "Failed"
-			c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status)
+			if updateErr := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); updateErr != nil {
+				log.Printf("Controller: failed to update BootTarget %s to Failed: %v", bt.Name, updateErr)
+			}
 			return
 		}
 
 		status.CombinedFiles[i].Phase = "Complete"
 		status.CombinedFiles[i].SHA256 = sha
-		c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status)
+		if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
+			log.Printf("Controller: failed to update BootTarget %s status: %v", bt.Name, err)
+		}
 	}
 
 	// All done
@@ -282,19 +294,25 @@ func (c *Controller) buildCombinedFile(baseDir string, cf k8s.CombinedFile, dest
 	for _, src := range cf.Sources {
 		// Validate source name to prevent path traversal
 		if src == "" || strings.ContainsAny(src, "/\\") || strings.Contains(src, "..") {
-			out.Close()
+			if cerr := out.Close(); cerr != nil {
+				log.Printf("Controller: close output file after invalid source %q: %v", src, cerr)
+			}
 			return "", fmt.Errorf("invalid source name %q", src)
 		}
 		srcPath := filepath.Join(baseDir, src)
 		f, err := os.Open(srcPath)
 		if err != nil {
-			out.Close()
+			if cerr := out.Close(); cerr != nil {
+				log.Printf("Controller: close output file after open error for %s: %v", src, cerr)
+			}
 			return "", fmt.Errorf("open source %s: %w", src, err)
 		}
 		_, err = io.Copy(w, f)
 		f.Close()
 		if err != nil {
-			out.Close()
+			if cerr := out.Close(); cerr != nil {
+				log.Printf("Controller: close output file after copy error for %s: %v", src, cerr)
+			}
 			return "", fmt.Errorf("copy source %s: %w", src, err)
 		}
 	}
