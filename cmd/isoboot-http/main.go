@@ -59,7 +59,6 @@ func main() {
 		proxyPort          string
 		controllerAddr     string
 		templatesConfigMap string
-		isoPath            string
 	)
 
 	flag.StringVar(&host, "host", "", "Host IP to advertise in boot scripts")
@@ -67,7 +66,6 @@ func main() {
 	flag.StringVar(&proxyPort, "proxy-port", "3128", "Squid proxy port")
 	flag.StringVar(&controllerAddr, "controller", "localhost:8081", "Controller gRPC address")
 	flag.StringVar(&templatesConfigMap, "templates-configmap", "", "ConfigMap containing boot templates")
-	flag.StringVar(&isoPath, "iso-path", "/opt/isoboot/iso", "Path to ISO storage directory")
 	flag.Parse()
 
 	if host == "" {
@@ -100,10 +98,6 @@ func main() {
 	bootHandler := handlers.NewBootHandler(host, proxyPort, ctrlClient, templatesConfigMap)
 	bootHandler.RegisterRoutes(mux)
 
-	// ISO content handlers
-	isoHandler := handlers.NewISOHandler(isoPath, ctrlClient)
-	isoHandler.RegisterRoutes(mux)
-
 	// Answer file handlers
 	answerHandler := handlers.NewAnswerHandler(host, proxyPort, ctrlClient)
 	answerHandler.RegisterRoutes(mux)
@@ -111,7 +105,6 @@ func main() {
 	// Start server
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("Starting isoboot-http on %s:%s", host, port)
-	log.Printf("ISO path: %s", isoPath)
 	log.Printf("Templates ConfigMap: %s", templatesConfigMap)
 
 	var handler http.Handler = mux
