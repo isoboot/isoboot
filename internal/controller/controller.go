@@ -9,9 +9,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/isoboot/isoboot/internal/k8s"
 	"github.com/isoboot/isoboot/internal/k8s/typed"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// HTTPDoer abstracts HTTP request execution for testability.
+// *http.Client satisfies this interface.
+type HTTPDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 // validMachineId validates systemd machine-id format (exactly 32 lowercase hex characters)
 var validMachineId = regexp.MustCompile(`^[0-9a-f]{32}$`)
@@ -23,8 +30,7 @@ const (
 
 // Controller watches Provision CRDs and manages their lifecycle
 type Controller struct {
-	k8sClient                KubernetesClient
-	typedK8s                 *typed.Client
+	k8sClient                *typed.Client
 	httpClient               HTTPDoer
 	stopCh                   chan struct{}
 	filesBasePath            string
@@ -32,17 +38,12 @@ type Controller struct {
 }
 
 // New creates a new controller
-func New(k8sClient KubernetesClient) *Controller {
+func New(k8sClient *typed.Client) *Controller {
 	return &Controller{
 		k8sClient:  k8sClient,
 		httpClient: http.DefaultClient,
 		stopCh:     make(chan struct{}),
 	}
-}
-
-// SetTypedK8s sets the typed k8s client
-func (c *Controller) SetTypedK8s(client *typed.Client) {
-	c.typedK8s = client
 }
 
 // SetFilesBasePath sets the base path for file storage
@@ -86,18 +87,18 @@ func (c *Controller) reconcile() {
 	c.reconcileBootMedias(ctx)
 
 	// Then reconcile Provisions
-	provisions, err := c.k8sClient.ListProvisions(ctx)
-	if err != nil {
+	var provisionList typed.ProvisionList
+	if err := c.k8sClient.List(ctx, &provisionList, client.InNamespace(c.k8sClient.Namespace())); err != nil {
 		log.Printf("Controller: failed to list provisions: %v", err)
 		return
 	}
 
-	for _, provision := range provisions {
-		c.reconcileProvision(ctx, provision)
+	for i := range provisionList.Items {
+		c.reconcileProvision(ctx, &provisionList.Items[i])
 	}
 }
 
-func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Provision) {
+func (c *Controller) reconcileProvision(ctx context.Context, provision *typed.Provision) {
 	// Validate references before any status changes
 	if err := c.validateProvisionRefs(ctx, provision); err != nil {
 		if provision.Status.Phase != "ConfigError" || provision.Status.Message != err.Error() {
@@ -141,7 +142,7 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 
 	// Timeout InProgress provisions
 	if provision.Status.Phase == "InProgress" && !provision.Status.LastUpdated.IsZero() {
-		age := time.Since(provision.Status.LastUpdated)
+		age := time.Since(provision.Status.LastUpdated.Time)
 		if age > inProgressTimeout {
 			log.Printf("Controller: timing out %s (InProgress for %s)", provision.Name, age)
 			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Failed", "Timed out waiting for completion", ""); err != nil {
@@ -152,14 +153,14 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 }
 
 // checkBootTargetReady checks if the BootMedia for this Provision's BootTarget is ready
-func (c *Controller) checkBootTargetReady(ctx context.Context, provision *k8s.Provision) (bool, string) {
+func (c *Controller) checkBootTargetReady(ctx context.Context, provision *typed.Provision) (bool, string) {
 	var bootTarget typed.BootTarget
-	if err := c.typedK8s.Get(ctx, c.typedK8s.Key(provision.Spec.BootTargetRef), &bootTarget); err != nil {
-		return false, fmt.Sprintf("BootTarget '%s' not found", provision.Spec.BootTargetRef)
+	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(provision.Spec.GetBootTargetRef()), &bootTarget); err != nil {
+		return false, fmt.Sprintf("BootTarget '%s' not found", provision.Spec.GetBootTargetRef())
 	}
 
 	var bootMedia typed.BootMedia
-	if err := c.typedK8s.Get(ctx, c.typedK8s.Key(bootTarget.Spec.BootMediaRef), &bootMedia); err != nil {
+	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(bootTarget.Spec.BootMediaRef), &bootMedia); err != nil {
 		return false, fmt.Sprintf("BootMedia '%s' not found (referenced by BootTarget '%s')", bootTarget.Spec.BootMediaRef, bootTarget.Name)
 	}
 
@@ -181,9 +182,10 @@ func checkBootMediaStatus(bm *typed.BootMedia) (bool, string) {
 }
 
 // validateProvisionRefs checks that all referenced resources exist and have valid configuration
-func (c *Controller) validateProvisionRefs(ctx context.Context, provision *k8s.Provision) error {
+func (c *Controller) validateProvisionRefs(ctx context.Context, provision *typed.Provision) error {
 	// Validate machineRef exists
-	if _, err := c.k8sClient.GetMachine(ctx, provision.Spec.MachineRef); err != nil {
+	var machine typed.Machine
+	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(provision.Spec.MachineRef), &machine); err != nil {
 		return fmt.Errorf("Machine '%s' not found", provision.Spec.MachineRef)
 	}
 
@@ -192,28 +194,36 @@ func (c *Controller) validateProvisionRefs(ctx context.Context, provision *k8s.P
 		return fmt.Errorf("Provision '%s' has invalid machineId: must be exactly 32 lowercase hex characters", provision.Name)
 	}
 
-	// Validate bootTargetRef (BootTarget)
-	if _, err := c.k8sClient.GetBootTarget(ctx, provision.Spec.BootTargetRef); err != nil {
-		return fmt.Errorf("BootTarget '%s' not found", provision.Spec.BootTargetRef)
+	// Validate bootTargetRef (BootTarget) and its bootMediaRef
+	var bt typed.BootTarget
+	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(provision.Spec.GetBootTargetRef()), &bt); err != nil {
+		return fmt.Errorf("BootTarget '%s' not found", provision.Spec.GetBootTargetRef())
+	}
+	var bm typed.BootMedia
+	if err := c.k8sClient.Get(ctx, c.k8sClient.Key(bt.Spec.BootMediaRef), &bm); err != nil {
+		return fmt.Errorf("BootMedia '%s' not found (referenced by BootTarget '%s')", bt.Spec.BootMediaRef, bt.Name)
 	}
 
 	// Validate responseTemplateRef
 	if provision.Spec.ResponseTemplateRef != "" {
-		if _, err := c.k8sClient.GetResponseTemplate(ctx, provision.Spec.ResponseTemplateRef); err != nil {
+		var rt typed.ResponseTemplate
+		if err := c.k8sClient.Get(ctx, c.k8sClient.Key(provision.Spec.ResponseTemplateRef), &rt); err != nil {
 			return fmt.Errorf("ResponseTemplate '%s' not found", provision.Spec.ResponseTemplateRef)
 		}
 	}
 
 	// Validate configMaps
 	for _, cm := range provision.Spec.ConfigMaps {
-		if _, err := c.k8sClient.GetConfigMap(ctx, cm); err != nil {
+		var configMap corev1.ConfigMap
+		if err := c.k8sClient.Get(ctx, c.k8sClient.Key(cm), &configMap); err != nil {
 			return fmt.Errorf("ConfigMap '%s' not found", cm)
 		}
 	}
 
 	// Validate secrets
 	for _, secret := range provision.Spec.Secrets {
-		if _, err := c.k8sClient.GetSecret(ctx, secret); err != nil {
+		var s corev1.Secret
+		if err := c.k8sClient.Get(ctx, c.k8sClient.Key(secret), &s); err != nil {
 			return fmt.Errorf("Secret '%s' not found", secret)
 		}
 	}

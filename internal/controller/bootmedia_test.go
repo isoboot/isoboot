@@ -26,7 +26,7 @@ func TestReconcileBootMedia_InitializePending(t *testing.T) {
 	}
 	k := newTestTypedClient(bm)
 
-	ctrl := &Controller{typedK8s: k, httpClient: http.DefaultClient}
+	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedia(context.Background(), bm)
 
 	// After reconcile, status should be updated to Pending
@@ -53,7 +53,7 @@ func TestReconcileBootMedia_CompleteIsNoop(t *testing.T) {
 	}
 	k := newTestTypedClient(bm)
 
-	ctrl := &Controller{typedK8s: k, httpClient: http.DefaultClient}
+	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedia(context.Background(), bm)
 
 	// Status should remain Complete
@@ -77,7 +77,7 @@ func TestReconcileBootMedia_FailedIsNoop(t *testing.T) {
 	}
 	k := newTestTypedClient(bm)
 
-	ctrl := &Controller{typedK8s: k, httpClient: http.DefaultClient}
+	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedia(context.Background(), bm)
 
 	// Status should remain Failed
@@ -101,7 +101,7 @@ func TestDownloadBootMedia_NoFilesBasePath(t *testing.T) {
 	k := newTestTypedClient(bm)
 
 	ctrl := &Controller{
-		typedK8s:      k,
+		k8sClient:      k,
 		httpClient:    http.DefaultClient,
 		filesBasePath: "", // not configured
 	}
@@ -134,7 +134,7 @@ func TestDownloadBootMedia_InvalidSpec_NoKernelOrISO(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	ctrl := &Controller{
-		typedK8s:      k,
+		k8sClient:      k,
 		httpClient:    http.DefaultClient,
 		filesBasePath: tmpDir,
 	}
@@ -175,7 +175,7 @@ func TestDownloadBootMedia_InvalidSpec_BothDirectAndISO(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	ctrl := &Controller{
-		typedK8s:      k,
+		k8sClient:      k,
 		httpClient:    http.DefaultClient,
 		filesBasePath: tmpDir,
 	}
@@ -779,7 +779,7 @@ func TestDownloadBootMediaDirect_SuccessfulDownload(t *testing.T) {
 	}
 
 	ctrl := &Controller{
-		typedK8s:      k,
+		k8sClient:      k,
 		httpClient:    mockHTTP,
 		filesBasePath: tmpDir,
 	}
@@ -841,7 +841,7 @@ func TestDownloadBootMediaDirect_KernelDownloadFails(t *testing.T) {
 	}
 
 	ctrl := &Controller{
-		typedK8s:      k,
+		k8sClient:      k,
 		httpClient:    mockHTTP,
 		filesBasePath: tmpDir,
 	}
@@ -898,7 +898,7 @@ func TestDownloadBootMediaDirect_InitrdDownloadFails(t *testing.T) {
 	}
 
 	ctrl := &Controller{
-		typedK8s:      k,
+		k8sClient:      k,
 		httpClient:    mockHTTP,
 		filesBasePath: tmpDir,
 	}
@@ -973,7 +973,7 @@ func TestDownloadBootMediaDirect_WithFirmwareSubdirectories(t *testing.T) {
 	}
 
 	ctrl := &Controller{
-		typedK8s:      k,
+		k8sClient:      k,
 		httpClient:    mockHTTP,
 		filesBasePath: tmpDir,
 	}
@@ -1019,7 +1019,7 @@ func TestFailBootMedia(t *testing.T) {
 	}
 	k := newTestTypedClient(bm)
 
-	ctrl := &Controller{typedK8s: k}
+	ctrl := &Controller{k8sClient: k}
 	ctrl.failBootMedia(context.Background(), "test-bm", "something went wrong")
 
 	var updated typed.BootMedia
@@ -1044,7 +1044,7 @@ func TestFailBootMediaStatus(t *testing.T) {
 	}
 	k := newTestTypedClient(bm)
 
-	ctrl := &Controller{typedK8s: k}
+	ctrl := &Controller{k8sClient: k}
 	status := &typed.BootMediaStatus{
 		Phase:   "Downloading",
 		Message: "In progress",
@@ -1083,7 +1083,7 @@ func TestReconcileBootMedias_ListsAndReconciles(t *testing.T) {
 	}
 	k := newTestTypedClient(bm1, bm2)
 
-	ctrl := &Controller{typedK8s: k, httpClient: http.DefaultClient}
+	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedias(context.Background())
 
 	// bm-1 should be initialized to Pending

@@ -9,7 +9,6 @@ import (
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
 	"github.com/isoboot/isoboot/internal/controller"
-	"github.com/isoboot/isoboot/internal/k8s"
 	"github.com/isoboot/isoboot/internal/k8s/typed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -17,8 +16,8 @@ import (
 
 func main() {
 	var (
-		port        string
-		namespace   string
+		port          string
+		namespace     string
 		filesBasePath string
 	)
 
@@ -35,15 +34,9 @@ func main() {
 	}
 
 	// Initialize Kubernetes client
-	k8sClient, err := k8s.NewClient(namespace)
+	k8sClient, err := typed.NewClient(namespace)
 	if err != nil {
 		log.Fatalf("Failed to create Kubernetes client: %v", err)
-	}
-
-	// Initialize typed Kubernetes client
-	typedK8s, err := typed.NewClient(namespace)
-	if err != nil {
-		log.Fatalf("Failed to create typed Kubernetes client: %v", err)
 	}
 
 	// Create and start controller
@@ -55,7 +48,7 @@ func main() {
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer()
-	pb.RegisterControllerServiceServer(grpcServer, controller.NewGRPCServer(ctrl, typedK8s))
+	pb.RegisterControllerServiceServer(grpcServer, controller.NewGRPCServer(ctrl))
 
 	// Enable reflection for debugging (grpcurl)
 	reflection.Register(grpcServer)
