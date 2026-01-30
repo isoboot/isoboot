@@ -19,6 +19,7 @@ type BootClient interface {
 	GetMachineByMAC(ctx context.Context, mac string) (string, error)
 	GetProvisionsByMachine(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error)
 	GetBootTarget(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error)
+	GetBootMedia(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error)
 	UpdateProvisionStatus(ctx context.Context, name, status, message, ip string) error
 }
 
@@ -156,7 +157,16 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// 5. Parse and render template
+	// 5. Get BootMedia
+	bootMedia, err := h.ctrlClient.GetBootMedia(ctx, bootTarget.BootMediaRef)
+	if err != nil {
+		log.Printf("Error loading BootMedia %s: %v", bootTarget.BootMediaRef, err)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+
+	// 6. Parse and render template
 	tmpl, err := template.New(pendingProvision.BootTargetRef).Parse(bootTarget.Template)
 	if err != nil {
 		log.Printf("Error parsing template for %s: %v", pendingProvision.BootTargetRef, err)
@@ -167,19 +177,19 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 
 	hostname, domain := splitHostDomain(machineName)
 	data := TemplateData{
-		Host:              h.host,
-		Port:              portFromRequest(r),
-		ProxyPort:         h.proxyPort,
-		MachineName:       machineName,
-		Hostname:          hostname,
-		Domain:            domain,
-		BootTarget:        pendingProvision.BootTargetRef,
-		BootMedia:         bootTarget.BootMediaRef,
-		UseFirmware: bootTarget.UseFirmware,
-		ProvisionName:     pendingProvision.Name,
-		KernelFilename:    bootTarget.KernelFilename,
-		InitrdFilename:    bootTarget.InitrdFilename,
-		HasFirmware:       bootTarget.HasFirmware,
+		Host:           h.host,
+		Port:           portFromRequest(r),
+		ProxyPort:      h.proxyPort,
+		MachineName:    machineName,
+		Hostname:       hostname,
+		Domain:         domain,
+		BootTarget:     pendingProvision.BootTargetRef,
+		BootMedia:      bootTarget.BootMediaRef,
+		UseFirmware:    bootTarget.UseFirmware,
+		ProvisionName:  pendingProvision.Name,
+		KernelFilename: bootMedia.KernelFilename,
+		InitrdFilename: bootMedia.InitrdFilename,
+		HasFirmware:    bootMedia.HasFirmware,
 	}
 
 	var buf bytes.Buffer
@@ -194,7 +204,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	w.Write(buf.Bytes())
 
-	// 6. Mark provision as InProgress
+	// 7. Mark provision as InProgress
 	if err := h.ctrlClient.UpdateProvisionStatus(ctx, pendingProvision.Name, "InProgress", "Boot script served", ""); err != nil {
 		log.Printf("Warning: failed to mark boot started for %s: %v", pendingProvision.Name, err)
 	}

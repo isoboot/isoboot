@@ -17,6 +17,7 @@ type mockBootClient struct {
 	getMachineByMAC        func(ctx context.Context, mac string) (string, error)
 	getProvisionsByMachine func(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error)
 	getBootTarget          func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error)
+	getBootMedia           func(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error)
 	updateProvisionStatus  func(ctx context.Context, name, status, message, ip string) error
 }
 
@@ -31,6 +32,9 @@ func (m *mockBootClient) GetProvisionsByMachine(ctx context.Context, machineName
 }
 func (m *mockBootClient) GetBootTarget(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
 	return m.getBootTarget(ctx, name)
+}
+func (m *mockBootClient) GetBootMedia(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error) {
+	return m.getBootMedia(ctx, name)
 }
 func (m *mockBootClient) UpdateProvisionStatus(ctx context.Context, name, status, message, ip string) error {
 	return m.updateProvisionStatus(ctx, name, status, message, ip)
@@ -122,9 +126,16 @@ func TestServeConditionalBoot_PendingProvision(t *testing.T) {
 		},
 		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
 			return &controllerclient.BootTargetInfo{
-				Template:          "#!ipxe\nkernel http://{{ .Host }}:{{ .Port }}/static/{{ .BootMedia }}/linux\nboot\n",
-				BootMediaRef:      "debian-13",
-				UseFirmware: false,
+				Template:     "#!ipxe\nkernel http://{{ .Host }}:{{ .Port }}/static/{{ .BootMedia }}/linux\nboot\n",
+				BootMediaRef: "debian-13",
+				UseFirmware:  false,
+			}, nil
+		},
+		getBootMedia: func(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error) {
+			return &controllerclient.BootMediaInfo{
+				KernelFilename: "linux",
+				InitrdFilename: "initrd.gz",
+				HasFirmware:    false,
 			}, nil
 		},
 		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
@@ -168,12 +179,16 @@ func TestServeConditionalBoot_BootMediaAndFirmwareRendered(t *testing.T) {
 		},
 		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
 			return &controllerclient.BootTargetInfo{
-				Template:          "#!ipxe\n{{ if .UseFirmware }}firmware{{ else }}nofirmware{{ end }}\nstatic/{{ .BootMedia }}/linux\n",
-				BootMediaRef:      "debian-13",
-				UseFirmware: true,
-				KernelFilename:    "linux",
-				InitrdFilename:    "initrd.gz",
-				HasFirmware:       true,
+				Template:     "#!ipxe\n{{ if .UseFirmware }}firmware{{ else }}nofirmware{{ end }}\nstatic/{{ .BootMedia }}/linux\n",
+				BootMediaRef: "debian-13",
+				UseFirmware:  true,
+			}, nil
+		},
+		getBootMedia: func(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error) {
+			return &controllerclient.BootMediaInfo{
+				KernelFilename: "linux",
+				InitrdFilename: "initrd.gz",
+				HasFirmware:    true,
 			}, nil
 		},
 		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
@@ -211,8 +226,12 @@ func TestServeConditionalBoot_NewTemplateVariables(t *testing.T) {
 		},
 		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
 			return &controllerclient.BootTargetInfo{
-				Template:       "kernel={{ .KernelFilename }} initrd={{ .InitrdFilename }} hasFw={{ .HasFirmware }}",
-				BootMediaRef:   "debian-13",
+				Template:     "kernel={{ .KernelFilename }} initrd={{ .InitrdFilename }} hasFw={{ .HasFirmware }}",
+				BootMediaRef: "debian-13",
+			}, nil
+		},
+		getBootMedia: func(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error) {
+			return &controllerclient.BootMediaInfo{
 				KernelFilename: "vmlinuz",
 				InitrdFilename: "initrd.gz",
 				HasFirmware:    true,
@@ -346,6 +365,12 @@ func TestServeConditionalBoot_EmptyStatusTreatedAsPending(t *testing.T) {
 			return &controllerclient.BootTargetInfo{
 				Template:     "#!ipxe\nboot\n",
 				BootMediaRef: "debian-13",
+			}, nil
+		},
+		getBootMedia: func(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error) {
+			return &controllerclient.BootMediaInfo{
+				KernelFilename: "linux",
+				InitrdFilename: "initrd.gz",
 			}, nil
 		},
 		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {

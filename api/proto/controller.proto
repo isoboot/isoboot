@@ -24,6 +24,9 @@ service ControllerService {
   // GetBootTarget retrieves a BootTarget by name
   rpc GetBootTarget(GetBootTargetRequest) returns (GetBootTargetResponse);
 
+  // GetBootMedia retrieves a BootMedia by name
+  rpc GetBootMedia(GetBootMediaRequest) returns (GetBootMediaResponse);
+
   // GetResponseTemplate retrieves a ResponseTemplate by name
   rpc GetResponseTemplate(GetResponseTemplateRequest) returns (GetResponseTemplateResponse);
 
@@ -100,9 +103,17 @@ message GetBootTargetResponse {
   string template = 2;
   string boot_media_ref = 3;
   bool use_firmware = 4;
-  string kernel_filename = 5;
-  string initrd_filename = 6;
-  bool has_firmware = 7;
+}
+
+message GetBootMediaRequest {
+  string name = 1;
+}
+
+message GetBootMediaResponse {
+  bool found = 1;
+  string kernel_filename = 2;
+  string initrd_filename = 3;
+  bool has_firmware = 4;
 }
 
 message GetResponseTemplateRequest {

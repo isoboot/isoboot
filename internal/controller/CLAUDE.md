@@ -33,7 +33,8 @@ Exposes primitive CRD accessors to isoboot-http:
 - `GetConfigMaps` - Get merged ConfigMap data
 - `GetSecrets` - Get merged Secret data
 - `GetResponseTemplate` - Get response template by name
-- `GetBootTarget` - Get boot target by name (returns template, bootMediaRef, useFirmware, kernelFilename, initrdFilename, hasFirmware)
+- `GetBootTarget` - Get boot target by name (returns template, bootMediaRef, useFirmware)
+- `GetBootMedia` - Get boot media by name (returns kernelFilename, initrdFilename, hasFirmware)
 - `GetConfigMapValue` - Get single value from ConfigMap
 
 ### SSH Key Derivation (sshkeys.go)

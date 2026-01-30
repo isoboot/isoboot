@@ -135,12 +135,9 @@ func (c *Client) GetConfigMapValue(ctx context.Context, configMapName, key strin
 
 // BootTargetInfo returned by GetBootTarget
 type BootTargetInfo struct {
-	Template          string
-	BootMediaRef      string
-	UseFirmware bool
-	KernelFilename    string
-	InitrdFilename    string
-	HasFirmware       bool
+	Template     string
+	BootMediaRef string
+	UseFirmware  bool
 }
 
 // GetBootTarget retrieves a BootTarget by name
@@ -155,12 +152,34 @@ func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInf
 	}
 
 	return &BootTargetInfo{
-		Template:          resp.Template,
-		BootMediaRef:      resp.BootMediaRef,
-		UseFirmware: resp.UseFirmware,
-		KernelFilename:    resp.KernelFilename,
-		InitrdFilename:    resp.InitrdFilename,
-		HasFirmware:       resp.HasFirmware,
+		Template:     resp.Template,
+		BootMediaRef: resp.BootMediaRef,
+		UseFirmware:  resp.UseFirmware,
+	}, nil
+}
+
+// BootMediaInfo returned by GetBootMedia
+type BootMediaInfo struct {
+	KernelFilename string
+	InitrdFilename string
+	HasFirmware    bool
+}
+
+// GetBootMedia retrieves a BootMedia by name
+func (c *Client) GetBootMedia(ctx context.Context, name string) (*BootMediaInfo, error) {
+	resp, err := c.client.GetBootMedia(ctx, &pb.GetBootMediaRequest{Name: name})
+	if err != nil {
+		return nil, fmt.Errorf("grpc call: %w", err)
+	}
+
+	if !resp.Found {
+		return nil, fmt.Errorf("bootmedia %s: %w", name, ErrNotFound)
+	}
+
+	return &BootMediaInfo{
+		KernelFilename: resp.KernelFilename,
+		InitrdFilename: resp.InitrdFilename,
+		HasFirmware:    resp.HasFirmware,
 	}, nil
 }
 

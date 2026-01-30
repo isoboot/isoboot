@@ -218,15 +218,10 @@ func TestGRPC_GetConfigMapValue_ConfigMapNotFound(t *testing.T) {
 func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:              "debian-13",
-		BootMediaRef:      "debian-13",
-		UseFirmware: false,
-		Template:          "#!ipxe\nkernel ...\n",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:   "debian-13",
-		Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
-		Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+		UseFirmware:  false,
+		Template:     "#!ipxe\nkernel ...\n",
 	}
 
 	srv := NewGRPCServer(New(fake))
@@ -246,30 +241,15 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	if resp.UseFirmware {
 		t.Error("expected UseFirmware=false")
 	}
-	if resp.KernelFilename != "linux" {
-		t.Errorf("expected KernelFilename=linux, got %q", resp.KernelFilename)
-	}
-	if resp.InitrdFilename != "initrd.gz" {
-		t.Errorf("expected InitrdFilename=initrd.gz, got %q", resp.InitrdFilename)
-	}
-	if resp.HasFirmware {
-		t.Error("expected HasFirmware=false")
-	}
 }
 
 func TestGRPC_GetBootTarget_WithFirmware(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.bootTargets["debian-13-firmware"] = &k8s.BootTarget{
-		Name:              "debian-13-firmware",
-		BootMediaRef:      "debian-13",
-		UseFirmware: true,
-		Template:          "#!ipxe\nkernel ...\n",
-	}
-	fake.bootMedias["debian-13"] = &k8s.BootMedia{
-		Name:     "debian-13",
-		Kernel:   &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
-		Initrd:   &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
-		Firmware: &k8s.BootMediaFileRef{URL: "http://example.com/firmware.cpio.gz"},
+		Name:         "debian-13-firmware",
+		BootMediaRef: "debian-13",
+		UseFirmware:  true,
+		Template:     "#!ipxe\nkernel ...\n",
 	}
 
 	srv := NewGRPCServer(New(fake))
@@ -286,6 +266,65 @@ func TestGRPC_GetBootTarget_WithFirmware(t *testing.T) {
 	if !resp.UseFirmware {
 		t.Error("expected UseFirmware=true")
 	}
+}
+
+func TestGRPC_GetBootTarget_NotFound(t *testing.T) {
+	fake := newFakeK8sClient()
+
+	srv := NewGRPCServer(New(fake))
+	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "missing"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Found {
+		t.Error("expected Found=false")
+	}
+}
+
+func TestGRPC_GetBootMedia_Found(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
+		Name:   "debian-13",
+		Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
+		Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+	}
+
+	srv := NewGRPCServer(New(fake))
+	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "debian-13"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Found {
+		t.Fatal("expected Found=true")
+	}
+	if resp.KernelFilename != "linux" {
+		t.Errorf("expected KernelFilename=linux, got %q", resp.KernelFilename)
+	}
+	if resp.InitrdFilename != "initrd.gz" {
+		t.Errorf("expected InitrdFilename=initrd.gz, got %q", resp.InitrdFilename)
+	}
+	if resp.HasFirmware {
+		t.Error("expected HasFirmware=false")
+	}
+}
+
+func TestGRPC_GetBootMedia_WithFirmware(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
+		Name:     "debian-13",
+		Kernel:   &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
+		Initrd:   &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Firmware: &k8s.BootMediaFileRef{URL: "http://example.com/firmware.cpio.gz"},
+	}
+
+	srv := NewGRPCServer(New(fake))
+	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "debian-13"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Found {
+		t.Fatal("expected Found=true")
+	}
 	if !resp.HasFirmware {
 		t.Error("expected HasFirmware=true")
 	}
@@ -294,39 +333,11 @@ func TestGRPC_GetBootTarget_WithFirmware(t *testing.T) {
 	}
 }
 
-func TestGRPC_GetBootTarget_BootMediaNotFound(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:         "debian-13",
-		BootMediaRef: "missing-bm",
-		Template:     "#!ipxe\n",
-	}
-	// No bootmedia registered - should degrade gracefully
-
-	srv := NewGRPCServer(New(fake))
-	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "debian-13"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !resp.Found {
-		t.Fatal("expected Found=true (graceful degradation)")
-	}
-	if resp.KernelFilename != "" {
-		t.Errorf("expected empty KernelFilename, got %q", resp.KernelFilename)
-	}
-	if resp.InitrdFilename != "" {
-		t.Errorf("expected empty InitrdFilename, got %q", resp.InitrdFilename)
-	}
-	if resp.HasFirmware {
-		t.Error("expected HasFirmware=false")
-	}
-}
-
-func TestGRPC_GetBootTarget_NotFound(t *testing.T) {
+func TestGRPC_GetBootMedia_NotFound(t *testing.T) {
 	fake := newFakeK8sClient()
 
 	srv := NewGRPCServer(New(fake))
-	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "missing"})
+	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

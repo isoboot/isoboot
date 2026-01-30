@@ -113,26 +113,28 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 		return &pb.GetBootTargetResponse{Found: false}, nil
 	}
 
-	resp := &pb.GetBootTargetResponse{
-		Found:             true,
-		Template:          bt.Template,
-		BootMediaRef:      bt.BootMediaRef,
-		UseFirmware: bt.UseFirmware,
-	}
+	return &pb.GetBootTargetResponse{
+		Found:        true,
+		Template:     bt.Template,
+		BootMediaRef: bt.BootMediaRef,
+		UseFirmware:  bt.UseFirmware,
+	}, nil
+}
 
-	// Resolve BootMedia to populate filename fields
-	bm, err := s.ctrl.k8sClient.GetBootMedia(ctx, bt.BootMediaRef)
+// GetBootMedia retrieves a BootMedia by name
+func (s *GRPCServer) GetBootMedia(ctx context.Context, req *pb.GetBootMediaRequest) (*pb.GetBootMediaResponse, error) {
+	bm, err := s.ctrl.k8sClient.GetBootMedia(ctx, req.Name)
 	if err != nil {
-		log.Printf("gRPC: error getting bootmedia %s for boottarget %s: %v", bt.BootMediaRef, req.Name, err)
-		// Graceful degradation: return response with empty filenames
-		return resp, nil
+		log.Printf("gRPC: error getting bootmedia %s: %v", req.Name, err)
+		return &pb.GetBootMediaResponse{Found: false}, nil
 	}
 
-	resp.KernelFilename = bm.KernelFilename()
-	resp.InitrdFilename = bm.InitrdFilename()
-	resp.HasFirmware = bm.HasFirmware()
-
-	return resp, nil
+	return &pb.GetBootMediaResponse{
+		Found:          true,
+		KernelFilename: bm.KernelFilename(),
+		InitrdFilename: bm.InitrdFilename(),
+		HasFirmware:    bm.HasFirmware(),
+	}, nil
 }
 
 // GetResponseTemplate retrieves a ResponseTemplate by name
