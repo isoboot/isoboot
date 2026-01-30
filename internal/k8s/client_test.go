@@ -376,96 +376,41 @@ func TestParseBootTarget(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "valid BootTarget with files and combinedFiles",
+			name: "valid BootTarget with bootMediaRef and useDebianFirmware",
 			obj: &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "debian-13-with-firmware"},
+					"metadata": map[string]interface{}{"name": "debian-13-firmware"},
 					"spec": map[string]interface{}{
-						"template": "kernel /linux\ninitrd /initrd.gz",
-						"files": []interface{}{
-							map[string]interface{}{
-								"url":         "http://example.com/linux",
-								"checksumURL": "http://example.com/SHA256SUMS",
-							},
-							map[string]interface{}{
-								"url": "http://example.com/initrd.gz",
-							},
-						},
-						"combinedFiles": []interface{}{
-							map[string]interface{}{
-								"name":    "combined-initrd.gz",
-								"sources": []interface{}{"initrd.gz", "firmware.cpio.gz"},
-							},
-						},
+						"bootMediaRef":      "debian-13",
+						"useDebianFirmware": true,
+						"template":          "kernel /linux\ninitrd /firmware-initrd.gz",
 					},
 				},
 			},
 			expected: &BootTarget{
-				Name:     "debian-13-with-firmware",
-				Template: "kernel /linux\ninitrd /initrd.gz",
-				Files: []BootTargetFile{
-					{URL: "http://example.com/linux", ChecksumURL: "http://example.com/SHA256SUMS"},
-					{URL: "http://example.com/initrd.gz"},
-				},
-				CombinedFiles: []CombinedFile{
-					{Name: "combined-initrd.gz", Sources: []string{"initrd.gz", "firmware.cpio.gz"}},
-				},
+				Name:              "debian-13-firmware",
+				BootMediaRef:      "debian-13",
+				UseDebianFirmware: true,
+				Template:          "kernel /linux\ninitrd /firmware-initrd.gz",
 			},
 			expectError: false,
 		},
 		{
-			name: "BootTarget with template only (no files)",
+			name: "BootTarget without firmware",
 			obj: &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "simple-target"},
+					"metadata": map[string]interface{}{"name": "debian-13"},
 					"spec": map[string]interface{}{
-						"template": "kernel /linux",
+						"bootMediaRef": "debian-13",
+						"template":     "kernel /linux\ninitrd /initrd.gz",
 					},
 				},
 			},
 			expected: &BootTarget{
-				Name:     "simple-target",
-				Template: "kernel /linux",
-			},
-			expectError: false,
-		},
-		{
-			name: "BootTarget with status",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "complete-target"},
-					"spec": map[string]interface{}{
-						"template": "kernel /linux",
-						"files": []interface{}{
-							map[string]interface{}{"url": "http://example.com/linux"},
-						},
-					},
-					"status": map[string]interface{}{
-						"phase":   "Complete",
-						"message": "All files downloaded",
-						"files": []interface{}{
-							map[string]interface{}{
-								"name":   "linux",
-								"phase":  "Complete",
-								"sha256": "abc123def456",
-							},
-						},
-					},
-				},
-			},
-			expected: &BootTarget{
-				Name:     "complete-target",
-				Template: "kernel /linux",
-				Files: []BootTargetFile{
-					{URL: "http://example.com/linux"},
-				},
-				Status: BootTargetStatus{
-					Phase:   "Complete",
-					Message: "All files downloaded",
-					Files: []FileStatus{
-						{Name: "linux", Phase: "Complete", SHA256: "abc123def456"},
-					},
-				},
+				Name:              "debian-13",
+				BootMediaRef:      "debian-13",
+				UseDebianFirmware: false,
+				Template:          "kernel /linux\ninitrd /initrd.gz",
 			},
 			expectError: false,
 		},
@@ -496,8 +441,126 @@ func TestParseBootTarget(t *testing.T) {
 			if result.Name != tt.expected.Name {
 				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
 			}
+			if result.BootMediaRef != tt.expected.BootMediaRef {
+				t.Errorf("BootMediaRef = %q, want %q", result.BootMediaRef, tt.expected.BootMediaRef)
+			}
+			if result.UseDebianFirmware != tt.expected.UseDebianFirmware {
+				t.Errorf("UseDebianFirmware = %v, want %v", result.UseDebianFirmware, tt.expected.UseDebianFirmware)
+			}
 			if result.Template != tt.expected.Template {
 				t.Errorf("Template = %q, want %q", result.Template, tt.expected.Template)
+			}
+		})
+	}
+}
+
+func TestParseBootMedia(t *testing.T) {
+	tests := []struct {
+		name        string
+		obj         *unstructured.Unstructured
+		expected    *BootMedia
+		expectError bool
+	}{
+		{
+			name: "valid BootMedia with files and combinedFiles",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "debian-13"},
+					"spec": map[string]interface{}{
+						"files": []interface{}{
+							map[string]interface{}{
+								"url":         "http://example.com/linux",
+								"checksumURL": "http://example.com/SHA256SUMS",
+							},
+							map[string]interface{}{
+								"url": "http://example.com/initrd.gz",
+							},
+						},
+						"combinedFiles": []interface{}{
+							map[string]interface{}{
+								"name":    "firmware-initrd.gz",
+								"sources": []interface{}{"initrd.gz", "firmware.cpio.gz"},
+							},
+						},
+					},
+				},
+			},
+			expected: &BootMedia{
+				Name: "debian-13",
+				Files: []BootMediaFile{
+					{URL: "http://example.com/linux", ChecksumURL: "http://example.com/SHA256SUMS"},
+					{URL: "http://example.com/initrd.gz"},
+				},
+				CombinedFiles: []CombinedFile{
+					{Name: "firmware-initrd.gz", Sources: []string{"initrd.gz", "firmware.cpio.gz"}},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "BootMedia with status",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "debian-13"},
+					"spec": map[string]interface{}{
+						"files": []interface{}{
+							map[string]interface{}{"url": "http://example.com/linux"},
+						},
+					},
+					"status": map[string]interface{}{
+						"phase":   "Complete",
+						"message": "All files downloaded",
+						"files": []interface{}{
+							map[string]interface{}{
+								"name":   "linux",
+								"phase":  "Complete",
+								"sha256": "abc123def456",
+							},
+						},
+					},
+				},
+			},
+			expected: &BootMedia{
+				Name: "debian-13",
+				Files: []BootMediaFile{
+					{URL: "http://example.com/linux"},
+				},
+				Status: BootMediaStatus{
+					Phase:   "Complete",
+					Message: "All files downloaded",
+					Files: []FileStatus{
+						{Name: "linux", Phase: "Complete", SHA256: "abc123def456"},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "missing spec returns error",
+			obj: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "no-spec"},
+				},
+			},
+			expected:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseBootMedia(tt.obj)
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if result.Name != tt.expected.Name {
+				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
 			}
 			if len(result.Files) != len(tt.expected.Files) {
 				t.Errorf("Files len = %d, want %d", len(result.Files), len(tt.expected.Files))

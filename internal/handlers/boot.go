@@ -42,14 +42,16 @@ func NewBootHandler(host, port, proxyPort string, ctrlClient BootClient, configM
 
 // TemplateData is passed to boot templates
 type TemplateData struct {
-	Host          string
-	Port          string
-	ProxyPort     string // Squid proxy port for mirror/http/proxy
-	MachineName   string // Full machine name (e.g., "vm-deb-0099.lan")
-	Hostname      string // First part before dot (e.g., "vm-deb-0099")
-	Domain        string // Everything after first dot (e.g., "lan")
-	BootTarget    string
-	ProvisionName string // Provision resource name (use for answer file URLs)
+	Host              string
+	Port              string
+	ProxyPort         string // Squid proxy port for mirror/http/proxy
+	MachineName       string // Full machine name (e.g., "vm-deb-0099.lan")
+	Hostname          string // First part before dot (e.g., "vm-deb-0099")
+	Domain            string // Everything after first dot (e.g., "lan")
+	BootTarget        string
+	BootMedia         string // BootMedia resource name (for static file paths)
+	UseDebianFirmware bool   // Whether to use firmware-combined initrd
+	ProvisionName     string // Provision resource name (use for answer file URLs)
 }
 
 // splitHostDomain splits a machine name into hostname and domain.
@@ -181,14 +183,16 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 
 	hostname, domain := splitHostDomain(machineName)
 	data := TemplateData{
-		Host:          h.host,
-		Port:          h.port,
-		ProxyPort:     h.proxyPort,
-		MachineName:   machineName,
-		Hostname:      hostname,
-		Domain:        domain,
-		BootTarget:    pendingProvision.BootTargetRef,
-		ProvisionName: pendingProvision.Name,
+		Host:              h.host,
+		Port:              h.port,
+		ProxyPort:         h.proxyPort,
+		MachineName:       machineName,
+		Hostname:          hostname,
+		Domain:            domain,
+		BootTarget:        pendingProvision.BootTargetRef,
+		BootMedia:         bootTarget.BootMediaRef,
+		UseDebianFirmware: bootTarget.UseDebianFirmware,
+		ProvisionName:     pendingProvision.Name,
 	}
 
 	var buf bytes.Buffer

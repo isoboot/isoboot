@@ -98,6 +98,8 @@ message GetBootTargetRequest {
 message GetBootTargetResponse {
   bool found = 1;
   string template = 2;
+  string boot_media_ref = 3;
+  bool use_debian_firmware = 4;
 }
 
 message GetResponseTemplateRequest {

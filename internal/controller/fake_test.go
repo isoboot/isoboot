@@ -16,23 +16,25 @@ type fakeK8sClient struct {
 	provisions          map[string]*k8s.Provision
 	machines            map[string]*k8s.Machine
 	bootTargets         map[string]*k8s.BootTarget
+	bootMedias          map[string]*k8s.BootMedia
 	responseTemplates   map[string]*k8s.ResponseTemplate
 	configMaps          map[string]*corev1.ConfigMap
 	secrets             map[string]*corev1.Secret
-	bootTargetStatuses  map[string]*k8s.BootTargetStatus
+	bootMediaStatuses   map[string]*k8s.BootMediaStatus
 	provisionStatuses   map[string]k8s.ProvisionStatus
 }
 
 func newFakeK8sClient() *fakeK8sClient {
 	return &fakeK8sClient{
-		provisions:         make(map[string]*k8s.Provision),
-		machines:           make(map[string]*k8s.Machine),
-		bootTargets:        make(map[string]*k8s.BootTarget),
-		responseTemplates:  make(map[string]*k8s.ResponseTemplate),
-		configMaps:         make(map[string]*corev1.ConfigMap),
-		secrets:            make(map[string]*corev1.Secret),
-		bootTargetStatuses: make(map[string]*k8s.BootTargetStatus),
-		provisionStatuses:  make(map[string]k8s.ProvisionStatus),
+		provisions:        make(map[string]*k8s.Provision),
+		machines:          make(map[string]*k8s.Machine),
+		bootTargets:       make(map[string]*k8s.BootTarget),
+		bootMedias:        make(map[string]*k8s.BootMedia),
+		responseTemplates: make(map[string]*k8s.ResponseTemplate),
+		configMaps:        make(map[string]*corev1.ConfigMap),
+		secrets:           make(map[string]*corev1.Secret),
+		bootMediaStatuses: make(map[string]*k8s.BootMediaStatus),
+		provisionStatuses: make(map[string]k8s.ProvisionStatus),
 	}
 }
 
@@ -125,11 +127,7 @@ func (f *fakeK8sClient) GetBootTarget(_ context.Context, name string) (*k8s.Boot
 	if !ok {
 		return nil, fmt.Errorf("boottarget %q not found", name)
 	}
-	cp := *bt
-	if s, ok := f.bootTargetStatuses[name]; ok {
-		cp.Status = *s
-	}
-	return &cp, nil
+	return bt, nil
 }
 
 func (f *fakeK8sClient) ListBootTargets(_ context.Context) ([]*k8s.BootTarget, error) {
@@ -137,8 +135,32 @@ func (f *fakeK8sClient) ListBootTargets(_ context.Context) ([]*k8s.BootTarget, e
 	defer f.mu.Unlock()
 	var result []*k8s.BootTarget
 	for _, bt := range f.bootTargets {
-		cp := *bt
-		if s, ok := f.bootTargetStatuses[bt.Name]; ok {
+		result = append(result, bt)
+	}
+	return result, nil
+}
+
+func (f *fakeK8sClient) GetBootMedia(_ context.Context, name string) (*k8s.BootMedia, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	bm, ok := f.bootMedias[name]
+	if !ok {
+		return nil, fmt.Errorf("bootmedia %q not found", name)
+	}
+	cp := *bm
+	if s, ok := f.bootMediaStatuses[name]; ok {
+		cp.Status = *s
+	}
+	return &cp, nil
+}
+
+func (f *fakeK8sClient) ListBootMedias(_ context.Context) ([]*k8s.BootMedia, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var result []*k8s.BootMedia
+	for _, bm := range f.bootMedias {
+		cp := *bm
+		if s, ok := f.bootMediaStatuses[bm.Name]; ok {
 			cp.Status = *s
 		}
 		result = append(result, &cp)
@@ -146,13 +168,13 @@ func (f *fakeK8sClient) ListBootTargets(_ context.Context) ([]*k8s.BootTarget, e
 	return result, nil
 }
 
-func (f *fakeK8sClient) UpdateBootTargetStatus(_ context.Context, name string, status *k8s.BootTargetStatus) error {
+func (f *fakeK8sClient) UpdateBootMediaStatus(_ context.Context, name string, status *k8s.BootMediaStatus) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, ok := f.bootTargets[name]; !ok {
-		return fmt.Errorf("boottarget %q not found", name)
+	if _, ok := f.bootMedias[name]; !ok {
+		return fmt.Errorf("bootmedia %q not found", name)
 	}
-	f.bootTargetStatuses[name] = status
+	f.bootMediaStatuses[name] = status
 	return nil
 }
 
@@ -194,11 +216,11 @@ func (f *fakeK8sClient) getProvisionStatus(name string) (k8s.ProvisionStatus, bo
 	return s, ok
 }
 
-// helper to get the current boot target status recorded by the fake
-func (f *fakeK8sClient) getBootTargetStatus(name string) (*k8s.BootTargetStatus, bool) {
+// helper to get the current boot media status recorded by the fake
+func (f *fakeK8sClient) getBootMediaStatus(name string) (*k8s.BootMediaStatus, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	s, ok := f.bootTargetStatuses[name]
+	s, ok := f.bootMediaStatuses[name]
 	return s, ok
 }
 

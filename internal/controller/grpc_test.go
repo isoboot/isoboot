@@ -218,8 +218,10 @@ func TestGRPC_GetConfigMapValue_ConfigMapNotFound(t *testing.T) {
 func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
-		Name:     "debian-13",
-		Template: "#!ipxe\nkernel ...\n",
+		Name:              "debian-13",
+		BootMediaRef:      "debian-13",
+		UseDebianFirmware: false,
+		Template:          "#!ipxe\nkernel ...\n",
 	}
 
 	srv := NewGRPCServer(New(fake))
@@ -232,6 +234,37 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	}
 	if resp.Template != "#!ipxe\nkernel ...\n" {
 		t.Errorf("unexpected template: %q", resp.Template)
+	}
+	if resp.BootMediaRef != "debian-13" {
+		t.Errorf("expected BootMediaRef debian-13, got %q", resp.BootMediaRef)
+	}
+	if resp.UseDebianFirmware {
+		t.Error("expected UseDebianFirmware=false")
+	}
+}
+
+func TestGRPC_GetBootTarget_WithFirmware(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.bootTargets["debian-13-firmware"] = &k8s.BootTarget{
+		Name:              "debian-13-firmware",
+		BootMediaRef:      "debian-13",
+		UseDebianFirmware: true,
+		Template:          "#!ipxe\nkernel ...\n",
+	}
+
+	srv := NewGRPCServer(New(fake))
+	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "debian-13-firmware"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Found {
+		t.Fatal("expected Found=true")
+	}
+	if resp.BootMediaRef != "debian-13" {
+		t.Errorf("expected BootMediaRef debian-13, got %q", resp.BootMediaRef)
+	}
+	if !resp.UseDebianFirmware {
+		t.Error("expected UseDebianFirmware=true")
 	}
 }
 

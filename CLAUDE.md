@@ -70,7 +70,15 @@ Available variables in BootTarget (iPXE scripts):
 - `.Hostname` - first part before dot (e.g., "vm-01")
 - `.Domain` - everything after first dot (e.g., "lan")
 - `.BootTarget` - BootTarget resource name
+- `.BootMedia` - BootMedia resource name (for static file paths, e.g., `/static/{{ .BootMedia }}/linux`)
+- `.UseDebianFirmware` - bool, whether to use firmware-combined initrd
 - `.ProvisionName` - Provision resource name (use for answer file URLs)
+
+### CRD Architecture: BootMedia + BootTarget
+- **BootMedia** owns file downloads (`files[]`, `combinedFiles[]`, status tracking). One per OS version. Names: `debian-12`, `debian-13`.
+- **BootTarget** references a BootMedia via `bootMediaRef`. Adds `useDebianFirmware: bool` and `template`. Multiple BootTargets can share one BootMedia. Names: `debian-12`, `debian-12-firmware`, `debian-13`, `debian-13-firmware`.
+- Static files served at `/static/{bootMedia}/`.
+- Provision still references `bootTargetRef`.
 
 ### Error Handling in HTTP Handlers
 - Return 502 Bad Gateway for gRPC/transport errors

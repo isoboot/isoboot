@@ -9,19 +9,19 @@ import (
 	"github.com/isoboot/isoboot/internal/k8s"
 )
 
-// TestCheckBootTargetStatus tests the BootTarget status checking logic
-func TestCheckBootTargetStatus(t *testing.T) {
+// TestCheckBootMediaStatus tests the BootMedia status checking logic
+func TestCheckBootMediaStatus(t *testing.T) {
 	tests := []struct {
 		name          string
-		bootTarget    *k8s.BootTarget
+		bootMedia     *k8s.BootMedia
 		expectReady   bool
 		expectMsgPart string
 	}{
 		{
-			name: "Complete BootTarget is ready",
-			bootTarget: &k8s.BootTarget{
+			name: "Complete BootMedia is ready",
+			bootMedia: &k8s.BootMedia{
 				Name: "debian-13",
-				Status: k8s.BootTargetStatus{
+				Status: k8s.BootMediaStatus{
 					Phase: "Complete",
 				},
 			},
@@ -29,10 +29,10 @@ func TestCheckBootTargetStatus(t *testing.T) {
 			expectMsgPart: "",
 		},
 		{
-			name: "Failed BootTarget returns error message",
-			bootTarget: &k8s.BootTarget{
-				Name: "failed-target",
-				Status: k8s.BootTargetStatus{
+			name: "Failed BootMedia returns error message",
+			bootMedia: &k8s.BootMedia{
+				Name: "failed-media",
+				Status: k8s.BootMediaStatus{
 					Phase:   "Failed",
 					Message: "HTTP 404",
 				},
@@ -41,10 +41,10 @@ func TestCheckBootTargetStatus(t *testing.T) {
 			expectMsgPart: "failed: HTTP 404",
 		},
 		{
-			name: "Downloading BootTarget",
-			bootTarget: &k8s.BootTarget{
-				Name: "downloading-target",
-				Status: k8s.BootTargetStatus{
+			name: "Downloading BootMedia",
+			bootMedia: &k8s.BootMedia{
+				Name: "downloading-media",
+				Status: k8s.BootMediaStatus{
 					Phase: "Downloading",
 				},
 			},
@@ -52,10 +52,10 @@ func TestCheckBootTargetStatus(t *testing.T) {
 			expectMsgPart: "downloading",
 		},
 		{
-			name: "Pending BootTarget",
-			bootTarget: &k8s.BootTarget{
-				Name: "pending-target",
-				Status: k8s.BootTargetStatus{
+			name: "Pending BootMedia",
+			bootMedia: &k8s.BootMedia{
+				Name: "pending-media",
+				Status: k8s.BootMediaStatus{
 					Phase: "Pending",
 				},
 			},
@@ -64,9 +64,9 @@ func TestCheckBootTargetStatus(t *testing.T) {
 		},
 		{
 			name: "Empty phase treated as pending",
-			bootTarget: &k8s.BootTarget{
-				Name:   "new-target",
-				Status: k8s.BootTargetStatus{},
+			bootMedia: &k8s.BootMedia{
+				Name:   "new-media",
+				Status: k8s.BootMediaStatus{},
 			},
 			expectReady:   false,
 			expectMsgPart: "pending",
@@ -75,7 +75,7 @@ func TestCheckBootTargetStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ready, msg := checkBootTargetStatus(tt.bootTarget)
+			ready, msg := checkBootMediaStatus(tt.bootMedia)
 			if ready != tt.expectReady {
 				t.Errorf("expected ready=%v, got ready=%v", tt.expectReady, ready)
 			}
@@ -125,8 +125,13 @@ func TestReconcileProvision_InitializePending(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+		Template:     "#!ipxe\n",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 
 	ctrl := New(fake)
@@ -191,6 +196,34 @@ func TestReconcileProvision_ConfigError_MissingBootTarget(t *testing.T) {
 	}
 }
 
+func TestReconcileProvision_ConfigError_MissingBootMedia(t *testing.T) {
+	fake := newFakeK8sClient()
+	fake.provisions["prov-1"] = &k8s.Provision{
+		Name: "prov-1",
+		Spec: k8s.ProvisionSpec{
+			MachineRef:    "vm-01",
+			BootTargetRef: "debian-13",
+		},
+		Status: k8s.ProvisionStatus{Phase: "Pending"},
+	}
+	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "missing-bm",
+	}
+
+	ctrl := New(fake)
+	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
+
+	s, _ := fake.getProvisionStatus("prov-1")
+	if s.Phase != "ConfigError" {
+		t.Errorf("expected phase ConfigError, got %q", s.Phase)
+	}
+	if !strings.Contains(s.Message, "BootMedia") {
+		t.Errorf("expected message about BootMedia, got %q", s.Message)
+	}
+}
+
 func TestReconcileProvision_ConfigError_InvalidMachineId(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.provisions["prov-1"] = &k8s.Provision{
@@ -204,8 +237,12 @@ func TestReconcileProvision_ConfigError_InvalidMachineId(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 
 	ctrl := New(fake)
@@ -233,8 +270,12 @@ func TestReconcileProvision_ConfigError_MissingConfigMap(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 
 	ctrl := New(fake)
@@ -262,8 +303,12 @@ func TestReconcileProvision_ConfigError_MissingSecret(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 
 	ctrl := New(fake)
@@ -278,7 +323,7 @@ func TestReconcileProvision_ConfigError_MissingSecret(t *testing.T) {
 	}
 }
 
-func TestReconcileProvision_WaitingForBootTarget(t *testing.T) {
+func TestReconcileProvision_WaitingForBootMedia(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.provisions["prov-1"] = &k8s.Provision{
 		Name: "prov-1",
@@ -290,16 +335,20 @@ func TestReconcileProvision_WaitingForBootTarget(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Downloading"},
+		Status: k8s.BootMediaStatus{Phase: "Downloading"},
 	}
 
 	ctrl := New(fake)
 	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
 
 	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "WaitingForBootTarget" {
-		t.Errorf("expected phase WaitingForBootTarget, got %q", s.Phase)
+	if s.Phase != "WaitingForBootMedia" {
+		t.Errorf("expected phase WaitingForBootMedia, got %q", s.Phase)
 	}
 }
 
@@ -315,8 +364,12 @@ func TestReconcileProvision_ConfigErrorRecovery(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 
 	ctrl := New(fake)
@@ -343,8 +396,12 @@ func TestReconcileProvision_TimeoutInProgress(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 
 	ctrl := New(fake)
@@ -374,8 +431,12 @@ func TestReconcileProvision_InProgressNotTimedOut(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 
 	ctrl := New(fake)
@@ -399,8 +460,12 @@ func TestReconcileProvision_CompleteIsNoop(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 
 	ctrl := New(fake)
@@ -416,8 +481,12 @@ func TestValidateProvisionRefs_AllValid(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{
+		Name:         "debian-13",
+		BootMediaRef: "debian-13",
+	}
+	fake.bootMedias["debian-13"] = &k8s.BootMedia{
 		Name:   "debian-13",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 	fake.responseTemplates["preseed"] = &k8s.ResponseTemplate{Name: "preseed", Files: map[string]string{"preseed.cfg": "content"}}
 	fake.configMaps["net-cfg"] = newConfigMap("net-cfg", map[string]string{"gateway": "10.0.0.1"})

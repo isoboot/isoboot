@@ -212,23 +212,22 @@ func (f *fakeHTTPDoer) Do(req *http.Request) (*http.Response, error) {
 	return f.doFunc(req)
 }
 
-func TestReconcileBootTarget_InitializePending(t *testing.T) {
+func TestReconcileBootMedia_InitializePending(t *testing.T) {
 	fake := newFakeK8sClient()
-	fake.bootTargets["test-bt"] = &k8s.BootTarget{
-		Name: "test-bt",
-		Files: []k8s.BootTargetFile{
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name: "test-bm",
+		Files: []k8s.BootMediaFile{
 			{URL: "http://example.com/images/linux"},
 		},
-		Template: "#!ipxe\nkernel /linux\n",
 	}
 
 	ctrl := &Controller{k8sClient: fake, httpClient: http.DefaultClient}
-	bt := fake.bootTargets["test-bt"]
-	ctrl.reconcileBootTarget(context.Background(), bt)
+	bm := fake.bootMedias["test-bm"]
+	ctrl.reconcileBootMedia(context.Background(), bm)
 
-	status, ok := fake.getBootTargetStatus("test-bt")
+	status, ok := fake.getBootMediaStatus("test-bm")
 	if !ok {
-		t.Fatal("expected BootTarget status to be updated")
+		t.Fatal("expected BootMedia status to be updated")
 	}
 	if status.Phase != "Pending" {
 		t.Errorf("expected phase Pending, got %q", status.Phase)
@@ -238,43 +237,43 @@ func TestReconcileBootTarget_InitializePending(t *testing.T) {
 	}
 }
 
-func TestReconcileBootTarget_CompleteIsNoop(t *testing.T) {
+func TestReconcileBootMedia_CompleteIsNoop(t *testing.T) {
 	fake := newFakeK8sClient()
-	fake.bootTargets["test-bt"] = &k8s.BootTarget{
-		Name:   "test-bt",
-		Status: k8s.BootTargetStatus{Phase: "Complete"},
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name:   "test-bm",
+		Status: k8s.BootMediaStatus{Phase: "Complete"},
 	}
 
 	ctrl := &Controller{k8sClient: fake, httpClient: http.DefaultClient}
-	bt, _ := fake.GetBootTarget(context.Background(), "test-bt")
-	ctrl.reconcileBootTarget(context.Background(), bt)
+	bm, _ := fake.GetBootMedia(context.Background(), "test-bm")
+	ctrl.reconcileBootMedia(context.Background(), bm)
 
-	if _, ok := fake.getBootTargetStatus("test-bt"); ok {
-		t.Error("expected no status update for Complete BootTarget")
+	if _, ok := fake.getBootMediaStatus("test-bm"); ok {
+		t.Error("expected no status update for Complete BootMedia")
 	}
 }
 
-func TestReconcileBootTarget_FailedIsNoop(t *testing.T) {
+func TestReconcileBootMedia_FailedIsNoop(t *testing.T) {
 	fake := newFakeK8sClient()
-	fake.bootTargets["test-bt"] = &k8s.BootTarget{
-		Name:   "test-bt",
-		Status: k8s.BootTargetStatus{Phase: "Failed"},
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name:   "test-bm",
+		Status: k8s.BootMediaStatus{Phase: "Failed"},
 	}
 
 	ctrl := &Controller{k8sClient: fake, httpClient: http.DefaultClient}
-	bt, _ := fake.GetBootTarget(context.Background(), "test-bt")
-	ctrl.reconcileBootTarget(context.Background(), bt)
+	bm, _ := fake.GetBootMedia(context.Background(), "test-bm")
+	ctrl.reconcileBootMedia(context.Background(), bm)
 
-	if _, ok := fake.getBootTargetStatus("test-bt"); ok {
-		t.Error("expected no status update for Failed BootTarget")
+	if _, ok := fake.getBootMediaStatus("test-bm"); ok {
+		t.Error("expected no status update for Failed BootMedia")
 	}
 }
 
-func TestDownloadBootTarget_NoFilesBasePath(t *testing.T) {
+func TestDownloadBootMedia_NoFilesBasePath(t *testing.T) {
 	fake := newFakeK8sClient()
-	fake.bootTargets["test-bt"] = &k8s.BootTarget{
-		Name: "test-bt",
-		Files: []k8s.BootTargetFile{
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name: "test-bm",
+		Files: []k8s.BootMediaFile{
 			{URL: "http://example.com/images/linux"},
 		},
 	}
@@ -285,12 +284,12 @@ func TestDownloadBootTarget_NoFilesBasePath(t *testing.T) {
 		filesBasePath: "", // not configured
 	}
 
-	bt := fake.bootTargets["test-bt"]
-	ctrl.downloadBootTarget(context.Background(), bt)
+	bm := fake.bootMedias["test-bm"]
+	ctrl.downloadBootMedia(context.Background(), bm)
 
-	status, ok := fake.getBootTargetStatus("test-bt")
+	status, ok := fake.getBootMediaStatus("test-bm")
 	if !ok {
-		t.Fatal("expected BootTarget status to be updated")
+		t.Fatal("expected BootMedia status to be updated")
 	}
 	if status.Phase != "Failed" {
 		t.Errorf("expected phase Failed, got %q", status.Phase)
@@ -300,16 +299,16 @@ func TestDownloadBootTarget_NoFilesBasePath(t *testing.T) {
 	}
 }
 
-func TestDownloadBootTarget_InvalidURL(t *testing.T) {
+func TestDownloadBootMedia_InvalidURL(t *testing.T) {
 	fake := newFakeK8sClient()
-	fake.bootTargets["test-bt"] = &k8s.BootTarget{
-		Name: "test-bt",
-		Files: []k8s.BootTargetFile{
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name: "test-bm",
+		Files: []k8s.BootMediaFile{
 			{URL: "http://example.com/"}, // no filename
 		},
 	}
 
-	tmpDir, err := os.MkdirTemp("", "boottarget-test")
+	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -321,12 +320,12 @@ func TestDownloadBootTarget_InvalidURL(t *testing.T) {
 		filesBasePath: tmpDir,
 	}
 
-	bt := fake.bootTargets["test-bt"]
-	ctrl.downloadBootTarget(context.Background(), bt)
+	bm := fake.bootMedias["test-bm"]
+	ctrl.downloadBootMedia(context.Background(), bm)
 
-	status, ok := fake.getBootTargetStatus("test-bt")
+	status, ok := fake.getBootMediaStatus("test-bm")
 	if !ok {
-		t.Fatal("expected BootTarget status to be updated")
+		t.Fatal("expected BootMedia status to be updated")
 	}
 	if status.Phase != "Failed" {
 		t.Errorf("expected phase Failed, got %q", status.Phase)
@@ -336,21 +335,21 @@ func TestDownloadBootTarget_InvalidURL(t *testing.T) {
 	}
 }
 
-func TestDownloadBootTarget_SuccessfulDownload(t *testing.T) {
+func TestDownloadBootMedia_SuccessfulDownload(t *testing.T) {
 	fileContent := []byte("fake kernel content")
 	sha256Hash := sha256.New()
 	sha256Hash.Write(fileContent)
 	expectedSha256 := fmt.Sprintf("%x", sha256Hash.Sum(nil))
 
 	fake := newFakeK8sClient()
-	fake.bootTargets["test-bt"] = &k8s.BootTarget{
-		Name: "test-bt",
-		Files: []k8s.BootTargetFile{
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name: "test-bm",
+		Files: []k8s.BootMediaFile{
 			{URL: "http://example.com/images/linux"},
 		},
 	}
 
-	tmpDir, err := os.MkdirTemp("", "boottarget-test")
+	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -371,12 +370,12 @@ func TestDownloadBootTarget_SuccessfulDownload(t *testing.T) {
 		filesBasePath: tmpDir,
 	}
 
-	bt := fake.bootTargets["test-bt"]
-	ctrl.downloadBootTarget(context.Background(), bt)
+	bm := fake.bootMedias["test-bm"]
+	ctrl.downloadBootMedia(context.Background(), bm)
 
-	status, ok := fake.getBootTargetStatus("test-bt")
+	status, ok := fake.getBootMediaStatus("test-bm")
 	if !ok {
-		t.Fatal("expected BootTarget status to be updated")
+		t.Fatal("expected BootMedia status to be updated")
 	}
 	if status.Phase != "Complete" {
 		t.Fatalf("expected phase Complete, got %q (message: %s)", status.Phase, status.Message)
@@ -389,7 +388,7 @@ func TestDownloadBootTarget_SuccessfulDownload(t *testing.T) {
 	}
 
 	// Verify file was written to disk
-	filePath := filepath.Join(tmpDir, "test-bt", "linux")
+	filePath := filepath.Join(tmpDir, "test-bm", "linux")
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		t.Fatalf("failed to read downloaded file: %v", err)
@@ -399,16 +398,16 @@ func TestDownloadBootTarget_SuccessfulDownload(t *testing.T) {
 	}
 }
 
-func TestDownloadBootTarget_HTTPError(t *testing.T) {
+func TestDownloadBootMedia_HTTPError(t *testing.T) {
 	fake := newFakeK8sClient()
-	fake.bootTargets["test-bt"] = &k8s.BootTarget{
-		Name: "test-bt",
-		Files: []k8s.BootTargetFile{
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name: "test-bm",
+		Files: []k8s.BootMediaFile{
 			{URL: "http://example.com/images/linux"},
 		},
 	}
 
-	tmpDir, err := os.MkdirTemp("", "boottarget-test")
+	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -426,12 +425,12 @@ func TestDownloadBootTarget_HTTPError(t *testing.T) {
 		filesBasePath: tmpDir,
 	}
 
-	bt := fake.bootTargets["test-bt"]
-	ctrl.downloadBootTarget(context.Background(), bt)
+	bm := fake.bootMedias["test-bm"]
+	ctrl.downloadBootMedia(context.Background(), bm)
 
-	status, ok := fake.getBootTargetStatus("test-bt")
+	status, ok := fake.getBootMediaStatus("test-bm")
 	if !ok {
-		t.Fatal("expected BootTarget status to be updated")
+		t.Fatal("expected BootMedia status to be updated")
 	}
 	if status.Phase != "Failed" {
 		t.Errorf("expected phase Failed, got %q", status.Phase)
@@ -441,16 +440,16 @@ func TestDownloadBootTarget_HTTPError(t *testing.T) {
 	}
 }
 
-func TestDownloadBootTarget_ConnectionError(t *testing.T) {
+func TestDownloadBootMedia_ConnectionError(t *testing.T) {
 	fake := newFakeK8sClient()
-	fake.bootTargets["test-bt"] = &k8s.BootTarget{
-		Name: "test-bt",
-		Files: []k8s.BootTargetFile{
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name: "test-bm",
+		Files: []k8s.BootMediaFile{
 			{URL: "http://example.com/images/linux"},
 		},
 	}
 
-	tmpDir, err := os.MkdirTemp("", "boottarget-test")
+	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -468,12 +467,12 @@ func TestDownloadBootTarget_ConnectionError(t *testing.T) {
 		filesBasePath: tmpDir,
 	}
 
-	bt := fake.bootTargets["test-bt"]
-	ctrl.downloadBootTarget(context.Background(), bt)
+	bm := fake.bootMedias["test-bm"]
+	ctrl.downloadBootMedia(context.Background(), bm)
 
-	status, ok := fake.getBootTargetStatus("test-bt")
+	status, ok := fake.getBootMediaStatus("test-bm")
 	if !ok {
-		t.Fatal("expected BootTarget status to be updated")
+		t.Fatal("expected BootMedia status to be updated")
 	}
 	if status.Phase != "Failed" {
 		t.Errorf("expected phase Failed, got %q", status.Phase)
@@ -483,14 +482,14 @@ func TestDownloadBootTarget_ConnectionError(t *testing.T) {
 	}
 }
 
-func TestDownloadBootTarget_CombinedFile(t *testing.T) {
+func TestDownloadBootMedia_CombinedFile(t *testing.T) {
 	kernelContent := []byte("kernel-data")
 	initrdContent := []byte("initrd-data")
 
 	fake := newFakeK8sClient()
-	fake.bootTargets["test-bt"] = &k8s.BootTarget{
-		Name: "test-bt",
-		Files: []k8s.BootTargetFile{
+	fake.bootMedias["test-bm"] = &k8s.BootMedia{
+		Name: "test-bm",
+		Files: []k8s.BootMediaFile{
 			{URL: "http://example.com/linux"},
 			{URL: "http://example.com/initrd.gz"},
 		},
@@ -499,7 +498,7 @@ func TestDownloadBootTarget_CombinedFile(t *testing.T) {
 		},
 	}
 
-	tmpDir, err := os.MkdirTemp("", "boottarget-test")
+	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -524,12 +523,12 @@ func TestDownloadBootTarget_CombinedFile(t *testing.T) {
 		filesBasePath: tmpDir,
 	}
 
-	bt := fake.bootTargets["test-bt"]
-	ctrl.downloadBootTarget(context.Background(), bt)
+	bm := fake.bootMedias["test-bm"]
+	ctrl.downloadBootMedia(context.Background(), bm)
 
-	status, ok := fake.getBootTargetStatus("test-bt")
+	status, ok := fake.getBootMediaStatus("test-bm")
 	if !ok {
-		t.Fatal("expected BootTarget status to be updated")
+		t.Fatal("expected BootMedia status to be updated")
 	}
 	if status.Phase != "Complete" {
 		t.Fatalf("expected phase Complete, got %q (message: %s)", status.Phase, status.Message)
@@ -545,7 +544,7 @@ func TestDownloadBootTarget_CombinedFile(t *testing.T) {
 	}
 
 	// Verify combined file content
-	combinedPath := filepath.Join(tmpDir, "test-bt", "combined-initrd.gz")
+	combinedPath := filepath.Join(tmpDir, "test-bm", "combined-initrd.gz")
 	combinedContent, err := os.ReadFile(combinedPath)
 	if err != nil {
 		t.Fatalf("failed to read combined file: %v", err)

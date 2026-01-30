@@ -114,8 +114,10 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 	}
 
 	return &pb.GetBootTargetResponse{
-		Found:    true,
-		Template: bt.Template,
+		Found:             true,
+		Template:          bt.Template,
+		BootMediaRef:      bt.BootMediaRef,
+		UseDebianFirmware: bt.UseDebianFirmware,
 	}, nil
 }
 

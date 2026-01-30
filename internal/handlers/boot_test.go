@@ -139,7 +139,9 @@ func TestServeConditionalBoot_PendingProvision(t *testing.T) {
 		},
 		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
 			return &controllerclient.BootTargetInfo{
-				Template: "#!ipxe\nkernel http://{{ .Host }}:{{ .Port }}/static/{{ .BootTarget }}/linux\nboot\n",
+				Template:          "#!ipxe\nkernel http://{{ .Host }}:{{ .Port }}/static/{{ .BootMedia }}/linux\nboot\n",
+				BootMediaRef:      "debian-13",
+				UseDebianFirmware: false,
 			}, nil
 		},
 		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
@@ -163,10 +165,50 @@ func TestServeConditionalBoot_PendingProvision(t *testing.T) {
 		t.Errorf("expected host:port in body, got %q", body)
 	}
 	if !strings.Contains(body, "debian-13") {
-		t.Errorf("expected boot target in body, got %q", body)
+		t.Errorf("expected boot media in body, got %q", body)
 	}
 	if updatedName != "prov-1" || updatedStatus != "InProgress" {
 		t.Errorf("expected provision prov-1 marked InProgress, got name=%q status=%q", updatedName, updatedStatus)
+	}
+}
+
+func TestServeConditionalBoot_BootMediaAndFirmwareRendered(t *testing.T) {
+	mock := &mockBootClient{
+		getMachineByMAC: func(ctx context.Context, mac string) (string, error) {
+			return "vm-01.lan", nil
+		},
+		getProvisionsByMachine: func(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error) {
+			return []controllerclient.ProvisionSummary{
+				{Name: "prov-1", Status: "Pending", BootTargetRef: "debian-13-firmware"},
+			}, nil
+		},
+		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
+			return &controllerclient.BootTargetInfo{
+				Template:          "#!ipxe\n{{ if .UseDebianFirmware }}firmware{{ else }}nofirmware{{ end }}\nstatic/{{ .BootMedia }}/linux\n",
+				BootMediaRef:      "debian-13",
+				UseDebianFirmware: true,
+			}, nil
+		},
+		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {
+			return nil
+		},
+	}
+
+	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "cm")
+	req := httptest.NewRequest("GET", "/boot/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeConditionalBoot(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "firmware") {
+		t.Errorf("expected 'firmware' in body (UseDebianFirmware=true), got %q", body)
+	}
+	if !strings.Contains(body, "static/debian-13/linux") {
+		t.Errorf("expected 'static/debian-13/linux' in body (BootMedia=debian-13), got %q", body)
 	}
 }
 
@@ -270,7 +312,8 @@ func TestServeConditionalBoot_EmptyStatusTreatedAsPending(t *testing.T) {
 		},
 		getBootTarget: func(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error) {
 			return &controllerclient.BootTargetInfo{
-				Template: "#!ipxe\nboot\n",
+				Template:     "#!ipxe\nboot\n",
+				BootMediaRef: "debian-13",
 			}, nil
 		},
 		updateProvisionStatus: func(ctx context.Context, name, status, message, ip string) error {

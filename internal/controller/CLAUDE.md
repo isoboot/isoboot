@@ -5,17 +5,18 @@ Controller reconciliation logic for isoboot-controller.
 ## Components
 
 ### Controller (controller.go)
-Main reconciliation loop that watches Provision CRDs:
-- Validates references (Machine, BootTarget, ResponseTemplate, ConfigMaps, Secrets)
+Main reconciliation loop that watches Provision and BootMedia CRDs:
+- Validates references (Machine, BootTarget, BootMedia, ResponseTemplate, ConfigMaps, Secrets)
+- Two-step readiness check: Provision → BootTarget → BootMedia (status must be Complete)
 - Manages status transitions: Pending → InProgress → Complete/Failed
-- Renders templates with merged ConfigMap/Secret data
+- WaitingForBootMedia status when BootMedia is not yet Complete
 - Timeout handling for stuck InProgress provisions (30 min default)
 
-### DiskImage Downloader (diskimage.go)
-Downloads and caches ISO/firmware files for BootTargets:
-- Verifies checksums (SHA256/SHA512) if provided
-- Tracks download progress in DiskImage status
-- Extracts ISO contents for serving
+### BootMedia Downloader (bootmedia.go)
+Downloads and caches files for BootMedia resources:
+- Verifies checksums (SHA256) if provided
+- Tracks download progress in BootMedia status
+- Builds combined files by concatenating sources
 
 ### gRPC Server (grpc.go)
 Exposes primitive CRD accessors to isoboot-http:
@@ -26,7 +27,7 @@ Exposes primitive CRD accessors to isoboot-http:
 - `GetConfigMaps` - Get merged ConfigMap data
 - `GetSecrets` - Get merged Secret data
 - `GetResponseTemplate` - Get response template by name
-- `GetBootTarget` - Get boot target by name
+- `GetBootTarget` - Get boot target by name (returns template, bootMediaRef, useDebianFirmware)
 - `GetConfigMapValue` - Get single value from ConfigMap
 
 ### SSH Key Derivation (sshkeys.go)

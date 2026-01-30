@@ -135,7 +135,9 @@ func (c *Client) GetConfigMapValue(ctx context.Context, configMapName, key strin
 
 // BootTargetInfo returned by GetBootTarget
 type BootTargetInfo struct {
-	Template string
+	Template          string
+	BootMediaRef      string
+	UseDebianFirmware bool
 }
 
 // GetBootTarget retrieves a BootTarget by name
@@ -150,7 +152,9 @@ func (c *Client) GetBootTarget(ctx context.Context, name string) (*BootTargetInf
 	}
 
 	return &BootTargetInfo{
-		Template: resp.Template,
+		Template:          resp.Template,
+		BootMediaRef:      resp.BootMediaRef,
+		UseDebianFirmware: resp.UseDebianFirmware,
 	}, nil
 }
 

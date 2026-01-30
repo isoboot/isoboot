@@ -27,6 +27,11 @@ var (
 		Version:  "v1alpha1",
 		Resource: "provisions",
 	}
+	bootMediaGVR = schema.GroupVersionResource{
+		Group:    "isoboot.io",
+		Version:  "v1alpha1",
+		Resource: "bootmedias",
+	}
 	bootTargetGVR = schema.GroupVersionResource{
 		Group:    "isoboot.io",
 		Version:  "v1alpha1",
@@ -68,17 +73,16 @@ type ProvisionStatus struct {
 	IP          string
 }
 
-// BootTarget represents a BootTarget CRD
-type BootTarget struct {
+// BootMedia represents a BootMedia CRD (owns file downloads)
+type BootMedia struct {
 	Name          string
-	Files         []BootTargetFile
+	Files         []BootMediaFile
 	CombinedFiles []CombinedFile
-	Template      string
-	Status        BootTargetStatus
+	Status        BootMediaStatus
 }
 
-// BootTargetFile represents a file to download
-type BootTargetFile struct {
+// BootMediaFile represents a file to download
+type BootMediaFile struct {
 	URL         string
 	ChecksumURL string
 }
@@ -89,8 +93,8 @@ type CombinedFile struct {
 	Sources []string
 }
 
-// BootTargetStatus represents the status of a BootTarget
-type BootTargetStatus struct {
+// BootMediaStatus represents the status of a BootMedia
+type BootMediaStatus struct {
 	Phase         string // Pending, Downloading, Complete, Failed
 	Message       string
 	Files         []FileStatus
@@ -102,6 +106,14 @@ type FileStatus struct {
 	Name   string
 	Phase  string // Pending, Downloading, Complete, Failed
 	SHA256 string
+}
+
+// BootTarget represents a BootTarget CRD (references a BootMedia, adds template)
+type BootTarget struct {
+	Name              string
+	BootMediaRef      string
+	UseDebianFirmware bool
+	Template          string
 }
 
 // ResponseTemplate represents a ResponseTemplate CRD
@@ -208,69 +220,10 @@ func parseBootTarget(obj *unstructured.Unstructured) (*BootTarget, error) {
 	}
 
 	bt := &BootTarget{
-		Name:     obj.GetName(),
-		Template: getString(spec, "template"),
-	}
-
-	// Parse files array
-	if filesRaw, ok := spec["files"].([]interface{}); ok {
-		for _, item := range filesRaw {
-			if m, ok := item.(map[string]interface{}); ok {
-				bt.Files = append(bt.Files, BootTargetFile{
-					URL:         getString(m, "url"),
-					ChecksumURL: getString(m, "checksumURL"),
-				})
-			}
-		}
-	}
-
-	// Parse combinedFiles array
-	if combinedRaw, ok := spec["combinedFiles"].([]interface{}); ok {
-		for _, item := range combinedRaw {
-			if m, ok := item.(map[string]interface{}); ok {
-				cf := CombinedFile{
-					Name: getString(m, "name"),
-				}
-				if sources, ok := m["sources"].([]interface{}); ok {
-					for _, s := range sources {
-						if str, ok := s.(string); ok {
-							cf.Sources = append(cf.Sources, str)
-						}
-					}
-				}
-				bt.CombinedFiles = append(bt.CombinedFiles, cf)
-			}
-		}
-	}
-
-	// Parse status if present
-	if status, ok := obj.Object["status"].(map[string]interface{}); ok {
-		bt.Status = BootTargetStatus{
-			Phase:   getString(status, "phase"),
-			Message: getString(status, "message"),
-		}
-		if filesStatus, ok := status["files"].([]interface{}); ok {
-			for _, item := range filesStatus {
-				if m, ok := item.(map[string]interface{}); ok {
-					bt.Status.Files = append(bt.Status.Files, FileStatus{
-						Name:   getString(m, "name"),
-						Phase:  getString(m, "phase"),
-						SHA256: getString(m, "sha256"),
-					})
-				}
-			}
-		}
-		if combinedStatus, ok := status["combinedFiles"].([]interface{}); ok {
-			for _, item := range combinedStatus {
-				if m, ok := item.(map[string]interface{}); ok {
-					bt.Status.CombinedFiles = append(bt.Status.CombinedFiles, FileStatus{
-						Name:   getString(m, "name"),
-						Phase:  getString(m, "phase"),
-						SHA256: getString(m, "sha256"),
-					})
-				}
-			}
-		}
+		Name:              obj.GetName(),
+		BootMediaRef:      getString(spec, "bootMediaRef"),
+		UseDebianFirmware: getBool(spec, "useDebianFirmware"),
+		Template:          getString(spec, "template"),
 	}
 
 	return bt, nil
@@ -385,6 +338,13 @@ func getInt(m map[string]interface{}, key string) int {
 		return int(v)
 	}
 	return 0
+}
+
+func getBool(m map[string]interface{}, key string) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return false
 }
 
 func getStringSlice(m map[string]interface{}, key string) []string {
@@ -583,34 +543,118 @@ func (c *Client) UpdateProvisionStatus(ctx context.Context, name, phase, message
 	return nil
 }
 
-// ListBootTargets lists all BootTargets
-func (c *Client) ListBootTargets(ctx context.Context) ([]*BootTarget, error) {
-	list, err := c.dynamicClient.Resource(bootTargetGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
+// GetBootMedia retrieves a BootMedia by name
+func (c *Client) GetBootMedia(ctx context.Context, name string) (*BootMedia, error) {
+	obj, err := c.dynamicClient.Resource(bootMediaGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	var bootTargets []*BootTarget
-	for _, item := range list.Items {
-		bt, err := parseBootTarget(&item)
-		if err != nil {
-			log.Printf("k8s: failed to parse BootTarget %s (skipping): %v", item.GetName(), err)
-			continue
-		}
-		bootTargets = append(bootTargets, bt)
-	}
-	return bootTargets, nil
+	return parseBootMedia(obj)
 }
 
-// UpdateBootTargetStatus updates the status of a BootTarget.
-func (c *Client) UpdateBootTargetStatus(ctx context.Context, name string, status *BootTargetStatus) error {
+// ListBootMedias lists all BootMedias
+func (c *Client) ListBootMedias(ctx context.Context) ([]*BootMedia, error) {
+	list, err := c.dynamicClient.Resource(bootMediaGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	var bootMedias []*BootMedia
+	for _, item := range list.Items {
+		bm, err := parseBootMedia(&item)
+		if err != nil {
+			log.Printf("k8s: failed to parse BootMedia %s (skipping): %v", item.GetName(), err)
+			continue
+		}
+		bootMedias = append(bootMedias, bm)
+	}
+	return bootMedias, nil
+}
+
+func parseBootMedia(obj *unstructured.Unstructured) (*BootMedia, error) {
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid bootmedia spec")
+	}
+
+	bm := &BootMedia{
+		Name: obj.GetName(),
+	}
+
+	// Parse files array
+	if filesRaw, ok := spec["files"].([]interface{}); ok {
+		for _, item := range filesRaw {
+			if m, ok := item.(map[string]interface{}); ok {
+				bm.Files = append(bm.Files, BootMediaFile{
+					URL:         getString(m, "url"),
+					ChecksumURL: getString(m, "checksumURL"),
+				})
+			}
+		}
+	}
+
+	// Parse combinedFiles array
+	if combinedRaw, ok := spec["combinedFiles"].([]interface{}); ok {
+		for _, item := range combinedRaw {
+			if m, ok := item.(map[string]interface{}); ok {
+				cf := CombinedFile{
+					Name: getString(m, "name"),
+				}
+				if sources, ok := m["sources"].([]interface{}); ok {
+					for _, s := range sources {
+						if str, ok := s.(string); ok {
+							cf.Sources = append(cf.Sources, str)
+						}
+					}
+				}
+				bm.CombinedFiles = append(bm.CombinedFiles, cf)
+			}
+		}
+	}
+
+	// Parse status if present
+	if status, ok := obj.Object["status"].(map[string]interface{}); ok {
+		bm.Status = BootMediaStatus{
+			Phase:   getString(status, "phase"),
+			Message: getString(status, "message"),
+		}
+		if filesStatus, ok := status["files"].([]interface{}); ok {
+			for _, item := range filesStatus {
+				if m, ok := item.(map[string]interface{}); ok {
+					bm.Status.Files = append(bm.Status.Files, FileStatus{
+						Name:   getString(m, "name"),
+						Phase:  getString(m, "phase"),
+						SHA256: getString(m, "sha256"),
+					})
+				}
+			}
+		}
+		if combinedStatus, ok := status["combinedFiles"].([]interface{}); ok {
+			for _, item := range combinedStatus {
+				if m, ok := item.(map[string]interface{}); ok {
+					bm.Status.CombinedFiles = append(bm.Status.CombinedFiles, FileStatus{
+						Name:   getString(m, "name"),
+						Phase:  getString(m, "phase"),
+						SHA256: getString(m, "sha256"),
+					})
+				}
+			}
+		}
+	}
+
+	return bm, nil
+}
+
+// UpdateBootMediaStatus updates the status of a BootMedia.
+func (c *Client) UpdateBootMediaStatus(ctx context.Context, name string, status *BootMediaStatus) error {
 	if status == nil {
 		return fmt.Errorf("status cannot be nil")
 	}
 
-	obj, err := c.dynamicClient.Resource(bootTargetGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
+	obj, err := c.dynamicClient.Resource(bootMediaGVR).Namespace(c.namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("get boottarget: %w", err)
+		return fmt.Errorf("get bootmedia: %w", err)
 	}
 
 	statusMap := map[string]interface{}{
@@ -644,10 +688,30 @@ func (c *Client) UpdateBootTargetStatus(ctx context.Context, name string, status
 
 	obj.Object["status"] = statusMap
 
-	_, err = c.dynamicClient.Resource(bootTargetGVR).Namespace(c.namespace).UpdateStatus(ctx, obj, metav1.UpdateOptions{})
+	_, err = c.dynamicClient.Resource(bootMediaGVR).Namespace(c.namespace).UpdateStatus(ctx, obj, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
 
 	return nil
 }
+
+// ListBootTargets lists all BootTargets
+func (c *Client) ListBootTargets(ctx context.Context) ([]*BootTarget, error) {
+	list, err := c.dynamicClient.Resource(bootTargetGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	var bootTargets []*BootTarget
+	for _, item := range list.Items {
+		bt, err := parseBootTarget(&item)
+		if err != nil {
+			log.Printf("k8s: failed to parse BootTarget %s (skipping): %v", item.GetName(), err)
+			continue
+		}
+		bootTargets = append(bootTargets, bt)
+	}
+	return bootTargets, nil
+}
+

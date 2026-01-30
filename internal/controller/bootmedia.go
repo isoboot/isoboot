@@ -25,78 +25,78 @@ const downloadRequestTimeout = 15 * time.Minute
 // checksumDiscoveryTimeout is the timeout for fetching checksum files.
 const checksumDiscoveryTimeout = 30 * time.Second
 
-// reconcileBootTargets reconciles all BootTarget resources
-func (c *Controller) reconcileBootTargets(ctx context.Context) {
-	bootTargets, err := c.k8sClient.ListBootTargets(ctx)
+// reconcileBootMedias reconciles all BootMedia resources
+func (c *Controller) reconcileBootMedias(ctx context.Context) {
+	bootMedias, err := c.k8sClient.ListBootMedias(ctx)
 	if err != nil {
-		log.Printf("Controller: failed to list boottargets: %v", err)
+		log.Printf("Controller: failed to list bootmedias: %v", err)
 		return
 	}
 
-	for _, bt := range bootTargets {
-		c.reconcileBootTarget(ctx, bt)
+	for _, bm := range bootMedias {
+		c.reconcileBootMedia(ctx, bm)
 	}
 }
 
-// reconcileBootTarget reconciles a single BootTarget
-func (c *Controller) reconcileBootTarget(ctx context.Context, bt *k8s.BootTarget) {
+// reconcileBootMedia reconciles a single BootMedia
+func (c *Controller) reconcileBootMedia(ctx context.Context, bm *k8s.BootMedia) {
 	// Initialize status if empty
-	if bt.Status.Phase == "" {
-		log.Printf("Controller: initializing BootTarget %s status to Pending", bt.Name)
-		status := &k8s.BootTargetStatus{
+	if bm.Status.Phase == "" {
+		log.Printf("Controller: initializing BootMedia %s status to Pending", bm.Name)
+		status := &k8s.BootMediaStatus{
 			Phase:   "Pending",
 			Message: "Waiting for download",
 		}
-		if err := c.k8sClient.UpdateBootTargetStatus(ctx, bt.Name, status); err != nil {
-			log.Printf("Controller: failed to initialize BootTarget %s: %v", bt.Name, err)
+		if err := c.k8sClient.UpdateBootMediaStatus(ctx, bm.Name, status); err != nil {
+			log.Printf("Controller: failed to initialize BootMedia %s: %v", bm.Name, err)
 		}
 		return
 	}
 
 	// If already Complete or Failed, nothing to do
-	if bt.Status.Phase == "Complete" || bt.Status.Phase == "Failed" {
+	if bm.Status.Phase == "Complete" || bm.Status.Phase == "Failed" {
 		return
 	}
 
 	// If Pending or Downloading, ensure download is running
-	if bt.Status.Phase == "Pending" || bt.Status.Phase == "Downloading" {
-		if _, alreadyRunning := c.activeBootTargetDownloads.LoadOrStore(bt.Name, true); alreadyRunning {
+	if bm.Status.Phase == "Pending" || bm.Status.Phase == "Downloading" {
+		if _, alreadyRunning := c.activeBootMediaDownloads.LoadOrStore(bm.Name, true); alreadyRunning {
 			return
 		}
-		go c.downloadBootTarget(ctx, bt)
+		go c.downloadBootMedia(ctx, bm)
 	}
 }
 
-// downloadBootTarget downloads all files for a BootTarget and builds combined files
-func (c *Controller) downloadBootTarget(parentCtx context.Context, bt *k8s.BootTarget) {
-	defer c.activeBootTargetDownloads.Delete(bt.Name)
+// downloadBootMedia downloads all files for a BootMedia and builds combined files
+func (c *Controller) downloadBootMedia(parentCtx context.Context, bm *k8s.BootMedia) {
+	defer c.activeBootMediaDownloads.Delete(bm.Name)
 
 	statusCtx := context.Background()
 
 	if c.filesBasePath == "" {
-		status := &k8s.BootTargetStatus{
+		status := &k8s.BootMediaStatus{
 			Phase:   "Failed",
 			Message: "Controller filesBasePath not configured",
 		}
-		if updateErr := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); updateErr != nil {
-			log.Printf("Controller: failed to update BootTarget %s to Failed: %v", bt.Name, updateErr)
+		if updateErr := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); updateErr != nil {
+			log.Printf("Controller: failed to update BootMedia %s to Failed: %v", bm.Name, updateErr)
 		}
 		return
 	}
 
-	btDir := filepath.Join(c.filesBasePath, bt.Name)
+	bmDir := filepath.Join(c.filesBasePath, bm.Name)
 
 	// Initialize status with file entries
-	status := &k8s.BootTargetStatus{
+	status := &k8s.BootMediaStatus{
 		Phase:   "Downloading",
 		Message: "Starting downloads",
 	}
-	for _, f := range bt.Files {
+	for _, f := range bm.Files {
 		fname, err := filenameFromURL(f.URL)
 		if err != nil {
 			status.Phase = "Failed"
 			status.Message = fmt.Sprintf("Invalid URL: %v", err)
-			c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status)
+			c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status)
 			return
 		}
 		status.Files = append(status.Files, k8s.FileStatus{
@@ -104,25 +104,25 @@ func (c *Controller) downloadBootTarget(parentCtx context.Context, bt *k8s.BootT
 			Phase: "Pending",
 		})
 	}
-	for _, cf := range bt.CombinedFiles {
+	for _, cf := range bm.CombinedFiles {
 		status.CombinedFiles = append(status.CombinedFiles, k8s.FileStatus{
 			Name:  cf.Name,
 			Phase: "Pending",
 		})
 	}
-	if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootTarget %s to Downloading: %v", bt.Name, err)
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootMedia %s to Downloading: %v", bm.Name, err)
 		return
 	}
 
 	// Download each file
-	for i, f := range bt.Files {
+	for i, f := range bm.Files {
 		fname, _ := filenameFromURL(f.URL)
-		destPath := filepath.Join(btDir, fname)
+		destPath := filepath.Join(bmDir, fname)
 
 		status.Files[i].Phase = "Downloading"
-		if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
-			log.Printf("Controller: failed to update BootTarget %s status: %v", bt.Name, err)
+		if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+			log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 		}
 
 		dlCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
@@ -133,52 +133,52 @@ func (c *Controller) downloadBootTarget(parentCtx context.Context, bt *k8s.BootT
 			status.Phase = "Failed"
 			status.Message = fmt.Sprintf("Failed to download %s: %v", fname, err)
 			status.Files[i].Phase = "Failed"
-			if updateErr := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); updateErr != nil {
-				log.Printf("Controller: failed to update BootTarget %s to Failed: %v", bt.Name, updateErr)
+			if updateErr := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); updateErr != nil {
+				log.Printf("Controller: failed to update BootMedia %s to Failed: %v", bm.Name, updateErr)
 			}
 			return
 		}
 
 		status.Files[i].Phase = "Complete"
 		status.Files[i].SHA256 = sha
-		if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
-			log.Printf("Controller: failed to update BootTarget %s status: %v", bt.Name, err)
+		if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+			log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 		}
 	}
 
 	// Build combined files
-	for i, cf := range bt.CombinedFiles {
+	for i, cf := range bm.CombinedFiles {
 		status.CombinedFiles[i].Phase = "Building"
-		if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
-			log.Printf("Controller: failed to update BootTarget %s status: %v", bt.Name, err)
+		if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+			log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 		}
 
-		destPath := filepath.Join(btDir, cf.Name)
-		sha, err := c.buildCombinedFile(btDir, cf, destPath)
+		destPath := filepath.Join(bmDir, cf.Name)
+		sha, err := c.buildCombinedFile(bmDir, cf, destPath)
 		if err != nil {
 			status.Phase = "Failed"
 			status.Message = fmt.Sprintf("Failed to build %s: %v", cf.Name, err)
 			status.CombinedFiles[i].Phase = "Failed"
-			if updateErr := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); updateErr != nil {
-				log.Printf("Controller: failed to update BootTarget %s to Failed: %v", bt.Name, updateErr)
+			if updateErr := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); updateErr != nil {
+				log.Printf("Controller: failed to update BootMedia %s to Failed: %v", bm.Name, updateErr)
 			}
 			return
 		}
 
 		status.CombinedFiles[i].Phase = "Complete"
 		status.CombinedFiles[i].SHA256 = sha
-		if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
-			log.Printf("Controller: failed to update BootTarget %s status: %v", bt.Name, err)
+		if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+			log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 		}
 	}
 
 	// All done
 	status.Phase = "Complete"
 	status.Message = "All files downloaded and combined"
-	if err := c.k8sClient.UpdateBootTargetStatus(statusCtx, bt.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootTarget %s to Complete: %v", bt.Name, err)
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootMedia %s to Complete: %v", bm.Name, err)
 	}
-	log.Printf("Controller: BootTarget %s download complete", bt.Name)
+	log.Printf("Controller: BootMedia %s download complete", bm.Name)
 }
 
 // downloadFile downloads a single file, optionally verifying checksums
