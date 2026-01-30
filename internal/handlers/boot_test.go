@@ -81,51 +81,6 @@ func TestSplitHostDomain(t *testing.T) {
 	}
 }
 
-func TestServeBootIPXE_Success(t *testing.T) {
-	mock := &mockBootClient{
-		getConfigMapValue: func(ctx context.Context, configMapName, key string) (string, error) {
-			if configMapName == "isoboot-templates" && key == "boot.ipxe" {
-				return "#!ipxe\nchain http://{{ .Host }}:{{ .Port }}/boot/conditional-boot?mac=${net0/mac}\n", nil
-			}
-			return "", fmt.Errorf("not found")
-		},
-	}
-
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "isoboot-templates")
-	req := httptest.NewRequest("GET", "/boot/boot.ipxe", nil)
-	w := httptest.NewRecorder()
-
-	h.ServeBootIPXE(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	if !strings.Contains(w.Body.String(), "10.0.0.1:8080") {
-		t.Errorf("expected host:port in body, got %q", w.Body.String())
-	}
-	if w.Header().Get("Content-Length") == "" {
-		t.Error("expected Content-Length header")
-	}
-}
-
-func TestServeBootIPXE_TemplateError(t *testing.T) {
-	mock := &mockBootClient{
-		getConfigMapValue: func(ctx context.Context, configMapName, key string) (string, error) {
-			return "", fmt.Errorf("configmap not found")
-		},
-	}
-
-	h := NewBootHandler("10.0.0.1", "8080", "3128", mock, "missing-cm")
-	req := httptest.NewRequest("GET", "/boot/boot.ipxe", nil)
-	w := httptest.NewRecorder()
-
-	h.ServeBootIPXE(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", w.Code)
-	}
-}
-
 func TestServeConditionalBoot_PendingProvision(t *testing.T) {
 	var updatedName, updatedStatus string
 	mock := &mockBootClient{

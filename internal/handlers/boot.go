@@ -76,36 +76,6 @@ func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.
 	return template.New(name).Parse(value)
 }
 
-// ServeBootIPXE serves the initial boot.ipxe script
-func (h *BootHandler) ServeBootIPXE(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	tmpl, err := h.loadTemplate(ctx, "boot.ipxe")
-	if err != nil {
-		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	data := TemplateData{
-		Host:      h.host,
-		Port:      h.port,
-		ProxyPort: h.proxyPort,
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", buf.Len()))
-	w.WriteHeader(http.StatusOK)
-	w.Write(buf.Bytes())
-}
-
 // ServeConditionalBoot checks Provision CRDs and returns appropriate boot script
 // Returns 404 with Content-Length if no provision found (iPXE falls back to local boot)
 func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Request) {
@@ -297,7 +267,6 @@ func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 
 // RegisterRoutes registers boot-related routes
 func (h *BootHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/boot/boot.ipxe", h.ServeBootIPXE)
 	mux.HandleFunc("/boot/conditional-boot", h.ServeConditionalBoot)
 	mux.HandleFunc("/boot/done", h.ServeBootDone)
 }
