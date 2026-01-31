@@ -6,6 +6,8 @@ import (
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
 	"github.com/isoboot/isoboot/internal/k8s"
+	"github.com/isoboot/isoboot/internal/k8s/typed"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestGRPC_GetMachineByMAC_Found(t *testing.T) {
@@ -456,5 +458,79 @@ func TestGRPC_GetDiskImage_InvalidISOURL(t *testing.T) {
 	}
 	if resp.Found {
 		t.Error("expected Found=false for invalid ISO URL")
+	}
+}
+
+func TestGRPC_GetBootMedia_Found(t *testing.T) {
+	fake := newFakeK8sClient()
+	typedClient := newTestTypedClient(
+		&typed.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec: typed.BootMediaSpec{
+				Kernel: &typed.BootMediaFileRef{URL: "http://example.com/linux"},
+				Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			},
+		},
+	)
+
+	srv := NewGRPCServer(New(fake), typedClient)
+	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "debian-13"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Found {
+		t.Fatal("expected Found=true")
+	}
+	if resp.KernelFilename != "linux" {
+		t.Errorf("expected KernelFilename=linux, got %q", resp.KernelFilename)
+	}
+	if resp.InitrdFilename != "initrd.gz" {
+		t.Errorf("expected InitrdFilename=initrd.gz, got %q", resp.InitrdFilename)
+	}
+	if resp.HasFirmware {
+		t.Error("expected HasFirmware=false")
+	}
+}
+
+func TestGRPC_GetBootMedia_WithFirmware(t *testing.T) {
+	fake := newFakeK8sClient()
+	typedClient := newTestTypedClient(
+		&typed.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec: typed.BootMediaSpec{
+				Kernel:   &typed.BootMediaFileRef{URL: "http://example.com/linux"},
+				Initrd:   &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+				Firmware: &typed.BootMediaFileRef{URL: "http://example.com/firmware.cpio.gz"},
+			},
+		},
+	)
+
+	srv := NewGRPCServer(New(fake), typedClient)
+	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "debian-13"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Found {
+		t.Fatal("expected Found=true")
+	}
+	if !resp.HasFirmware {
+		t.Error("expected HasFirmware=true")
+	}
+	if resp.KernelFilename != "linux" {
+		t.Errorf("expected KernelFilename=linux, got %q", resp.KernelFilename)
+	}
+}
+
+func TestGRPC_GetBootMedia_NotFound(t *testing.T) {
+	fake := newFakeK8sClient()
+	typedClient := newTestTypedClient()
+
+	srv := NewGRPCServer(New(fake), typedClient)
+	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "missing"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Found {
+		t.Error("expected Found=false")
 	}
 }
