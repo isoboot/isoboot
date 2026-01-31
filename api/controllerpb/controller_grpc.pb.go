@@ -39,8 +39,6 @@ type ControllerServiceClient interface {
 	GetConfigMaps(ctx context.Context, in *GetConfigMapsRequest, opts ...grpc.CallOption) (*GetConfigMapsResponse, error)
 	// GetSecrets retrieves and merges data from multiple Secrets
 	GetSecrets(ctx context.Context, in *GetSecretsRequest, opts ...grpc.CallOption) (*GetSecretsResponse, error)
-	// GetDiskImage retrieves a DiskImage by name
-	GetDiskImage(ctx context.Context, in *GetDiskImageRequest, opts ...grpc.CallOption) (*GetDiskImageResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -150,15 +148,6 @@ func (c *controllerServiceClient) GetSecrets(ctx context.Context, in *GetSecrets
 	return out, nil
 }
 
-func (c *controllerServiceClient) GetDiskImage(ctx context.Context, in *GetDiskImageRequest, opts ...grpc.CallOption) (*GetDiskImageResponse, error) {
-	out := new(GetDiskImageResponse)
-	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetDiskImage", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // ControllerServiceServer is the server API for ControllerService service.
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility
@@ -185,8 +174,6 @@ type ControllerServiceServer interface {
 	GetConfigMaps(context.Context, *GetConfigMapsRequest) (*GetConfigMapsResponse, error)
 	// GetSecrets retrieves and merges data from multiple Secrets
 	GetSecrets(context.Context, *GetSecretsRequest) (*GetSecretsResponse, error)
-	// GetDiskImage retrieves a DiskImage by name
-	GetDiskImage(context.Context, *GetDiskImageRequest) (*GetDiskImageResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -226,9 +213,6 @@ func (UnimplementedControllerServiceServer) GetConfigMaps(context.Context, *GetC
 }
 func (UnimplementedControllerServiceServer) GetSecrets(context.Context, *GetSecretsRequest) (*GetSecretsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSecrets not implemented")
-}
-func (UnimplementedControllerServiceServer) GetDiskImage(context.Context, *GetDiskImageRequest) (*GetDiskImageResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetDiskImage not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 
@@ -441,24 +425,6 @@ func _ControllerService_GetSecrets_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_GetDiskImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetDiskImageRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ControllerServiceServer).GetDiskImage(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/isoboot.controller.v1.ControllerService/GetDiskImage",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).GetDiskImage(ctx, req.(*GetDiskImageRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 var _ControllerService_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "isoboot.controller.v1.ControllerService",
 	HandlerType: (*ControllerServiceServer)(nil),
@@ -507,11 +473,7 @@ var _ControllerService_serviceDesc = grpc.ServiceDesc{
 			MethodName: "GetSecrets",
 			Handler:    _ControllerService_GetSecrets_Handler,
 		},
-		{
-			MethodName: "GetDiskImage",
-			Handler:    _ControllerService_GetDiskImage_Handler,
-		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "controller.proto",
+	Metadata: "api/proto/controller.proto",
 }
