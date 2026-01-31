@@ -49,7 +49,7 @@ type TemplateData struct {
 	Domain            string // Everything after first dot (e.g., "lan")
 	BootTarget        string
 	BootMedia         string // BootMedia resource name (for static file paths)
-	UseFirmware bool   // Whether to use firmware-combined initrd
+	UseFirmware       bool   // Whether to use firmware-combined initrd
 	ProvisionName     string // Provision resource name (use for answer file URLs)
 	KernelFilename    string // e.g., "linux" or "vmlinuz"
 	InitrdFilename    string // e.g., "initrd.gz"
