@@ -399,7 +399,7 @@ func writeFileAtomic(destPath string, data []byte) (string, error) {
 
 	tmpPath := destPath + ".tmp"
 	defer os.Remove(tmpPath)
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return "", fmt.Errorf("write temp file: %w", err)
 	}
 
@@ -420,7 +420,7 @@ func concatenateFiles(destPath string, sources ...string) (string, error) {
 	}
 
 	tmpPath := destPath + ".tmp"
-	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("create output file: %w", err)
 	}
