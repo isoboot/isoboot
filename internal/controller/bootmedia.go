@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"hash"
 	"io"
 	"log"
 	"net/http"
@@ -65,6 +64,10 @@ func parseChecksumFile(r io.Reader) map[string]string {
 
 // reconcileBootMedias reconciles all BootMedia resources
 func (c *Controller) reconcileBootMedias(ctx context.Context) {
+	if c.typedK8s == nil {
+		return
+	}
+
 	var bmList typed.BootMediaList
 	if err := c.typedK8s.List(ctx, &bmList, client.InNamespace(c.typedK8s.Namespace())); err != nil {
 		log.Printf("Controller: failed to list bootmedias: %v", err)
@@ -158,8 +161,15 @@ func initDownloadStatus(bm *typed.BootMedia) *typed.BootMediaStatus {
 	if bm.Spec.ISO != nil {
 		name, _ := typed.FilenameFromURL(bm.Spec.ISO.URL)
 		status.ISO = &typed.FileStatus{Name: name, Phase: "Pending"}
-		status.Kernel = &typed.FileStatus{Name: path.Base(bm.Spec.ISO.Kernel), Phase: "Pending"}
-		status.Initrd = &typed.FileStatus{Name: path.Base(bm.Spec.ISO.Initrd), Phase: "Pending"}
+		kernelBase := path.Base(bm.Spec.ISO.Kernel)
+		initrdBase := path.Base(bm.Spec.ISO.Initrd)
+		if kernelBase == "." || kernelBase == ".." || initrdBase == "." || initrdBase == ".." {
+			// Validate() should catch this, but guard status from unsafe names
+			kernelBase = "kernel"
+			initrdBase = "initrd"
+		}
+		status.Kernel = &typed.FileStatus{Name: kernelBase, Phase: "Pending"}
+		status.Initrd = &typed.FileStatus{Name: initrdBase, Phase: "Pending"}
 	}
 	if bm.Spec.Firmware != nil {
 		name, _ := typed.FilenameFromURL(bm.Spec.Firmware.URL)
@@ -315,7 +325,7 @@ func (c *Controller) downloadFile(ctx context.Context, fileURL, checksumURL, des
 
 	// Write to temp file while computing hash
 	tmpPath := destPath + ".tmp"
-	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
@@ -374,7 +384,11 @@ func (c *Controller) fetchChecksumFile(ctx context.Context, checksumURL string) 
 	}
 	defer resp.Body.Close()
 
-	return parseChecksumFile(resp.Body)
+	checksums := parseChecksumFile(resp.Body)
+	if len(checksums) == 0 {
+		return nil
+	}
+	return checksums
 }
 
 // checksumKey computes the key to look up in the parsed checksums map.
@@ -390,7 +404,16 @@ func checksumKey(fileURL, checksumURL string) string {
 	if err != nil {
 		return path.Base(fu.Path)
 	}
-	checksumDir := path.Dir(cu.Path) + "/"
+	// Only do relative-path matching if both URLs share the same host
+	if fu.Host != cu.Host {
+		return path.Base(fu.Path)
+	}
+	checksumDir := path.Dir(cu.Path)
+	if checksumDir == "/" || checksumDir == "." {
+		// Checksum file is at root — use the full file path without leading slash
+		return strings.TrimPrefix(fu.Path, "/")
+	}
+	checksumDir += "/"
 	if strings.HasPrefix(fu.Path, checksumDir) {
 		return strings.TrimPrefix(fu.Path, checksumDir)
 	}
@@ -589,7 +612,8 @@ func writeFileAtomic(destPath string, data []byte) (string, error) {
 	}
 
 	tmpPath := destPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+	defer os.Remove(tmpPath)
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return "", fmt.Errorf("write temp file: %w", err)
 	}
 
@@ -597,7 +621,6 @@ func writeFileAtomic(destPath string, data []byte) (string, error) {
 	sha := fmt.Sprintf("%x", h[:])
 
 	if err := os.Rename(tmpPath, destPath); err != nil {
-		os.Remove(tmpPath)
 		return "", fmt.Errorf("rename: %w", err)
 	}
 
@@ -611,7 +634,7 @@ func concatenateFiles(destPath string, sources ...string) (string, error) {
 	}
 
 	tmpPath := destPath + ".tmp"
-	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("create output file: %w", err)
 	}
@@ -649,6 +672,3 @@ func concatenateFiles(destPath string, sources ...string) (string, error) {
 	sha := fmt.Sprintf("%x", h.Sum(nil))
 	return sha, nil
 }
-
-// Keep hash.Hash import used by tests
-var _ hash.Hash = sha256.New()

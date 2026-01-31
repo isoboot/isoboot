@@ -44,6 +44,7 @@ func (f *fakeHTTPDoer) Do(req *http.Request) (*http.Response, error) {
 	return f.doFunc(req)
 }
 
+
 // newTypedSecret is a helper to create a corev1.Secret for testing
 func newTypedSecret(name string, data map[string][]byte) *corev1.Secret {
 	return &corev1.Secret{
