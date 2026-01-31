@@ -215,6 +215,8 @@ func TestFilenameFromURL(t *testing.T) {
 		{"root path", "http://example.com/", "", true},
 		{"no path", "http://example.com", "", true},
 		{"with query", "http://example.com/file.iso?token=abc", "file.iso", false},
+		{"path traversal", "http://example.com/path/..", "", true},
+		{"path traversal with slash", "http://example.com/path/../", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -114,7 +114,7 @@ func TestReconcileProvision_InitializePending(t *testing.T) {
 			BootTargetRef: "debian-13",
 		},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -152,7 +152,7 @@ func TestReconcileProvision_ConfigError_MissingMachine(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	k := newTestTypedClient(provision)
+	k := newTestK8sClient(provision)
 
 	ctrl := New(k)
 	ctrl.reconcileProvision(ctx, provision)
@@ -179,7 +179,7 @@ func TestReconcileProvision_ConfigError_MissingBootTarget(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -212,7 +212,7 @@ func TestReconcileProvision_ConfigError_MissingBootMedia(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -250,7 +250,7 @@ func TestReconcileProvision_ConfigError_InvalidMachineId(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -292,7 +292,7 @@ func TestReconcileProvision_ConfigError_MissingConfigMap(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -334,7 +334,7 @@ func TestReconcileProvision_ConfigError_MissingSecret(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -375,7 +375,7 @@ func TestReconcileProvision_WaitingForBootMedia(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Pending"},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -413,7 +413,7 @@ func TestReconcileProvision_ConfigErrorRecovery(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "ConfigError", Message: "old error"},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -454,7 +454,7 @@ func TestReconcileProvision_TimeoutInProgress(t *testing.T) {
 			LastUpdated: metav1.NewTime(time.Now().Add(-31 * time.Minute)),
 		},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -498,7 +498,7 @@ func TestReconcileProvision_InProgressNotTimedOut(t *testing.T) {
 			LastUpdated: metav1.NewTime(time.Now().Add(-5 * time.Minute)),
 		},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -536,7 +536,7 @@ func TestReconcileProvision_CompleteIsNoop(t *testing.T) {
 		},
 		Status: k8s.ProvisionStatus{Phase: "Complete"},
 	}
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		provision,
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
@@ -566,7 +566,7 @@ func TestReconcileProvision_CompleteIsNoop(t *testing.T) {
 
 func TestValidateProvisionRefs_AllValid(t *testing.T) {
 	ctx := context.Background()
-	k := newTestTypedClient(
+	k := newTestK8sClient(
 		&k8s.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
 			Spec:       k8s.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},

@@ -24,7 +24,7 @@ func TestReconcileBootMedia_InitializePending(t *testing.T) {
 			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedia(context.Background(), bm)
@@ -51,7 +51,7 @@ func TestReconcileBootMedia_CompleteIsNoop(t *testing.T) {
 		},
 		Status: k8s.BootMediaStatus{Phase: "Complete", Message: "All files downloaded"},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedia(context.Background(), bm)
@@ -75,7 +75,7 @@ func TestReconcileBootMedia_FailedIsNoop(t *testing.T) {
 		},
 		Status: k8s.BootMediaStatus{Phase: "Failed", Message: "Download error"},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedia(context.Background(), bm)
@@ -98,7 +98,7 @@ func TestDownloadBootMedia_NoFilesBasePath(t *testing.T) {
 			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{
 		k8sClient:      k,
@@ -125,7 +125,7 @@ func TestDownloadBootMedia_InvalidSpec_NoKernelOrISO(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
 		Spec:       k8s.BootMediaSpec{}, // empty spec
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -166,7 +166,7 @@ func TestDownloadBootMedia_InvalidSpec_BothDirectAndISO(t *testing.T) {
 			},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -745,7 +745,7 @@ func TestDownloadBootMediaDirect_SuccessfulDownload(t *testing.T) {
 			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -822,7 +822,7 @@ func TestDownloadBootMediaDirect_KernelDownloadFails(t *testing.T) {
 			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -870,7 +870,7 @@ func TestDownloadBootMediaDirect_InitrdDownloadFails(t *testing.T) {
 			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -933,7 +933,7 @@ func TestDownloadBootMediaDirect_WithFirmwareSubdirectories(t *testing.T) {
 			Firmware: &k8s.BootMediaFileRef{URL: "http://example.com/firmware/firmware.cpio.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -1017,7 +1017,7 @@ func TestFailBootMedia(t *testing.T) {
 			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k}
 	ctrl.failBootMedia(context.Background(), "test-bm", "something went wrong")
@@ -1042,7 +1042,7 @@ func TestFailBootMediaStatus(t *testing.T) {
 			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k}
 	status := &k8s.BootMediaStatus{
@@ -1081,7 +1081,7 @@ func TestReconcileBootMedias_ListsAndReconciles(t *testing.T) {
 		},
 		Status: k8s.BootMediaStatus{Phase: "Complete", Message: "Done"},
 	}
-	k := newTestTypedClient(bm1, bm2)
+	k := newTestK8sClient(bm1, bm2)
 
 	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedias(context.Background())

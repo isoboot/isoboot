@@ -262,8 +262,8 @@ func FilenameFromURL(rawURL string) (string, error) {
 		return "", fmt.Errorf("parse URL: %w", err)
 	}
 	filename := path.Base(u.Path)
-	if filename == "." || filename == "/" {
-		return "", fmt.Errorf("URL has no filename: %s", rawURL)
+	if filename == "." || filename == "/" || filename == ".." {
+		return "", fmt.Errorf("URL has no valid filename: %s", rawURL)
 	}
 	return filename, nil
 }

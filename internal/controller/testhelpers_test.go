@@ -18,7 +18,7 @@ func testScheme() *runtime.Scheme {
 	return s
 }
 
-func newTestTypedClient(objs ...client.Object) *k8s.Client {
+func newTestK8sClient(objs ...client.Object) *k8s.Client {
 	cl := fake.NewClientBuilder().
 		WithScheme(testScheme()).
 		WithObjects(objs...).
