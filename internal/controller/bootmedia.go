@@ -116,8 +116,15 @@ func initDownloadStatus(bm *typed.BootMedia) *typed.BootMediaStatus {
 	if bm.Spec.ISO != nil {
 		name, _ := typed.FilenameFromURL(bm.Spec.ISO.URL)
 		status.ISO = &typed.FileStatus{Name: name, Phase: "Pending"}
-		status.Kernel = &typed.FileStatus{Name: path.Base(bm.Spec.ISO.Kernel), Phase: "Pending"}
-		status.Initrd = &typed.FileStatus{Name: path.Base(bm.Spec.ISO.Initrd), Phase: "Pending"}
+		kernelBase := path.Base(bm.Spec.ISO.Kernel)
+		initrdBase := path.Base(bm.Spec.ISO.Initrd)
+		if kernelBase == "." || kernelBase == ".." || initrdBase == "." || initrdBase == ".." {
+			// Validate() should catch this, but guard status from unsafe names
+			kernelBase = "kernel"
+			initrdBase = "initrd"
+		}
+		status.Kernel = &typed.FileStatus{Name: kernelBase, Phase: "Pending"}
+		status.Initrd = &typed.FileStatus{Name: initrdBase, Phase: "Pending"}
 	}
 	if bm.Spec.Firmware != nil {
 		name, _ := typed.FilenameFromURL(bm.Spec.Firmware.URL)
@@ -352,7 +359,16 @@ func checksumKey(fileURL, checksumURL string) string {
 	if err != nil {
 		return path.Base(fu.Path)
 	}
-	checksumDir := path.Dir(cu.Path) + "/"
+	// Only do relative-path matching if both URLs share the same host
+	if fu.Host != cu.Host {
+		return path.Base(fu.Path)
+	}
+	checksumDir := path.Dir(cu.Path)
+	if checksumDir == "/" || checksumDir == "." {
+		// Checksum file is at root — use the full file path without leading slash
+		return strings.TrimPrefix(fu.Path, "/")
+	}
+	checksumDir += "/"
 	if strings.HasPrefix(fu.Path, checksumDir) {
 		return strings.TrimPrefix(fu.Path, checksumDir)
 	}
