@@ -382,7 +382,7 @@ func truncHash(h string) string {
 // downloadBootMediaISO downloads an ISO and extracts kernel/initrd from it
 func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *typed.BootMedia, status *typed.BootMediaStatus, bmDir string, hasFirmware bool) {
 	// TODO: implemented in next PR
-	c.failBootMedia(context.Background(), bm.Name, "ISO download not yet implemented")
+	c.failBootMediaStatus(context.Background(), bm.Name, status, status.ISO, "ISO download not yet implemented")
 }
 
 // downloadAndConcatenateFirmware downloads firmware and concatenates it with the initrd
