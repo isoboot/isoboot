@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/isoboot/isoboot/internal/iso"
-	"github.com/isoboot/isoboot/internal/k8s/typed"
+	"github.com/isoboot/isoboot/internal/k8s"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -64,7 +64,7 @@ func parseChecksumFile(r io.Reader) map[string]string {
 
 // reconcileBootMedias reconciles all BootMedia resources
 func (c *Controller) reconcileBootMedias(ctx context.Context) {
-	var bmList typed.BootMediaList
+	var bmList k8s.BootMediaList
 	if err := c.k8sClient.List(ctx, &bmList, client.InNamespace(c.k8sClient.Namespace())); err != nil {
 		log.Printf("Controller: failed to list bootmedias: %v", err)
 		return
@@ -76,11 +76,11 @@ func (c *Controller) reconcileBootMedias(ctx context.Context) {
 }
 
 // reconcileBootMedia reconciles a single BootMedia
-func (c *Controller) reconcileBootMedia(ctx context.Context, bm *typed.BootMedia) {
+func (c *Controller) reconcileBootMedia(ctx context.Context, bm *k8s.BootMedia) {
 	// Initialize status if empty
 	if bm.Status.Phase == "" {
 		log.Printf("Controller: initializing BootMedia %s status to Pending", bm.Name)
-		status := &typed.BootMediaStatus{
+		status := &k8s.BootMediaStatus{
 			Phase:   "Pending",
 			Message: "Waiting for download",
 		}
@@ -105,7 +105,7 @@ func (c *Controller) reconcileBootMedia(ctx context.Context, bm *typed.BootMedia
 }
 
 // downloadBootMedia orchestrates downloading all files for a BootMedia
-func (c *Controller) downloadBootMedia(parentCtx context.Context, bm *typed.BootMedia) {
+func (c *Controller) downloadBootMedia(parentCtx context.Context, bm *k8s.BootMedia) {
 	defer c.activeBootMediaDownloads.Delete(bm.Name)
 
 	statusCtx := context.Background()
@@ -140,23 +140,23 @@ func (c *Controller) downloadBootMedia(parentCtx context.Context, bm *typed.Boot
 }
 
 // initDownloadStatus creates initial status with Pending entries for each file
-func initDownloadStatus(bm *typed.BootMedia) *typed.BootMediaStatus {
-	status := &typed.BootMediaStatus{
+func initDownloadStatus(bm *k8s.BootMedia) *k8s.BootMediaStatus {
+	status := &k8s.BootMediaStatus{
 		Phase:   "Downloading",
 		Message: "Starting downloads",
 	}
 
 	if bm.Spec.Kernel != nil {
-		name, _ := typed.FilenameFromURL(bm.Spec.Kernel.URL)
-		status.Kernel = &typed.FileStatus{Name: name, Phase: "Pending"}
+		name, _ := k8s.FilenameFromURL(bm.Spec.Kernel.URL)
+		status.Kernel = &k8s.FileStatus{Name: name, Phase: "Pending"}
 	}
 	if bm.Spec.Initrd != nil {
-		name, _ := typed.FilenameFromURL(bm.Spec.Initrd.URL)
-		status.Initrd = &typed.FileStatus{Name: name, Phase: "Pending"}
+		name, _ := k8s.FilenameFromURL(bm.Spec.Initrd.URL)
+		status.Initrd = &k8s.FileStatus{Name: name, Phase: "Pending"}
 	}
 	if bm.Spec.ISO != nil {
-		name, _ := typed.FilenameFromURL(bm.Spec.ISO.URL)
-		status.ISO = &typed.FileStatus{Name: name, Phase: "Pending"}
+		name, _ := k8s.FilenameFromURL(bm.Spec.ISO.URL)
+		status.ISO = &k8s.FileStatus{Name: name, Phase: "Pending"}
 		kernelBase := path.Base(bm.Spec.ISO.Kernel)
 		initrdBase := path.Base(bm.Spec.ISO.Initrd)
 		if kernelBase == "." || kernelBase == ".." || initrdBase == "." || initrdBase == ".." {
@@ -164,20 +164,20 @@ func initDownloadStatus(bm *typed.BootMedia) *typed.BootMediaStatus {
 			kernelBase = "kernel"
 			initrdBase = "initrd"
 		}
-		status.Kernel = &typed.FileStatus{Name: kernelBase, Phase: "Pending"}
-		status.Initrd = &typed.FileStatus{Name: initrdBase, Phase: "Pending"}
+		status.Kernel = &k8s.FileStatus{Name: kernelBase, Phase: "Pending"}
+		status.Initrd = &k8s.FileStatus{Name: initrdBase, Phase: "Pending"}
 	}
 	if bm.Spec.Firmware != nil {
-		name, _ := typed.FilenameFromURL(bm.Spec.Firmware.URL)
-		status.Firmware = &typed.FileStatus{Name: name, Phase: "Pending"}
-		status.FirmwareInitrd = &typed.FileStatus{Name: bm.InitrdFilename(), Phase: "Pending"}
+		name, _ := k8s.FilenameFromURL(bm.Spec.Firmware.URL)
+		status.Firmware = &k8s.FileStatus{Name: name, Phase: "Pending"}
+		status.FirmwareInitrd = &k8s.FileStatus{Name: bm.InitrdFilename(), Phase: "Pending"}
 	}
 
 	return status
 }
 
 // downloadBootMediaDirect downloads kernel and initrd directly from URLs
-func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *typed.BootMedia, status *typed.BootMediaStatus, bmDir string, hasFirmware bool) {
+func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *k8s.BootMedia, status *k8s.BootMediaStatus, bmDir string, hasFirmware bool) {
 	statusCtx := context.Background()
 
 	// Download kernel -> {bmDir}/{kernelFilename}
@@ -246,7 +246,7 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *type
 
 // failBootMedia sets the BootMedia to Failed with the given message
 func (c *Controller) failBootMedia(ctx context.Context, name, message string) {
-	status := &typed.BootMediaStatus{
+	status := &k8s.BootMediaStatus{
 		Phase:   "Failed",
 		Message: message,
 	}
@@ -256,7 +256,7 @@ func (c *Controller) failBootMedia(ctx context.Context, name, message string) {
 }
 
 // failBootMediaStatus sets a file status to Failed and the overall status to Failed
-func (c *Controller) failBootMediaStatus(ctx context.Context, name string, status *typed.BootMediaStatus, fileStatus *typed.FileStatus, message string) {
+func (c *Controller) failBootMediaStatus(ctx context.Context, name string, status *k8s.BootMediaStatus, fileStatus *k8s.FileStatus, message string) {
 	status.Phase = "Failed"
 	status.Message = message
 	if fileStatus != nil {
@@ -441,7 +441,7 @@ func truncHash(h string) string {
 }
 
 // downloadBootMediaISO downloads an ISO and extracts kernel/initrd from it
-func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *typed.BootMedia, status *typed.BootMediaStatus, bmDir string, hasFirmware bool) {
+func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.BootMedia, status *k8s.BootMediaStatus, bmDir string, hasFirmware bool) {
 	statusCtx := context.Background()
 
 	// Download ISO to temp directory
@@ -452,7 +452,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *typed.B
 	}
 	defer os.RemoveAll(tmpDir)
 
-	isoFilename, _ := typed.FilenameFromURL(bm.Spec.ISO.URL)
+	isoFilename, _ := k8s.FilenameFromURL(bm.Spec.ISO.URL)
 	isoDest := filepath.Join(tmpDir, isoFilename)
 
 	status.ISO.Phase = "Downloading"
@@ -549,7 +549,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *typed.B
 }
 
 // downloadAndConcatenateFirmware downloads firmware and concatenates it with the initrd
-func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, bm *typed.BootMedia, status *typed.BootMediaStatus, bmDir string) {
+func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, bm *k8s.BootMedia, status *k8s.BootMediaStatus, bmDir string) {
 	statusCtx := context.Background()
 
 	// Download firmware to temp directory
@@ -560,7 +560,7 @@ func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, b
 	}
 	defer os.RemoveAll(tmpDir)
 
-	fwFilename, _ := typed.FilenameFromURL(bm.Spec.Firmware.URL)
+	fwFilename, _ := k8s.FilenameFromURL(bm.Spec.Firmware.URL)
 	fwDest := filepath.Join(tmpDir, fwFilename)
 
 	status.Firmware.Phase = "Downloading"

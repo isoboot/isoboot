@@ -12,25 +12,25 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/isoboot/isoboot/internal/k8s/typed"
+	"github.com/isoboot/isoboot/internal/k8s"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestReconcileBootMedia_InitializePending(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedia(context.Background(), bm)
 
 	// After reconcile, status should be updated to Pending
-	var updated typed.BootMedia
+	var updated k8s.BootMedia
 	if err := k.Get(context.Background(), k.Key("test-bm"), &updated); err != nil {
 		t.Fatalf("failed to get BootMedia: %v", err)
 	}
@@ -43,21 +43,21 @@ func TestReconcileBootMedia_InitializePending(t *testing.T) {
 }
 
 func TestReconcileBootMedia_CompleteIsNoop(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
-		Status: typed.BootMediaStatus{Phase: "Complete", Message: "All files downloaded"},
+		Status: k8s.BootMediaStatus{Phase: "Complete", Message: "All files downloaded"},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedia(context.Background(), bm)
 
 	// Status should remain Complete
-	var updated typed.BootMedia
+	var updated k8s.BootMedia
 	if err := k.Get(context.Background(), k.Key("test-bm"), &updated); err != nil {
 		t.Fatalf("failed to get BootMedia: %v", err)
 	}
@@ -67,21 +67,21 @@ func TestReconcileBootMedia_CompleteIsNoop(t *testing.T) {
 }
 
 func TestReconcileBootMedia_FailedIsNoop(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
-		Status: typed.BootMediaStatus{Phase: "Failed", Message: "Download error"},
+		Status: k8s.BootMediaStatus{Phase: "Failed", Message: "Download error"},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedia(context.Background(), bm)
 
 	// Status should remain Failed
-	var updated typed.BootMedia
+	var updated k8s.BootMedia
 	if err := k.Get(context.Background(), k.Key("test-bm"), &updated); err != nil {
 		t.Fatalf("failed to get BootMedia: %v", err)
 	}
@@ -91,14 +91,14 @@ func TestReconcileBootMedia_FailedIsNoop(t *testing.T) {
 }
 
 func TestDownloadBootMedia_NoFilesBasePath(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{
 		k8sClient:      k,
@@ -108,7 +108,7 @@ func TestDownloadBootMedia_NoFilesBasePath(t *testing.T) {
 
 	ctrl.downloadBootMedia(context.Background(), bm)
 
-	var updated typed.BootMedia
+	var updated k8s.BootMedia
 	if err := k.Get(context.Background(), k.Key("test-bm"), &updated); err != nil {
 		t.Fatalf("failed to get BootMedia: %v", err)
 	}
@@ -121,11 +121,11 @@ func TestDownloadBootMedia_NoFilesBasePath(t *testing.T) {
 }
 
 func TestDownloadBootMedia_InvalidSpec_NoKernelOrISO(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec:       typed.BootMediaSpec{}, // empty spec
+		Spec:       k8s.BootMediaSpec{}, // empty spec
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -141,7 +141,7 @@ func TestDownloadBootMedia_InvalidSpec_NoKernelOrISO(t *testing.T) {
 
 	ctrl.downloadBootMedia(context.Background(), bm)
 
-	var updated typed.BootMedia
+	var updated k8s.BootMedia
 	if err := k.Get(context.Background(), k.Key("test-bm"), &updated); err != nil {
 		t.Fatalf("failed to get BootMedia: %v", err)
 	}
@@ -154,19 +154,19 @@ func TestDownloadBootMedia_InvalidSpec_NoKernelOrISO(t *testing.T) {
 }
 
 func TestDownloadBootMedia_InvalidSpec_BothDirectAndISO(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
-			ISO: &typed.BootMediaISO{
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			ISO: &k8s.BootMediaISO{
 				URL:    "http://example.com/test.iso",
 				Kernel: "/boot/vmlinuz",
 				Initrd: "/boot/initrd.gz",
 			},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -182,7 +182,7 @@ func TestDownloadBootMedia_InvalidSpec_BothDirectAndISO(t *testing.T) {
 
 	ctrl.downloadBootMedia(context.Background(), bm)
 
-	var updated typed.BootMedia
+	var updated k8s.BootMedia
 	if err := k.Get(context.Background(), k.Key("test-bm"), &updated); err != nil {
 		t.Fatalf("failed to get BootMedia: %v", err)
 	}
@@ -195,11 +195,11 @@ func TestDownloadBootMedia_InvalidSpec_BothDirectAndISO(t *testing.T) {
 }
 
 func TestInitDownloadStatus_DirectMode(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 	}
 
@@ -238,12 +238,12 @@ func TestInitDownloadStatus_DirectMode(t *testing.T) {
 }
 
 func TestInitDownloadStatus_DirectModeWithFirmware(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel:   &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd:   &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
-			Firmware: &typed.BootMediaFileRef{URL: "http://example.com/firmware.cpio.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel:   &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd:   &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			Firmware: &k8s.BootMediaFileRef{URL: "http://example.com/firmware.cpio.gz"},
 		},
 	}
 
@@ -267,10 +267,10 @@ func TestInitDownloadStatus_DirectModeWithFirmware(t *testing.T) {
 }
 
 func TestInitDownloadStatus_ISOMode(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			ISO: &typed.BootMediaISO{
+		Spec: k8s.BootMediaSpec{
+			ISO: &k8s.BootMediaISO{
 				URL:    "http://example.com/debian.iso",
 				Kernel: "/install.amd/vmlinuz",
 				Initrd: "/install.amd/initrd.gz",
@@ -738,14 +738,14 @@ func TestDownloadBootMediaDirect_SuccessfulDownload(t *testing.T) {
 	kernelSHA := sha256.Sum256(kernelContent)
 	initrdSHA := sha256.Sum256(initrdContent)
 
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/boot/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/boot/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -815,14 +815,14 @@ func TestDownloadBootMediaDirect_SuccessfulDownload(t *testing.T) {
 }
 
 func TestDownloadBootMediaDirect_KernelDownloadFails(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/boot/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/boot/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -863,14 +863,14 @@ func TestDownloadBootMediaDirect_KernelDownloadFails(t *testing.T) {
 func TestDownloadBootMediaDirect_InitrdDownloadFails(t *testing.T) {
 	kernelContent := []byte("kernel content")
 
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/boot/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/boot/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -925,15 +925,15 @@ func TestDownloadBootMediaDirect_WithFirmwareSubdirectories(t *testing.T) {
 	initrdContent := []byte("initrd content")
 	firmwareContent := []byte("firmware content")
 
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel:   &typed.BootMediaFileRef{URL: "http://example.com/boot/vmlinuz"},
-			Initrd:   &typed.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
-			Firmware: &typed.BootMediaFileRef{URL: "http://example.com/firmware/firmware.cpio.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel:   &k8s.BootMediaFileRef{URL: "http://example.com/boot/vmlinuz"},
+			Initrd:   &k8s.BootMediaFileRef{URL: "http://example.com/boot/initrd.gz"},
+			Firmware: &k8s.BootMediaFileRef{URL: "http://example.com/firmware/firmware.cpio.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	tmpDir, err := os.MkdirTemp("", "bootmedia-test")
 	if err != nil {
@@ -1010,19 +1010,19 @@ func TestDownloadBootMediaDirect_WithFirmwareSubdirectories(t *testing.T) {
 }
 
 func TestFailBootMedia(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k}
 	ctrl.failBootMedia(context.Background(), "test-bm", "something went wrong")
 
-	var updated typed.BootMedia
+	var updated k8s.BootMedia
 	if err := k.Get(context.Background(), k.Key("test-bm"), &updated); err != nil {
 		t.Fatalf("failed to get BootMedia: %v", err)
 	}
@@ -1035,20 +1035,20 @@ func TestFailBootMedia(t *testing.T) {
 }
 
 func TestFailBootMediaStatus(t *testing.T) {
-	bm := &typed.BootMedia{
+	bm := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-bm", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 	}
-	k := newTestTypedClient(bm)
+	k := newTestK8sClient(bm)
 
 	ctrl := &Controller{k8sClient: k}
-	status := &typed.BootMediaStatus{
+	status := &k8s.BootMediaStatus{
 		Phase:   "Downloading",
 		Message: "In progress",
-		Kernel:  &typed.FileStatus{Name: "vmlinuz", Phase: "Downloading"},
+		Kernel:  &k8s.FileStatus{Name: "vmlinuz", Phase: "Downloading"},
 	}
 
 	ctrl.failBootMediaStatus(context.Background(), "test-bm", status, status.Kernel, "kernel download failed")
@@ -1065,29 +1065,29 @@ func TestFailBootMediaStatus(t *testing.T) {
 }
 
 func TestReconcileBootMedias_ListsAndReconciles(t *testing.T) {
-	bm1 := &typed.BootMedia{
+	bm1 := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "bm-1", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
 		},
 		// Empty status -> should get initialized to Pending
 	}
-	bm2 := &typed.BootMedia{
+	bm2 := &k8s.BootMedia{
 		ObjectMeta: metav1.ObjectMeta{Name: "bm-2", Namespace: "default"},
-		Spec: typed.BootMediaSpec{
-			Kernel: &typed.BootMediaFileRef{URL: "http://example.com/vmlinuz2"},
-			Initrd: &typed.BootMediaFileRef{URL: "http://example.com/initrd2.gz"},
+		Spec: k8s.BootMediaSpec{
+			Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/vmlinuz2"},
+			Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd2.gz"},
 		},
-		Status: typed.BootMediaStatus{Phase: "Complete", Message: "Done"},
+		Status: k8s.BootMediaStatus{Phase: "Complete", Message: "Done"},
 	}
-	k := newTestTypedClient(bm1, bm2)
+	k := newTestK8sClient(bm1, bm2)
 
 	ctrl := &Controller{k8sClient: k, httpClient: http.DefaultClient}
 	ctrl.reconcileBootMedias(context.Background())
 
 	// bm-1 should be initialized to Pending
-	var updated1 typed.BootMedia
+	var updated1 k8s.BootMedia
 	if err := k.Get(context.Background(), k.Key("bm-1"), &updated1); err != nil {
 		t.Fatalf("failed to get bm-1: %v", err)
 	}
@@ -1096,7 +1096,7 @@ func TestReconcileBootMedias_ListsAndReconciles(t *testing.T) {
 	}
 
 	// bm-2 should remain Complete
-	var updated2 typed.BootMedia
+	var updated2 k8s.BootMedia
 	if err := k.Get(context.Background(), k.Key("bm-2"), &updated2); err != nil {
 		t.Fatalf("failed to get bm-2: %v", err)
 	}

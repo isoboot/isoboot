@@ -1,716 +1,21 @@
 package k8s
 
 import (
-	"reflect"
+	"context"
+	"strings"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestGetString(t *testing.T) {
-	tests := []struct {
-		name     string
-		m        map[string]interface{}
-		key      string
-		expected string
-	}{
-		{
-			name:     "existing string key",
-			m:        map[string]interface{}{"foo": "bar"},
-			key:      "foo",
-			expected: "bar",
-		},
-		{
-			name:     "missing key",
-			m:        map[string]interface{}{"foo": "bar"},
-			key:      "baz",
-			expected: "",
-		},
-		{
-			name:     "non-string value",
-			m:        map[string]interface{}{"foo": 123},
-			key:      "foo",
-			expected: "",
-		},
-		{
-			name:     "empty map",
-			m:        map[string]interface{}{},
-			key:      "foo",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getString(tt.m, tt.key)
-			if result != tt.expected {
-				t.Errorf("getString(%v, %q) = %q, want %q", tt.m, tt.key, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestGetStringSlice(t *testing.T) {
-	tests := []struct {
-		name     string
-		m        map[string]interface{}
-		key      string
-		expected []string
-	}{
-		{
-			name:     "existing slice",
-			m:        map[string]interface{}{"items": []interface{}{"a", "b", "c"}},
-			key:      "items",
-			expected: []string{"a", "b", "c"},
-		},
-		{
-			name:     "empty slice",
-			m:        map[string]interface{}{"items": []interface{}{}},
-			key:      "items",
-			expected: []string{},
-		},
-		{
-			name:     "missing key",
-			m:        map[string]interface{}{"foo": "bar"},
-			key:      "items",
-			expected: nil,
-		},
-		{
-			name:     "non-slice value",
-			m:        map[string]interface{}{"items": "not a slice"},
-			key:      "items",
-			expected: nil,
-		},
-		{
-			name:     "mixed types in slice",
-			m:        map[string]interface{}{"items": []interface{}{"a", 123, "b"}},
-			key:      "items",
-			expected: []string{"a", "b"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getStringSlice(tt.m, tt.key)
-			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("getStringSlice(%v, %q) = %v, want %v", tt.m, tt.key, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestGetStringMap(t *testing.T) {
-	tests := []struct {
-		name     string
-		m        map[string]interface{}
-		key      string
-		expected map[string]string
-	}{
-		{
-			name: "existing map",
-			m: map[string]interface{}{
-				"files": map[string]interface{}{"preseed.cfg": "content1", "late.sh": "content2"},
-			},
-			key:      "files",
-			expected: map[string]string{"preseed.cfg": "content1", "late.sh": "content2"},
-		},
-		{
-			name:     "empty map",
-			m:        map[string]interface{}{"files": map[string]interface{}{}},
-			key:      "files",
-			expected: map[string]string{},
-		},
-		{
-			name:     "missing key",
-			m:        map[string]interface{}{"foo": "bar"},
-			key:      "files",
-			expected: nil,
-		},
-		{
-			name:     "non-map value",
-			m:        map[string]interface{}{"files": "not a map"},
-			key:      "files",
-			expected: nil,
-		},
-		{
-			name: "mixed types in map",
-			m: map[string]interface{}{
-				"files": map[string]interface{}{"a": "string", "b": 123},
-			},
-			key:      "files",
-			expected: map[string]string{"a": "string"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getStringMap(tt.m, tt.key)
-			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("getStringMap(%v, %q) = %v, want %v", tt.m, tt.key, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestParseResponseTemplate(t *testing.T) {
-	tests := []struct {
-		name        string
-		obj         *unstructured.Unstructured
-		expected    *ResponseTemplate
-		expectError bool
-	}{
-		{
-			name: "valid response template",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "debian-preseed"},
-					"spec": map[string]interface{}{
-						"files": map[string]interface{}{
-							"preseed.cfg": "d-i locale string en_US",
-							"late.sh":     "#!/bin/bash\necho done",
-						},
-					},
-				},
-			},
-			expected: &ResponseTemplate{
-				Name: "debian-preseed",
-				Files: map[string]string{
-					"preseed.cfg": "d-i locale string en_US",
-					"late.sh":     "#!/bin/bash\necho done",
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "empty files",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "empty-template"},
-					"spec": map[string]interface{}{
-						"files": map[string]interface{}{},
-					},
-				},
-			},
-			expected: &ResponseTemplate{
-				Name:  "empty-template",
-				Files: map[string]string{},
-			},
-			expectError: false,
-		},
-		{
-			name: "missing spec",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "no-spec"},
-				},
-			},
-			expected:    nil,
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseResponseTemplate(tt.obj)
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-			if result.Name != tt.expected.Name {
-				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
-			}
-			if !reflect.DeepEqual(result.Files, tt.expected.Files) {
-				t.Errorf("Files = %v, want %v", result.Files, tt.expected.Files)
-			}
-		})
-	}
-}
-
-func TestParseProvision_WithNewFields(t *testing.T) {
-	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"metadata": map[string]interface{}{"name": "test-provision"},
-			"spec": map[string]interface{}{
-				"machineRef":          "vm125",
-				"bootTargetRef":       "debian-13",
-				"responseTemplateRef": "debian-preseed",
-				"configMaps":          []interface{}{"common-config", "host-config"},
-				"secrets":             []interface{}{"user-passwords"},
-			},
-			"status": map[string]interface{}{
-				"phase":   "Pending",
-				"message": "Initialized",
-			},
-		},
-	}
-
-	result, err := parseProvision(obj)
-	if err != nil {
-		t.Fatalf("parseProvision failed: %v", err)
-	}
-
-	if result.Name != "test-provision" {
-		t.Errorf("Name = %q, want %q", result.Name, "test-provision")
-	}
-	if result.Spec.MachineRef != "vm125" {
-		t.Errorf("MachineRef = %q, want %q", result.Spec.MachineRef, "vm125")
-	}
-	if result.Spec.BootTargetRef != "debian-13" {
-		t.Errorf("BootTargetRef = %q, want %q", result.Spec.BootTargetRef, "debian-13")
-	}
-	if result.Spec.ResponseTemplateRef != "debian-preseed" {
-		t.Errorf("ResponseTemplateRef = %q, want %q", result.Spec.ResponseTemplateRef, "debian-preseed")
-	}
-
-	expectedConfigMaps := []string{"common-config", "host-config"}
-	if !reflect.DeepEqual(result.Spec.ConfigMaps, expectedConfigMaps) {
-		t.Errorf("ConfigMaps = %v, want %v", result.Spec.ConfigMaps, expectedConfigMaps)
-	}
-
-	expectedSecrets := []string{"user-passwords"}
-	if !reflect.DeepEqual(result.Spec.Secrets, expectedSecrets) {
-		t.Errorf("Secrets = %v, want %v", result.Spec.Secrets, expectedSecrets)
-	}
-
-	if result.Status.Phase != "Pending" {
-		t.Errorf("Status.Phase = %q, want %q", result.Status.Phase, "Pending")
-	}
-}
-
-func TestParseProvision_NoOptionalFields(t *testing.T) {
-	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"metadata": map[string]interface{}{"name": "minimal-provision"},
-			"spec": map[string]interface{}{
-				"machineRef":    "vm125",
-				"bootTargetRef": "debian-13",
-			},
-		},
-	}
-
-	result, err := parseProvision(obj)
-	if err != nil {
-		t.Fatalf("parseProvision failed: %v", err)
-	}
-
-	// Verify legacy "target" field is read into BootTargetRef
-	if result.Spec.BootTargetRef != "debian-13" {
-		t.Errorf("BootTargetRef = %q, want %q (from legacy target field)", result.Spec.BootTargetRef, "debian-13")
-	}
-	if result.Spec.ResponseTemplateRef != "" {
-		t.Errorf("ResponseTemplateRef = %q, want empty", result.Spec.ResponseTemplateRef)
-	}
-	if result.Spec.ConfigMaps != nil {
-		t.Errorf("ConfigMaps = %v, want nil", result.Spec.ConfigMaps)
-	}
-	if result.Spec.Secrets != nil {
-		t.Errorf("Secrets = %v, want nil", result.Spec.Secrets)
-	}
-}
-
-func TestGetInt(t *testing.T) {
-	tests := []struct {
-		name     string
-		m        map[string]interface{}
-		key      string
-		expected int
-	}{
-		{
-			name:     "int value",
-			m:        map[string]interface{}{"progress": int(50)},
-			key:      "progress",
-			expected: 50,
-		},
-		{
-			name:     "int32 value",
-			m:        map[string]interface{}{"progress": int32(75)},
-			key:      "progress",
-			expected: 75,
-		},
-		{
-			name:     "int64 value",
-			m:        map[string]interface{}{"progress": int64(100)},
-			key:      "progress",
-			expected: 100,
-		},
-		{
-			name:     "float64 value",
-			m:        map[string]interface{}{"progress": float64(25.0)},
-			key:      "progress",
-			expected: 25,
-		},
-		{
-			name:     "missing key",
-			m:        map[string]interface{}{"foo": "bar"},
-			key:      "progress",
-			expected: 0,
-		},
-		{
-			name:     "string value",
-			m:        map[string]interface{}{"progress": "50"},
-			key:      "progress",
-			expected: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getInt(tt.m, tt.key)
-			if result != tt.expected {
-				t.Errorf("getInt(%v, %q) = %d, want %d", tt.m, tt.key, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestParseBootTarget(t *testing.T) {
-	tests := []struct {
-		name        string
-		obj         *unstructured.Unstructured
-		expected    *BootTarget
-		expectError bool
-	}{
-		{
-			name: "valid BootTarget with all fields",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "debian-13-with-firmware"},
-					"spec": map[string]interface{}{
-						"diskImageRef":        "debian-13",
-						"includeFirmwarePath": "/initrd.gz",
-						"template":            "kernel /linux\ninitrd /initrd.gz",
-					},
-				},
-			},
-			expected: &BootTarget{
-				Name:                "debian-13-with-firmware",
-				DiskImageRef:        "debian-13",
-				IncludeFirmwarePath: "/initrd.gz",
-				Template:            "kernel /linux\ninitrd /initrd.gz",
-			},
-			expectError: false,
-		},
-		{
-			name: "missing diskImageRef returns error",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "invalid-target"},
-					"spec": map[string]interface{}{
-						"template": "kernel /linux",
-					},
-				},
-			},
-			expected:    nil,
-			expectError: true,
-		},
-		{
-			name: "missing includeFirmwarePath is OK (optional)",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "debian-13"},
-					"spec": map[string]interface{}{
-						"diskImageRef": "debian-13",
-						"template":     "kernel /linux",
-					},
-				},
-			},
-			expected: &BootTarget{
-				Name:                "debian-13",
-				DiskImageRef:        "debian-13",
-				IncludeFirmwarePath: "",
-				Template:            "kernel /linux",
-			},
-			expectError: false,
-		},
-		{
-			name: "missing spec returns error",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "no-spec"},
-				},
-			},
-			expected:    nil,
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseBootTarget(tt.obj)
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-			if result.Name != tt.expected.Name {
-				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
-			}
-			if result.DiskImageRef != tt.expected.DiskImageRef {
-				t.Errorf("DiskImageRef = %q, want %q", result.DiskImageRef, tt.expected.DiskImageRef)
-			}
-			if result.IncludeFirmwarePath != tt.expected.IncludeFirmwarePath {
-				t.Errorf("IncludeFirmwarePath = %q, want %q", result.IncludeFirmwarePath, tt.expected.IncludeFirmwarePath)
-			}
-			if result.Template != tt.expected.Template {
-				t.Errorf("Template = %q, want %q", result.Template, tt.expected.Template)
-			}
-		})
-	}
-}
-
-func TestParseMachine(t *testing.T) {
-	tests := []struct {
-		name        string
-		obj         *unstructured.Unstructured
-		expected    *Machine
-		expectError bool
-	}{
-		{
-			name: "valid Machine with machineId",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "vm-01.lan"},
-					"spec": map[string]interface{}{
-						"mac":       "AA-BB-CC-DD-EE-FF",
-						"machineId": "0123456789abcdef0123456789abcdef",
-					},
-				},
-			},
-			expected: &Machine{
-				Name: "vm-01.lan",
-				MAC:  "aa-bb-cc-dd-ee-ff", // lowercase
-			},
-			expectError: false,
-		},
-		{
-			name: "valid Machine simple",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "vm-02.lan"},
-					"spec": map[string]interface{}{
-						"mac": "11-22-33-44-55-66",
-					},
-				},
-			},
-			expected: &Machine{
-				Name: "vm-02.lan",
-				MAC:  "11-22-33-44-55-66",
-			},
-			expectError: false,
-		},
-		{
-			name: "missing mac returns error",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "no-mac"},
-					"spec":     map[string]interface{}{},
-				},
-			},
-			expected:    nil,
-			expectError: true,
-		},
-		{
-			name: "missing spec returns error",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "no-spec"},
-				},
-			},
-			expected:    nil,
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseMachine(tt.obj)
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-			if result.Name != tt.expected.Name {
-				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
-			}
-			if result.MAC != tt.expected.MAC {
-				t.Errorf("MAC = %q, want %q", result.MAC, tt.expected.MAC)
-			}
-		})
-	}
-}
-
-func TestParseDiskImage(t *testing.T) {
-	tests := []struct {
-		name        string
-		obj         *unstructured.Unstructured
-		expected    *DiskImage
-		expectError bool
-	}{
-		{
-			name: "full DiskImage with status",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "debian-13"},
-					"spec": map[string]interface{}{
-						"iso":      "https://example.com/debian.iso",
-						"firmware": "https://example.com/firmware.cpio.gz",
-					},
-					"status": map[string]interface{}{
-						"phase":    "Complete",
-						"progress": int64(100),
-						"message":  "Download complete",
-						"iso": map[string]interface{}{
-							"fileSizeMatch": "verified",
-							"digestSha256":  "verified",
-							"digestSha512":  "not_found",
-						},
-						"firmware": map[string]interface{}{
-							"fileSizeMatch": "verified",
-							"digestSha256":  "verified",
-							"digestSha512":  "verified",
-						},
-					},
-				},
-			},
-			expected: &DiskImage{
-				Name:     "debian-13",
-				ISO:      "https://example.com/debian.iso",
-				Firmware: "https://example.com/firmware.cpio.gz",
-				Status: DiskImageStatus{
-					Phase:    "Complete",
-					Progress: 100,
-					Message:  "Download complete",
-					ISO: &DiskImageVerification{
-						FileSizeMatch: "verified",
-						DigestSha256:  "verified",
-						DigestSha512:  "not_found",
-					},
-					Firmware: &DiskImageVerification{
-						FileSizeMatch: "verified",
-						DigestSha256:  "verified",
-						DigestSha512:  "verified",
-					},
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "DiskImage without status",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "new-image"},
-					"spec": map[string]interface{}{
-						"iso": "https://example.com/image.iso",
-					},
-				},
-			},
-			expected: &DiskImage{
-				Name:     "new-image",
-				ISO:      "https://example.com/image.iso",
-				Firmware: "",
-				Status:   DiskImageStatus{},
-			},
-			expectError: false,
-		},
-		{
-			name: "DiskImage with int progress",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "downloading"},
-					"spec": map[string]interface{}{
-						"iso": "https://example.com/image.iso",
-					},
-					"status": map[string]interface{}{
-						"phase":    "Downloading",
-						"progress": int(50),
-						"message":  "Downloading ISO",
-					},
-				},
-			},
-			expected: &DiskImage{
-				Name: "downloading",
-				ISO:  "https://example.com/image.iso",
-				Status: DiskImageStatus{
-					Phase:    "Downloading",
-					Progress: 50,
-					Message:  "Downloading ISO",
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "missing spec",
-			obj: &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "no-spec"},
-				},
-			},
-			expected:    nil,
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseDiskImage(tt.obj)
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-			if result.Name != tt.expected.Name {
-				t.Errorf("Name = %q, want %q", result.Name, tt.expected.Name)
-			}
-			if result.ISO != tt.expected.ISO {
-				t.Errorf("ISO = %q, want %q", result.ISO, tt.expected.ISO)
-			}
-			if result.Firmware != tt.expected.Firmware {
-				t.Errorf("Firmware = %q, want %q", result.Firmware, tt.expected.Firmware)
-			}
-			if result.Status.Phase != tt.expected.Status.Phase {
-				t.Errorf("Status.Phase = %q, want %q", result.Status.Phase, tt.expected.Status.Phase)
-			}
-			if result.Status.Progress != tt.expected.Status.Progress {
-				t.Errorf("Status.Progress = %d, want %d", result.Status.Progress, tt.expected.Status.Progress)
-			}
-			if result.Status.Message != tt.expected.Status.Message {
-				t.Errorf("Status.Message = %q, want %q", result.Status.Message, tt.expected.Status.Message)
-			}
-			// Check ISO verification if expected
-			if tt.expected.Status.ISO != nil {
-				if result.Status.ISO == nil {
-					t.Error("Status.ISO is nil, expected non-nil")
-				} else if !reflect.DeepEqual(result.Status.ISO, tt.expected.Status.ISO) {
-					t.Errorf("Status.ISO = %+v, want %+v", result.Status.ISO, tt.expected.Status.ISO)
-				}
-			}
-			// Check Firmware verification if expected
-			if tt.expected.Status.Firmware != nil {
-				if result.Status.Firmware == nil {
-					t.Error("Status.Firmware is nil, expected non-nil")
-				} else if !reflect.DeepEqual(result.Status.Firmware, tt.expected.Status.Firmware) {
-					t.Errorf("Status.Firmware = %+v, want %+v", result.Status.Firmware, tt.expected.Status.Firmware)
-				}
-			}
-		})
-	}
+func testScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = corev1.AddToScheme(s)
+	_ = AddToScheme(s)
+	return s
 }
 
 func TestNormalizeMAC(t *testing.T) {
@@ -719,31 +24,11 @@ func TestNormalizeMAC(t *testing.T) {
 		mac      string
 		expected string
 	}{
-		{
-			name:     "dash-separated lowercase",
-			mac:      "aa-bb-cc-dd-ee-ff",
-			expected: "aa-bb-cc-dd-ee-ff",
-		},
-		{
-			name:     "dash-separated uppercase",
-			mac:      "AA-BB-CC-DD-EE-FF",
-			expected: "aa-bb-cc-dd-ee-ff",
-		},
-		{
-			name:     "dash-separated mixed case",
-			mac:      "Aa-Bb-Cc-Dd-Ee-Ff",
-			expected: "aa-bb-cc-dd-ee-ff",
-		},
-		{
-			name:     "colon-separated rejected",
-			mac:      "aa:bb:cc:dd:ee:ff",
-			expected: "",
-		},
-		{
-			name:     "empty string",
-			mac:      "",
-			expected: "",
-		},
+		{"dash-separated lowercase", "aa-bb-cc-dd-ee-ff", "aa-bb-cc-dd-ee-ff"},
+		{"dash-separated uppercase", "AA-BB-CC-DD-EE-FF", "aa-bb-cc-dd-ee-ff"},
+		{"dash-separated mixed case", "Aa-Bb-Cc-Dd-Ee-Ff", "aa-bb-cc-dd-ee-ff"},
+		{"colon-separated rejected", "aa:bb:cc:dd:ee:ff", ""},
+		{"empty string", "", ""},
 	}
 
 	for _, tt := range tests {
@@ -756,63 +41,509 @@ func TestNormalizeMAC(t *testing.T) {
 	}
 }
 
-// TestFindMachineByMAC_ColonFormatReturnsNil tests MAC normalization edge cases
-// Note: Full integration tests for FindMachineByMAC require a k8s client
-func TestFindMachineByMAC_ColonFormatReturnsNil(t *testing.T) {
-	// This tests that colon format MACs are rejected before any k8s calls
-	// The actual function would return nil immediately for colon-separated MACs
-	mac := "aa:bb:cc:dd:ee:ff"
-	normalized := normalizeMAC(mac)
-	if normalized != "" {
-		t.Errorf("expected empty string for colon-separated MAC, got %q", normalized)
+func TestBootMedia_KernelFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		bm       *BootMedia
+		expected string
+	}{
+		{
+			name:     "from kernel URL",
+			bm:       &BootMedia{Spec: BootMediaSpec{Kernel: &BootMediaFileRef{URL: "http://example.com/path/linux"}}},
+			expected: "linux",
+		},
+		{
+			name: "from ISO path",
+			bm: &BootMedia{Spec: BootMediaSpec{ISO: &BootMediaISO{
+				URL: "http://example.com/debian.iso", Kernel: "/install.amd/vmlinuz", Initrd: "/install.amd/initrd.gz",
+			}}},
+			expected: "vmlinuz",
+		},
+		{
+			name:     "empty",
+			bm:       &BootMedia{},
+			expected: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.bm.KernelFilename()
+			if got != tt.expected {
+				t.Errorf("KernelFilename() = %q, want %q", got, tt.expected)
+			}
+		})
 	}
 }
 
-// TestListProvisionsByMachine_FilteringLogic tests the filtering logic
-// Note: Full integration tests require a k8s client
-func TestListProvisionsByMachine_FilteringLogic(t *testing.T) {
-	// Test that MachineRef comparison is exact string match
-	provisions := []*Provision{
-		{Name: "prov-1", Spec: ProvisionSpec{MachineRef: "vm-01.lan"}},
-		{Name: "prov-2", Spec: ProvisionSpec{MachineRef: "vm-02.lan"}},
-		{Name: "prov-3", Spec: ProvisionSpec{MachineRef: "vm-01.lan"}},
+func TestBootMedia_InitrdFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		bm       *BootMedia
+		expected string
+	}{
+		{
+			name:     "from initrd URL",
+			bm:       &BootMedia{Spec: BootMediaSpec{Initrd: &BootMediaFileRef{URL: "http://example.com/path/initrd.gz"}}},
+			expected: "initrd.gz",
+		},
+		{
+			name: "from ISO path",
+			bm: &BootMedia{Spec: BootMediaSpec{ISO: &BootMediaISO{
+				URL: "http://example.com/debian.iso", Kernel: "/install.amd/vmlinuz", Initrd: "/install.amd/initrd.gz",
+			}}},
+			expected: "initrd.gz",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.bm.InitrdFilename()
+			if got != tt.expected {
+				t.Errorf("InitrdFilename() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBootMedia_Validate(t *testing.T) {
+	tests := []struct {
+		name      string
+		bm        *BootMedia
+		expectErr string
+	}{
+		{
+			name: "valid direct",
+			bm: &BootMedia{Spec: BootMediaSpec{
+				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
+				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			}},
+		},
+		{
+			name: "valid ISO",
+			bm: &BootMedia{Spec: BootMediaSpec{
+				ISO: &BootMediaISO{
+					URL:    "http://example.com/debian.iso",
+					Kernel: "/install.amd/vmlinuz",
+					Initrd: "/install.amd/initrd.gz",
+				},
+			}},
+		},
+		{
+			name: "both set",
+			bm: &BootMedia{Spec: BootMediaSpec{
+				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
+				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+				ISO:    &BootMediaISO{URL: "http://example.com/debian.iso", Kernel: "/k", Initrd: "/i"},
+			}},
+			expectErr: "cannot specify both",
+		},
+		{
+			name:      "neither set",
+			bm:        &BootMedia{},
+			expectErr: "must specify either",
+		},
+		{
+			name: "kernel only",
+			bm: &BootMedia{Spec: BootMediaSpec{
+				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
+			}},
+			expectErr: "kernel requires initrd",
+		},
+		{
+			name: "initrd only",
+			bm: &BootMedia{Spec: BootMediaSpec{
+				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			}},
+			expectErr: "initrd requires kernel",
+		},
+		{
+			name: "duplicate basenames",
+			bm: &BootMedia{Spec: BootMediaSpec{
+				Kernel: &BootMediaFileRef{URL: "http://example.com/path1/file"},
+				Initrd: &BootMediaFileRef{URL: "http://example.com/path2/file"},
+			}},
+			expectErr: "duplicate basename",
+		},
+		{
+			name: "ISO missing kernel path",
+			bm: &BootMedia{Spec: BootMediaSpec{
+				ISO: &BootMediaISO{
+					URL:    "http://example.com/debian.iso",
+					Initrd: "/install.amd/initrd.gz",
+				},
+			}},
+			expectErr: "iso.kernel is required",
+		},
+		{
+			name: "ISO missing initrd path",
+			bm: &BootMedia{Spec: BootMediaSpec{
+				ISO: &BootMediaISO{
+					URL:    "http://example.com/debian.iso",
+					Kernel: "/install.amd/vmlinuz",
+				},
+			}},
+			expectErr: "iso.initrd is required",
+		},
 	}
 
-	// Filter for vm-01.lan
-	machineRef := "vm-01.lan"
-	var result []*Provision
-	for _, p := range provisions {
-		if p.Spec.MachineRef == machineRef {
-			result = append(result, p)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.bm.Validate()
+			if tt.expectErr == "" {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.expectErr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tt.expectErr)
+			}
+		})
+	}
+}
+
+func TestFilenameFromURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		expected    string
+		expectError bool
+	}{
+		{"normal URL", "http://example.com/path/to/file.iso", "file.iso", false},
+		{"root path", "http://example.com/", "", true},
+		{"no path", "http://example.com", "", true},
+		{"with query", "http://example.com/file.iso?token=abc", "file.iso", false},
+		{"path traversal", "http://example.com/path/..", "", true},
+		{"path traversal with slash", "http://example.com/path/../", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FilenameFromURL(tt.url)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error, got %q", got)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if got != tt.expected {
+					t.Errorf("got %q, want %q", got, tt.expected)
+				}
+			}
+		})
+	}
+}
+
+func TestProvisionSpec_GetBootTargetRef(t *testing.T) {
+	tests := []struct {
+		name     string
+		spec     ProvisionSpec
+		expected string
+	}{
+		{
+			name:     "new field",
+			spec:     ProvisionSpec{BootTargetRef: "debian-13"},
+			expected: "debian-13",
+		},
+		{
+			name:     "legacy field",
+			spec:     ProvisionSpec{Target: "debian-12"},
+			expected: "debian-12",
+		},
+		{
+			name:     "new takes precedence",
+			spec:     ProvisionSpec{BootTargetRef: "new", Target: "old"},
+			expected: "new",
+		},
+		{
+			name:     "both empty",
+			spec:     ProvisionSpec{},
+			expected: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.spec.GetBootTargetRef()
+			if got != tt.expected {
+				t.Errorf("GetBootTargetRef() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFindMachineByMAC(t *testing.T) {
+	ctx := context.Background()
+	cl := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&Machine{
+				ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+				Spec:       MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+			},
+			&Machine{
+				ObjectMeta: metav1.ObjectMeta{Name: "vm-02", Namespace: "default"},
+				Spec:       MachineSpec{MAC: "11-22-33-44-55-66"},
+			},
+		).Build()
+	k := NewClientFromClient(cl, "default")
+
+	// Found
+	m, err := k.FindMachineByMAC(ctx, "AA-BB-CC-DD-EE-FF")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m == nil || m.Name != "vm-01" {
+		t.Errorf("expected vm-01, got %v", m)
 	}
 
+	// Not found
+	m, err = k.FindMachineByMAC(ctx, "ff-ff-ff-ff-ff-ff")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m != nil {
+		t.Errorf("expected nil, got %v", m)
+	}
+
+	// Colon format rejected
+	m, err = k.FindMachineByMAC(ctx, "aa:bb:cc:dd:ee:ff")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m != nil {
+		t.Errorf("expected nil for colon format, got %v", m)
+	}
+}
+
+func TestFindProvisionByMAC(t *testing.T) {
+	ctx := context.Background()
+	cl := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&Machine{
+				ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+				Spec:       MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+			},
+			&Provision{
+				ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
+				Spec:       ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
+				Status:     ProvisionStatus{Phase: "Pending"},
+			},
+		).
+		WithStatusSubresource(&Provision{}).
+		Build()
+	k := NewClientFromClient(cl, "default")
+
+	// Found with matching phase
+	p, err := k.FindProvisionByMAC(ctx, "aa-bb-cc-dd-ee-ff", "Pending")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p == nil || p.Name != "prov-1" {
+		t.Errorf("expected prov-1, got %v", p)
+	}
+
+	// Not found with wrong phase
+	p, err = k.FindProvisionByMAC(ctx, "aa-bb-cc-dd-ee-ff", "InProgress")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p != nil {
+		t.Errorf("expected nil for wrong phase, got %v", p)
+	}
+
+	// Found with empty phase (any)
+	p, err = k.FindProvisionByMAC(ctx, "aa-bb-cc-dd-ee-ff", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p == nil || p.Name != "prov-1" {
+		t.Errorf("expected prov-1, got %v", p)
+	}
+}
+
+func TestFindProvisionByHostname(t *testing.T) {
+	ctx := context.Background()
+	cl := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&Provision{
+				ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
+				Spec:       ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
+				Status:     ProvisionStatus{Phase: "Pending"},
+			},
+		).
+		WithStatusSubresource(&Provision{}).
+		Build()
+	k := NewClientFromClient(cl, "default")
+
+	// Found
+	p, err := k.FindProvisionByHostname(ctx, "vm-01", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p == nil || p.Name != "prov-1" {
+		t.Errorf("expected prov-1, got %v", p)
+	}
+
+	// Not found
+	p, err = k.FindProvisionByHostname(ctx, "vm-99", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p != nil {
+		t.Errorf("expected nil, got %v", p)
+	}
+}
+
+func TestListProvisionsByMachine(t *testing.T) {
+	ctx := context.Background()
+	cl := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&Provision{
+				ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
+				Spec:       ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
+			},
+			&Provision{
+				ObjectMeta: metav1.ObjectMeta{Name: "prov-2", Namespace: "default"},
+				Spec:       ProvisionSpec{MachineRef: "vm-02", BootTargetRef: "debian-13"},
+			},
+			&Provision{
+				ObjectMeta: metav1.ObjectMeta{Name: "prov-3", Namespace: "default"},
+				Spec:       ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-12"},
+			},
+		).Build()
+	k := NewClientFromClient(cl, "default")
+
+	result, err := k.ListProvisionsByMachine(ctx, "vm-01")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(result) != 2 {
-		t.Errorf("expected 2 provisions for %s, got %d", machineRef, len(result))
+		t.Fatalf("expected 2, got %d", len(result))
 	}
-	for _, p := range result {
-		if p.Spec.MachineRef != machineRef {
-			t.Errorf("unexpected provision %s with MachineRef %s", p.Name, p.Spec.MachineRef)
-		}
+
+	// No matches
+	result, err = k.ListProvisionsByMachine(ctx, "vm-99")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected 0, got %d", len(result))
 	}
 }
 
-func TestListProvisionsByMachine_NoMatches(t *testing.T) {
-	provisions := []*Provision{
-		{Name: "prov-1", Spec: ProvisionSpec{MachineRef: "vm-01.lan"}},
-		{Name: "prov-2", Spec: ProvisionSpec{MachineRef: "vm-02.lan"}},
+func TestUpdateProvisionStatus(t *testing.T) {
+	ctx := context.Background()
+	cl := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&Provision{
+				ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
+				Spec:       ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
+			},
+		).
+		WithStatusSubresource(&Provision{}).
+		Build()
+	k := NewClientFromClient(cl, "default")
+
+	err := k.UpdateProvisionStatus(ctx, "prov-1", "InProgress", "Boot started", "10.0.0.5")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Filter for non-existent machine
-	machineRef := "vm-99.lan"
-	var result []*Provision
-	for _, p := range provisions {
-		if p.Spec.MachineRef == machineRef {
-			result = append(result, p)
-		}
+	var updated Provision
+	if err := cl.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get updated provision: %v", err)
+	}
+	if updated.Status.Phase != "InProgress" {
+		t.Errorf("expected phase InProgress, got %q", updated.Status.Phase)
+	}
+	if updated.Status.IP != "10.0.0.5" {
+		t.Errorf("expected IP 10.0.0.5, got %q", updated.Status.IP)
+	}
+	if updated.Status.LastUpdated.IsZero() {
+		t.Error("expected LastUpdated to be set")
+	}
+}
+
+func TestUpdateProvisionStatus_PreservesIP(t *testing.T) {
+	ctx := context.Background()
+	cl := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&Provision{
+				ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
+				Spec:       ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
+				Status:     ProvisionStatus{Phase: "InProgress", IP: "10.0.0.5"},
+			},
+		).
+		WithStatusSubresource(&Provision{}).
+		Build()
+	k := NewClientFromClient(cl, "default")
+
+	// Update with empty IP should preserve existing
+	err := k.UpdateProvisionStatus(ctx, "prov-1", "Complete", "Done", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(result) != 0 {
-		t.Errorf("expected 0 provisions for %s, got %d", machineRef, len(result))
+	var updated Provision
+	if err := cl.Get(ctx, k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get updated provision: %v", err)
+	}
+	if updated.Status.IP != "10.0.0.5" {
+		t.Errorf("expected IP preserved as 10.0.0.5, got %q", updated.Status.IP)
+	}
+}
+
+func TestUpdateBootMediaStatus(t *testing.T) {
+	ctx := context.Background()
+	cl := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&BootMedia{
+				ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+				Spec: BootMediaSpec{
+					Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
+					Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+				},
+			},
+		).
+		WithStatusSubresource(&BootMedia{}).
+		Build()
+	k := NewClientFromClient(cl, "default")
+
+	status := &BootMediaStatus{
+		Phase:   "Complete",
+		Message: "All done",
+		Kernel:  &FileStatus{Name: "linux", Phase: "Complete", SHA256: "abc123"},
+	}
+	err := k.UpdateBootMediaStatus(ctx, "debian-13", status)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var updated BootMedia
+	if err := cl.Get(ctx, k.Key("debian-13"), &updated); err != nil {
+		t.Fatalf("failed to get updated bootmedia: %v", err)
+	}
+	if updated.Status.Phase != "Complete" {
+		t.Errorf("expected phase Complete, got %q", updated.Status.Phase)
+	}
+	if updated.Status.Kernel == nil || updated.Status.Kernel.SHA256 != "abc123" {
+		t.Errorf("unexpected kernel status: %+v", updated.Status.Kernel)
+	}
+}
+
+func TestUpdateBootMediaStatus_NilStatus(t *testing.T) {
+	k := NewClientFromClient(fake.NewClientBuilder().WithScheme(testScheme()).Build(), "default")
+	err := k.UpdateBootMediaStatus(context.Background(), "test", nil)
+	if err == nil {
+		t.Error("expected error for nil status")
 	}
 }
