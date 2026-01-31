@@ -19,7 +19,7 @@ type BootClient interface {
 	GetMachineByMAC(ctx context.Context, mac string) (string, error)
 	GetProvisionsByMachine(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error)
 	GetBootTarget(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error)
-	GetBootMedia(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error)
+	GetBootSource(ctx context.Context, name string) (*controllerclient.BootSourceInfo, error)
 	UpdateProvisionStatus(ctx context.Context, name, status, message, ip string) error
 }
 
@@ -48,12 +48,12 @@ type TemplateData struct {
 	Hostname          string // First part before dot (e.g., "vm-deb-0099")
 	Domain            string // Everything after first dot (e.g., "lan")
 	BootTarget        string
-	BootMedia         string // BootMedia resource name (for static file paths)
+	BootSource         string // BootSource resource name (for static file paths)
 	UseFirmware       bool   // Whether to use firmware-combined initrd
 	ProvisionName     string // Provision resource name (use for answer file URLs)
 	KernelFilename    string // e.g., "linux" or "vmlinuz"
 	InitrdFilename    string // e.g., "initrd.gz"
-	HasFirmware       bool   // Whether BootMedia has firmware
+	HasFirmware       bool   // Whether BootSource has firmware
 }
 
 // portFromRequest returns the X-Forwarded-Port header if present,
@@ -157,10 +157,10 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// 5. Get BootMedia
-	bootMedia, err := h.ctrlClient.GetBootMedia(ctx, bootTarget.BootMediaRef)
+	// 5. Get BootSource
+	bootMedia, err := h.ctrlClient.GetBootSource(ctx, bootTarget.BootSourceRef)
 	if err != nil {
-		log.Printf("Error loading BootMedia %s: %v", bootTarget.BootMediaRef, err)
+		log.Printf("Error loading BootSource %s: %v", bootTarget.BootSourceRef, err)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusBadGateway)
 		return
@@ -184,7 +184,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		Hostname:       hostname,
 		Domain:         domain,
 		BootTarget:     pendingProvision.BootTargetRef,
-		BootMedia:      bootTarget.BootMediaRef,
+		BootSource:      bootTarget.BootSourceRef,
 		UseFirmware:    bootTarget.UseFirmware,
 		ProvisionName:  pendingProvision.Name,
 		KernelFilename: bootMedia.KernelFilename,

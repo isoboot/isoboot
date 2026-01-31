@@ -68,14 +68,14 @@ type ProvisionList struct {
 	Items           []Provision `json:"items"`
 }
 
-// BootMediaFileRef represents a file to download (kernel, initrd, or firmware)
-type BootMediaFileRef struct {
+// BootSourceFileRef represents a file to download (kernel, initrd, or firmware)
+type BootSourceFileRef struct {
 	URL         string `json:"url"`
 	ChecksumURL string `json:"checksumURL,omitempty"`
 }
 
-// BootMediaISO represents an ISO to download and extract files from
-type BootMediaISO struct {
+// BootSourceISO represents an ISO to download and extract files from
+type BootSourceISO struct {
 	URL         string `json:"url"`
 	ChecksumURL string `json:"checksumURL,omitempty"`
 	Kernel      string `json:"kernel"` // path within ISO
@@ -83,23 +83,23 @@ type BootMediaISO struct {
 }
 
 // +kubebuilder:object:root=true
-// BootMedia represents a BootMedia CRD (owns file downloads)
-type BootMedia struct {
+// BootSource represents a BootSource CRD (owns file downloads)
+type BootSource struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              BootMediaSpec   `json:"spec"`
-	Status            BootMediaStatus `json:"status,omitempty"`
+	Spec              BootSourceSpec   `json:"spec"`
+	Status            BootSourceStatus `json:"status,omitempty"`
 }
 
-type BootMediaSpec struct {
-	Kernel   *BootMediaFileRef `json:"kernel,omitempty"`
-	Initrd   *BootMediaFileRef `json:"initrd,omitempty"`
-	ISO      *BootMediaISO     `json:"iso,omitempty"`
-	Firmware *BootMediaFileRef `json:"firmware,omitempty"`
+type BootSourceSpec struct {
+	Kernel   *BootSourceFileRef `json:"kernel,omitempty"`
+	Initrd   *BootSourceFileRef `json:"initrd,omitempty"`
+	ISO      *BootSourceISO     `json:"iso,omitempty"`
+	Firmware *BootSourceFileRef `json:"firmware,omitempty"`
 }
 
-// BootMediaStatus represents the status of a BootMedia
-type BootMediaStatus struct {
+// BootSourceStatus represents the status of a BootSource
+type BootSourceStatus struct {
 	Phase          string      `json:"phase,omitempty"`
 	Message        string      `json:"message,omitempty"`
 	Kernel         *FileStatus `json:"kernel,omitempty"`
@@ -117,14 +117,14 @@ type FileStatus struct {
 }
 
 // +kubebuilder:object:root=true
-type BootMediaList struct {
+type BootSourceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []BootMedia `json:"items"`
+	Items           []BootSource `json:"items"`
 }
 
 // KernelFilename returns the basename of the kernel file
-func (bm *BootMedia) KernelFilename() string {
+func (bm *BootSource) KernelFilename() string {
 	if bm.Spec.Kernel != nil {
 		if name, err := FilenameFromURL(bm.Spec.Kernel.URL); err == nil {
 			return name
@@ -137,7 +137,7 @@ func (bm *BootMedia) KernelFilename() string {
 }
 
 // InitrdFilename returns the basename of the initrd file
-func (bm *BootMedia) InitrdFilename() string {
+func (bm *BootSource) InitrdFilename() string {
 	if bm.Spec.Initrd != nil {
 		if name, err := FilenameFromURL(bm.Spec.Initrd.URL); err == nil {
 			return name
@@ -149,13 +149,13 @@ func (bm *BootMedia) InitrdFilename() string {
 	return ""
 }
 
-// HasFirmware returns whether this BootMedia has firmware
-func (bm *BootMedia) HasFirmware() bool {
+// HasFirmware returns whether this BootSource has firmware
+func (bm *BootSource) HasFirmware() bool {
 	return bm.Spec.Firmware != nil
 }
 
-// Validate checks BootMedia spec for correctness
-func (bm *BootMedia) Validate() error {
+// Validate checks BootSource spec for correctness
+func (bm *BootSource) Validate() error {
 	hasDirect := bm.Spec.Kernel != nil || bm.Spec.Initrd != nil
 	hasISO := bm.Spec.ISO != nil
 
@@ -269,7 +269,7 @@ func FilenameFromURL(rawURL string) (string, error) {
 }
 
 // +kubebuilder:object:root=true
-// BootTarget represents a BootTarget CRD (references a BootMedia, adds template)
+// BootTarget represents a BootTarget CRD (references a BootSource, adds template)
 type BootTarget struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -277,7 +277,7 @@ type BootTarget struct {
 }
 
 type BootTargetSpec struct {
-	BootMediaRef string `json:"bootMediaRef"`
+	BootSourceRef string `json:"bootSourceRef"`
 	UseFirmware  bool   `json:"useFirmware,omitempty"`
 	Template     string `json:"template"`
 }

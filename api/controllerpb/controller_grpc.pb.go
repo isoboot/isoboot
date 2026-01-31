@@ -29,8 +29,8 @@ type ControllerServiceClient interface {
 	GetConfigMapValue(ctx context.Context, in *GetConfigMapValueRequest, opts ...grpc.CallOption) (*GetConfigMapValueResponse, error)
 	// GetBootTarget retrieves a BootTarget by name
 	GetBootTarget(ctx context.Context, in *GetBootTargetRequest, opts ...grpc.CallOption) (*GetBootTargetResponse, error)
-	// GetBootMedia retrieves a BootMedia by name
-	GetBootMedia(ctx context.Context, in *GetBootMediaRequest, opts ...grpc.CallOption) (*GetBootMediaResponse, error)
+	// GetBootSource retrieves a BootSource by name
+	GetBootSource(ctx context.Context, in *GetBootSourceRequest, opts ...grpc.CallOption) (*GetBootSourceResponse, error)
 	// GetResponseTemplate retrieves a ResponseTemplate by name
 	GetResponseTemplate(ctx context.Context, in *GetResponseTemplateRequest, opts ...grpc.CallOption) (*GetResponseTemplateResponse, error)
 	// GetProvision retrieves a Provision by name
@@ -103,9 +103,9 @@ func (c *controllerServiceClient) GetBootTarget(ctx context.Context, in *GetBoot
 	return out, nil
 }
 
-func (c *controllerServiceClient) GetBootMedia(ctx context.Context, in *GetBootMediaRequest, opts ...grpc.CallOption) (*GetBootMediaResponse, error) {
-	out := new(GetBootMediaResponse)
-	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetBootMedia", in, out, opts...)
+func (c *controllerServiceClient) GetBootSource(ctx context.Context, in *GetBootSourceRequest, opts ...grpc.CallOption) (*GetBootSourceResponse, error) {
+	out := new(GetBootSourceResponse)
+	err := c.cc.Invoke(ctx, "/isoboot.controller.v1.ControllerService/GetBootSource", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +164,8 @@ type ControllerServiceServer interface {
 	GetConfigMapValue(context.Context, *GetConfigMapValueRequest) (*GetConfigMapValueResponse, error)
 	// GetBootTarget retrieves a BootTarget by name
 	GetBootTarget(context.Context, *GetBootTargetRequest) (*GetBootTargetResponse, error)
-	// GetBootMedia retrieves a BootMedia by name
-	GetBootMedia(context.Context, *GetBootMediaRequest) (*GetBootMediaResponse, error)
+	// GetBootSource retrieves a BootSource by name
+	GetBootSource(context.Context, *GetBootSourceRequest) (*GetBootSourceResponse, error)
 	// GetResponseTemplate retrieves a ResponseTemplate by name
 	GetResponseTemplate(context.Context, *GetResponseTemplateRequest) (*GetResponseTemplateResponse, error)
 	// GetProvision retrieves a Provision by name
@@ -199,8 +199,8 @@ func (UnimplementedControllerServiceServer) GetConfigMapValue(context.Context, *
 func (UnimplementedControllerServiceServer) GetBootTarget(context.Context, *GetBootTargetRequest) (*GetBootTargetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBootTarget not implemented")
 }
-func (UnimplementedControllerServiceServer) GetBootMedia(context.Context, *GetBootMediaRequest) (*GetBootMediaResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetBootMedia not implemented")
+func (UnimplementedControllerServiceServer) GetBootSource(context.Context, *GetBootSourceRequest) (*GetBootSourceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBootSource not implemented")
 }
 func (UnimplementedControllerServiceServer) GetResponseTemplate(context.Context, *GetResponseTemplateRequest) (*GetResponseTemplateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetResponseTemplate not implemented")
@@ -335,20 +335,20 @@ func _ControllerService_GetBootTarget_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_GetBootMedia_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetBootMediaRequest)
+func _ControllerService_GetBootSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBootSourceRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).GetBootMedia(ctx, in)
+		return srv.(ControllerServiceServer).GetBootSource(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/isoboot.controller.v1.ControllerService/GetBootMedia",
+		FullMethod: "/isoboot.controller.v1.ControllerService/GetBootSource",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).GetBootMedia(ctx, req.(*GetBootMediaRequest))
+		return srv.(ControllerServiceServer).GetBootSource(ctx, req.(*GetBootSourceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -454,8 +454,8 @@ var _ControllerService_serviceDesc = grpc.ServiceDesc{
 			Handler:    _ControllerService_GetBootTarget_Handler,
 		},
 		{
-			MethodName: "GetBootMedia",
-			Handler:    _ControllerService_GetBootMedia_Handler,
+			MethodName: "GetBootSource",
+			Handler:    _ControllerService_GetBootSource_Handler,
 		},
 		{
 			MethodName: "GetResponseTemplate",

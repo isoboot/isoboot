@@ -118,20 +118,20 @@ func (s *GRPCServer) GetBootTarget(ctx context.Context, req *pb.GetBootTargetReq
 	return &pb.GetBootTargetResponse{
 		Found:        true,
 		Template:     bt.Spec.Template,
-		BootMediaRef: bt.Spec.BootMediaRef,
+		BootSourceRef: bt.Spec.BootSourceRef,
 		UseFirmware:  bt.Spec.UseFirmware,
 	}, nil
 }
 
-// GetBootMedia retrieves a BootMedia by name
-func (s *GRPCServer) GetBootMedia(ctx context.Context, req *pb.GetBootMediaRequest) (*pb.GetBootMediaResponse, error) {
-	var bm k8s.BootMedia
+// GetBootSource retrieves a BootSource by name
+func (s *GRPCServer) GetBootSource(ctx context.Context, req *pb.GetBootSourceRequest) (*pb.GetBootSourceResponse, error) {
+	var bm k8s.BootSource
 	if err := s.ctrl.k8sClient.Get(ctx, s.ctrl.k8sClient.Key(req.Name), &bm); err != nil {
-		log.Printf("gRPC: error getting bootmedia %s: %v", req.Name, err)
-		return &pb.GetBootMediaResponse{Found: false}, nil
+		log.Printf("gRPC: error getting bootsource %s: %v", req.Name, err)
+		return &pb.GetBootSourceResponse{Found: false}, nil
 	}
 
-	return &pb.GetBootMediaResponse{
+	return &pb.GetBootSourceResponse{
 		Found:          true,
 		KernelFilename: bm.KernelFilename(),
 		InitrdFilename: bm.InitrdFilename(),

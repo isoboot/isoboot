@@ -41,27 +41,27 @@ func TestNormalizeMAC(t *testing.T) {
 	}
 }
 
-func TestBootMedia_KernelFilename(t *testing.T) {
+func TestBootSource_KernelFilename(t *testing.T) {
 	tests := []struct {
 		name     string
-		bm       *BootMedia
+		bm       *BootSource
 		expected string
 	}{
 		{
 			name:     "from kernel URL",
-			bm:       &BootMedia{Spec: BootMediaSpec{Kernel: &BootMediaFileRef{URL: "http://example.com/path/linux"}}},
+			bm:       &BootSource{Spec: BootSourceSpec{Kernel: &BootSourceFileRef{URL: "http://example.com/path/linux"}}},
 			expected: "linux",
 		},
 		{
 			name: "from ISO path",
-			bm: &BootMedia{Spec: BootMediaSpec{ISO: &BootMediaISO{
+			bm: &BootSource{Spec: BootSourceSpec{ISO: &BootSourceISO{
 				URL: "http://example.com/debian.iso", Kernel: "/install.amd/vmlinuz", Initrd: "/install.amd/initrd.gz",
 			}}},
 			expected: "vmlinuz",
 		},
 		{
 			name:     "empty",
-			bm:       &BootMedia{},
+			bm:       &BootSource{},
 			expected: "",
 		},
 	}
@@ -75,20 +75,20 @@ func TestBootMedia_KernelFilename(t *testing.T) {
 	}
 }
 
-func TestBootMedia_InitrdFilename(t *testing.T) {
+func TestBootSource_InitrdFilename(t *testing.T) {
 	tests := []struct {
 		name     string
-		bm       *BootMedia
+		bm       *BootSource
 		expected string
 	}{
 		{
 			name:     "from initrd URL",
-			bm:       &BootMedia{Spec: BootMediaSpec{Initrd: &BootMediaFileRef{URL: "http://example.com/path/initrd.gz"}}},
+			bm:       &BootSource{Spec: BootSourceSpec{Initrd: &BootSourceFileRef{URL: "http://example.com/path/initrd.gz"}}},
 			expected: "initrd.gz",
 		},
 		{
 			name: "from ISO path",
-			bm: &BootMedia{Spec: BootMediaSpec{ISO: &BootMediaISO{
+			bm: &BootSource{Spec: BootSourceSpec{ISO: &BootSourceISO{
 				URL: "http://example.com/debian.iso", Kernel: "/install.amd/vmlinuz", Initrd: "/install.amd/initrd.gz",
 			}}},
 			expected: "initrd.gz",
@@ -104,23 +104,23 @@ func TestBootMedia_InitrdFilename(t *testing.T) {
 	}
 }
 
-func TestBootMedia_Validate(t *testing.T) {
+func TestBootSource_Validate(t *testing.T) {
 	tests := []struct {
 		name      string
-		bm        *BootMedia
+		bm        *BootSource
 		expectErr string
 	}{
 		{
 			name: "valid direct",
-			bm: &BootMedia{Spec: BootMediaSpec{
-				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
-				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			bm: &BootSource{Spec: BootSourceSpec{
+				Kernel: &BootSourceFileRef{URL: "http://example.com/linux"},
+				Initrd: &BootSourceFileRef{URL: "http://example.com/initrd.gz"},
 			}},
 		},
 		{
 			name: "valid ISO",
-			bm: &BootMedia{Spec: BootMediaSpec{
-				ISO: &BootMediaISO{
+			bm: &BootSource{Spec: BootSourceSpec{
+				ISO: &BootSourceISO{
 					URL:    "http://example.com/debian.iso",
 					Kernel: "/install.amd/vmlinuz",
 					Initrd: "/install.amd/initrd.gz",
@@ -129,44 +129,44 @@ func TestBootMedia_Validate(t *testing.T) {
 		},
 		{
 			name: "both set",
-			bm: &BootMedia{Spec: BootMediaSpec{
-				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
-				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
-				ISO:    &BootMediaISO{URL: "http://example.com/debian.iso", Kernel: "/k", Initrd: "/i"},
+			bm: &BootSource{Spec: BootSourceSpec{
+				Kernel: &BootSourceFileRef{URL: "http://example.com/linux"},
+				Initrd: &BootSourceFileRef{URL: "http://example.com/initrd.gz"},
+				ISO:    &BootSourceISO{URL: "http://example.com/debian.iso", Kernel: "/k", Initrd: "/i"},
 			}},
 			expectErr: "cannot specify both",
 		},
 		{
 			name:      "neither set",
-			bm:        &BootMedia{},
+			bm:        &BootSource{},
 			expectErr: "must specify either",
 		},
 		{
 			name: "kernel only",
-			bm: &BootMedia{Spec: BootMediaSpec{
-				Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
+			bm: &BootSource{Spec: BootSourceSpec{
+				Kernel: &BootSourceFileRef{URL: "http://example.com/linux"},
 			}},
 			expectErr: "kernel requires initrd",
 		},
 		{
 			name: "initrd only",
-			bm: &BootMedia{Spec: BootMediaSpec{
-				Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			bm: &BootSource{Spec: BootSourceSpec{
+				Initrd: &BootSourceFileRef{URL: "http://example.com/initrd.gz"},
 			}},
 			expectErr: "initrd requires kernel",
 		},
 		{
 			name: "duplicate basenames",
-			bm: &BootMedia{Spec: BootMediaSpec{
-				Kernel: &BootMediaFileRef{URL: "http://example.com/path1/file"},
-				Initrd: &BootMediaFileRef{URL: "http://example.com/path2/file"},
+			bm: &BootSource{Spec: BootSourceSpec{
+				Kernel: &BootSourceFileRef{URL: "http://example.com/path1/file"},
+				Initrd: &BootSourceFileRef{URL: "http://example.com/path2/file"},
 			}},
 			expectErr: "duplicate basename",
 		},
 		{
 			name: "ISO missing kernel path",
-			bm: &BootMedia{Spec: BootMediaSpec{
-				ISO: &BootMediaISO{
+			bm: &BootSource{Spec: BootSourceSpec{
+				ISO: &BootSourceISO{
 					URL:    "http://example.com/debian.iso",
 					Initrd: "/install.amd/initrd.gz",
 				},
@@ -175,8 +175,8 @@ func TestBootMedia_Validate(t *testing.T) {
 		},
 		{
 			name: "ISO missing initrd path",
-			bm: &BootMedia{Spec: BootMediaSpec{
-				ISO: &BootMediaISO{
+			bm: &BootSource{Spec: BootSourceSpec{
+				ISO: &BootSourceISO{
 					URL:    "http://example.com/debian.iso",
 					Kernel: "/install.amd/vmlinuz",
 				},
@@ -501,36 +501,36 @@ func TestUpdateProvisionStatus_PreservesIP(t *testing.T) {
 	}
 }
 
-func TestUpdateBootMediaStatus(t *testing.T) {
+func TestUpdateBootSourceStatus(t *testing.T) {
 	ctx := context.Background()
 	cl := fake.NewClientBuilder().
 		WithScheme(testScheme()).
 		WithObjects(
-			&BootMedia{
+			&BootSource{
 				ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-				Spec: BootMediaSpec{
-					Kernel: &BootMediaFileRef{URL: "http://example.com/linux"},
-					Initrd: &BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+				Spec: BootSourceSpec{
+					Kernel: &BootSourceFileRef{URL: "http://example.com/linux"},
+					Initrd: &BootSourceFileRef{URL: "http://example.com/initrd.gz"},
 				},
 			},
 		).
-		WithStatusSubresource(&BootMedia{}).
+		WithStatusSubresource(&BootSource{}).
 		Build()
 	k := NewClientFromClient(cl, "default")
 
-	status := &BootMediaStatus{
+	status := &BootSourceStatus{
 		Phase:   "Complete",
 		Message: "All done",
 		Kernel:  &FileStatus{Name: "linux", Phase: "Complete", SHA256: "abc123"},
 	}
-	err := k.UpdateBootMediaStatus(ctx, "debian-13", status)
+	err := k.UpdateBootSourceStatus(ctx, "debian-13", status)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var updated BootMedia
+	var updated BootSource
 	if err := cl.Get(ctx, k.Key("debian-13"), &updated); err != nil {
-		t.Fatalf("failed to get updated bootmedia: %v", err)
+		t.Fatalf("failed to get updated bootsource: %v", err)
 	}
 	if updated.Status.Phase != "Complete" {
 		t.Errorf("expected phase Complete, got %q", updated.Status.Phase)
@@ -540,9 +540,9 @@ func TestUpdateBootMediaStatus(t *testing.T) {
 	}
 }
 
-func TestUpdateBootMediaStatus_NilStatus(t *testing.T) {
+func TestUpdateBootSourceStatus_NilStatus(t *testing.T) {
 	k := NewClientFromClient(fake.NewClientBuilder().WithScheme(testScheme()).Build(), "default")
-	err := k.UpdateBootMediaStatus(context.Background(), "test", nil)
+	err := k.UpdateBootSourceStatus(context.Background(), "test", nil)
 	if err == nil {
 		t.Error("expected error for nil status")
 	}
