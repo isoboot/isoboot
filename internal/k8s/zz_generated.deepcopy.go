@@ -137,54 +137,54 @@ func (in *ProvisionList) DeepCopyObject() runtime.Object {
 	return nil
 }
 
-// --- BootMedia ---
+// --- BootSource ---
 
-func (in *BootMediaFileRef) DeepCopyInto(out *BootMediaFileRef) {
+func (in *BootSourceFileRef) DeepCopyInto(out *BootSourceFileRef) {
 	*out = *in
 }
 
-func (in *BootMediaFileRef) DeepCopy() *BootMediaFileRef {
+func (in *BootSourceFileRef) DeepCopy() *BootSourceFileRef {
 	if in == nil {
 		return nil
 	}
-	out := new(BootMediaFileRef)
+	out := new(BootSourceFileRef)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *BootMediaISO) DeepCopyInto(out *BootMediaISO) {
+func (in *BootSourceISO) DeepCopyInto(out *BootSourceISO) {
 	*out = *in
 }
 
-func (in *BootMediaISO) DeepCopy() *BootMediaISO {
+func (in *BootSourceISO) DeepCopy() *BootSourceISO {
 	if in == nil {
 		return nil
 	}
-	out := new(BootMediaISO)
+	out := new(BootSourceISO)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *BootMediaSpec) DeepCopyInto(out *BootMediaSpec) {
+func (in *BootSourceSpec) DeepCopyInto(out *BootSourceSpec) {
 	*out = *in
 	if in.Kernel != nil {
 		in, out := &in.Kernel, &out.Kernel
-		*out = new(BootMediaFileRef)
+		*out = new(BootSourceFileRef)
 		**out = **in
 	}
 	if in.Initrd != nil {
 		in, out := &in.Initrd, &out.Initrd
-		*out = new(BootMediaFileRef)
+		*out = new(BootSourceFileRef)
 		**out = **in
 	}
 	if in.ISO != nil {
 		in, out := &in.ISO, &out.ISO
-		*out = new(BootMediaISO)
+		*out = new(BootSourceISO)
 		**out = **in
 	}
 	if in.Firmware != nil {
 		in, out := &in.Firmware, &out.Firmware
-		*out = new(BootMediaFileRef)
+		*out = new(BootSourceFileRef)
 		**out = **in
 	}
 }
@@ -202,7 +202,7 @@ func (in *FileStatus) DeepCopy() *FileStatus {
 	return out
 }
 
-func (in *BootMediaStatus) DeepCopyInto(out *BootMediaStatus) {
+func (in *BootSourceStatus) DeepCopyInto(out *BootSourceStatus) {
 	*out = *in
 	if in.Kernel != nil {
 		in, out := &in.Kernel, &out.Kernel
@@ -231,7 +231,7 @@ func (in *BootMediaStatus) DeepCopyInto(out *BootMediaStatus) {
 	}
 }
 
-func (in *BootMedia) DeepCopyInto(out *BootMedia) {
+func (in *BootSource) DeepCopyInto(out *BootSource) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
@@ -239,45 +239,45 @@ func (in *BootMedia) DeepCopyInto(out *BootMedia) {
 	in.Status.DeepCopyInto(&out.Status)
 }
 
-func (in *BootMedia) DeepCopy() *BootMedia {
+func (in *BootSource) DeepCopy() *BootSource {
 	if in == nil {
 		return nil
 	}
-	out := new(BootMedia)
+	out := new(BootSource)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *BootMedia) DeepCopyObject() runtime.Object {
+func (in *BootSource) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *BootMediaList) DeepCopyInto(out *BootMediaList) {
+func (in *BootSourceList) DeepCopyInto(out *BootSourceList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
-		*out = make([]BootMedia, len(*in))
+		*out = make([]BootSource, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 }
 
-func (in *BootMediaList) DeepCopy() *BootMediaList {
+func (in *BootSourceList) DeepCopy() *BootSourceList {
 	if in == nil {
 		return nil
 	}
-	out := new(BootMediaList)
+	out := new(BootSourceList)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *BootMediaList) DeepCopyObject() runtime.Object {
+func (in *BootSourceList) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}

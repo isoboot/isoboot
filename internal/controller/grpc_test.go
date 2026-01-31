@@ -232,7 +232,7 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	k := newTestK8sClient(
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-media", UseFirmware: true, Template: "#!ipxe\nkernel ...\n"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-media", UseFirmware: true, Template: "#!ipxe\nkernel ...\n"},
 		},
 	)
 
@@ -247,8 +247,8 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 	if resp.Template != "#!ipxe\nkernel ...\n" {
 		t.Errorf("unexpected template: %q", resp.Template)
 	}
-	if resp.BootMediaRef != "debian-media" {
-		t.Errorf("expected BootMediaRef debian-media, got %q", resp.BootMediaRef)
+	if resp.BootSourceRef != "debian-media" {
+		t.Errorf("expected BootSourceRef debian-media, got %q", resp.BootSourceRef)
 	}
 	if !resp.UseFirmware {
 		t.Error("expected UseFirmware=true")
@@ -428,19 +428,19 @@ func TestGRPC_GetSecrets_MissingSecret(t *testing.T) {
 	}
 }
 
-func TestGRPC_GetBootMedia_Found(t *testing.T) {
+func TestGRPC_GetBootSource_Found(t *testing.T) {
 	k := newTestK8sClient(
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec: k8s.BootMediaSpec{
-				Kernel: &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
-				Initrd: &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
+			Spec: k8s.BootSourceSpec{
+				Kernel: &k8s.BootSourceFileRef{URL: "http://example.com/linux"},
+				Initrd: &k8s.BootSourceFileRef{URL: "http://example.com/initrd.gz"},
 			},
 		},
 	)
 
 	srv := NewGRPCServer(New(k))
-	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "debian-13"})
+	resp, err := srv.GetBootSource(context.Background(), &pb.GetBootSourceRequest{Name: "debian-13"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -458,20 +458,20 @@ func TestGRPC_GetBootMedia_Found(t *testing.T) {
 	}
 }
 
-func TestGRPC_GetBootMedia_WithFirmware(t *testing.T) {
+func TestGRPC_GetBootSource_WithFirmware(t *testing.T) {
 	k := newTestK8sClient(
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec: k8s.BootMediaSpec{
-				Kernel:   &k8s.BootMediaFileRef{URL: "http://example.com/linux"},
-				Initrd:   &k8s.BootMediaFileRef{URL: "http://example.com/initrd.gz"},
-				Firmware: &k8s.BootMediaFileRef{URL: "http://example.com/firmware.cpio.gz"},
+			Spec: k8s.BootSourceSpec{
+				Kernel:   &k8s.BootSourceFileRef{URL: "http://example.com/linux"},
+				Initrd:   &k8s.BootSourceFileRef{URL: "http://example.com/initrd.gz"},
+				Firmware: &k8s.BootSourceFileRef{URL: "http://example.com/firmware.cpio.gz"},
 			},
 		},
 	)
 
 	srv := NewGRPCServer(New(k))
-	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "debian-13"})
+	resp, err := srv.GetBootSource(context.Background(), &pb.GetBootSourceRequest{Name: "debian-13"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -486,11 +486,11 @@ func TestGRPC_GetBootMedia_WithFirmware(t *testing.T) {
 	}
 }
 
-func TestGRPC_GetBootMedia_NotFound(t *testing.T) {
+func TestGRPC_GetBootSource_NotFound(t *testing.T) {
 	k := newTestK8sClient()
 
 	srv := NewGRPCServer(New(k))
-	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "missing"})
+	resp, err := srv.GetBootSource(context.Background(), &pb.GetBootSourceRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

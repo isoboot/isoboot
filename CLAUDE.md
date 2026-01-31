@@ -70,6 +70,7 @@ Available variables in BootTarget (iPXE scripts):
 - `.Hostname` - first part before dot (e.g., "vm-01")
 - `.Domain` - everything after first dot (e.g., "lan")
 - `.BootTarget` - BootTarget resource name
+- `.BootSource` - BootSource resource name (for static file paths)
 - `.ProvisionName` - Provision resource name (use for answer file URLs)
 
 ### Error Handling in HTTP Handlers

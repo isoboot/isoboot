@@ -11,10 +11,10 @@ Main reconciliation loop that watches Provision CRDs:
 - Renders templates with merged ConfigMap/Secret data
 - Timeout handling for stuck InProgress provisions (30 min default)
 
-### DiskImage Downloader (diskimage.go)
-Downloads and caches ISO/firmware files for BootTargets:
-- Verifies checksums (SHA256/SHA512) if provided
-- Tracks download progress in DiskImage status
+### BootSource Downloader (bootsource.go)
+Downloads and caches kernel/initrd/firmware files for BootSources:
+- Verifies checksums (SHA256) if provided
+- Tracks download progress in BootSource status
 - Extracts ISO contents for serving
 
 ### gRPC Server (grpc.go)
@@ -27,6 +27,7 @@ Exposes primitive CRD accessors to isoboot-http:
 - `GetSecrets` - Get merged Secret data
 - `GetResponseTemplate` - Get response template by name
 - `GetBootTarget` - Get boot target by name
+- `GetBootSource` - Get boot source by name
 - `GetConfigMapValue` - Get single value from ConfigMap
 
 ### SSH Key Derivation (sshkeys.go)

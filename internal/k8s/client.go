@@ -202,15 +202,15 @@ func (c *Client) UpdateProvisionStatus(ctx context.Context, name, phase, message
 	return nil
 }
 
-// UpdateBootMediaStatus updates the status of a BootMedia.
-func (c *Client) UpdateBootMediaStatus(ctx context.Context, name string, status *BootMediaStatus) error {
+// UpdateBootSourceStatus updates the status of a BootSource.
+func (c *Client) UpdateBootSourceStatus(ctx context.Context, name string, status *BootSourceStatus) error {
 	if status == nil {
 		return fmt.Errorf("status cannot be nil")
 	}
 
-	var bm BootMedia
+	var bm BootSource
 	if err := c.Get(ctx, c.Key(name), &bm); err != nil {
-		return fmt.Errorf("get bootmedia: %w", err)
+		return fmt.Errorf("get bootsource: %w", err)
 	}
 
 	bm.Status = *status

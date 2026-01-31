@@ -16,7 +16,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&Machine{}, &MachineList{},
 		&Provision{}, &ProvisionList{},
-		&BootMedia{}, &BootMediaList{},
+		&BootSource{}, &BootSourceList{},
 		&BootTarget{}, &BootTargetList{},
 		&ResponseTemplate{}, &ResponseTemplateList{},
 	)

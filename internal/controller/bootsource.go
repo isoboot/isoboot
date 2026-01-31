@@ -62,30 +62,30 @@ func parseChecksumFile(r io.Reader) map[string]string {
 	return result
 }
 
-// reconcileBootMedias reconciles all BootMedia resources
-func (c *Controller) reconcileBootMedias(ctx context.Context) {
-	var bmList k8s.BootMediaList
+// reconcileBootSources reconciles all BootSource resources
+func (c *Controller) reconcileBootSources(ctx context.Context) {
+	var bmList k8s.BootSourceList
 	if err := c.k8sClient.List(ctx, &bmList, client.InNamespace(c.k8sClient.Namespace())); err != nil {
-		log.Printf("Controller: failed to list bootmedias: %v", err)
+		log.Printf("Controller: failed to list bootsources: %v", err)
 		return
 	}
 
 	for i := range bmList.Items {
-		c.reconcileBootMedia(ctx, &bmList.Items[i])
+		c.reconcileBootSource(ctx, &bmList.Items[i])
 	}
 }
 
-// reconcileBootMedia reconciles a single BootMedia
-func (c *Controller) reconcileBootMedia(ctx context.Context, bm *k8s.BootMedia) {
+// reconcileBootSource reconciles a single BootSource
+func (c *Controller) reconcileBootSource(ctx context.Context, bm *k8s.BootSource) {
 	// Initialize status if empty
 	if bm.Status.Phase == "" {
-		log.Printf("Controller: initializing BootMedia %s status to Pending", bm.Name)
-		status := &k8s.BootMediaStatus{
+		log.Printf("Controller: initializing BootSource %s status to Pending", bm.Name)
+		status := &k8s.BootSourceStatus{
 			Phase:   "Pending",
 			Message: "Waiting for download",
 		}
-		if err := c.k8sClient.UpdateBootMediaStatus(ctx, bm.Name, status); err != nil {
-			log.Printf("Controller: failed to initialize BootMedia %s: %v", bm.Name, err)
+		if err := c.k8sClient.UpdateBootSourceStatus(ctx, bm.Name, status); err != nil {
+			log.Printf("Controller: failed to initialize BootSource %s: %v", bm.Name, err)
 		}
 		return
 	}
@@ -97,27 +97,27 @@ func (c *Controller) reconcileBootMedia(ctx context.Context, bm *k8s.BootMedia) 
 
 	// If Pending or Downloading, ensure download is running
 	if bm.Status.Phase == "Pending" || bm.Status.Phase == "Downloading" {
-		if _, alreadyRunning := c.activeBootMediaDownloads.LoadOrStore(bm.Name, true); alreadyRunning {
+		if _, alreadyRunning := c.activeBootSourceDownloads.LoadOrStore(bm.Name, true); alreadyRunning {
 			return
 		}
-		go c.downloadBootMedia(ctx, bm)
+		go c.downloadBootSource(ctx, bm)
 	}
 }
 
-// downloadBootMedia orchestrates downloading all files for a BootMedia
-func (c *Controller) downloadBootMedia(parentCtx context.Context, bm *k8s.BootMedia) {
-	defer c.activeBootMediaDownloads.Delete(bm.Name)
+// downloadBootSource orchestrates downloading all files for a BootSource
+func (c *Controller) downloadBootSource(parentCtx context.Context, bm *k8s.BootSource) {
+	defer c.activeBootSourceDownloads.Delete(bm.Name)
 
 	statusCtx := context.Background()
 
 	if c.filesBasePath == "" {
-		c.failBootMedia(statusCtx, bm.Name, "Controller filesBasePath not configured")
+		c.failBootSource(statusCtx, bm.Name, "Controller filesBasePath not configured")
 		return
 	}
 
 	// Validate spec
 	if err := bm.Validate(); err != nil {
-		c.failBootMedia(statusCtx, bm.Name, fmt.Sprintf("Invalid spec: %v", err))
+		c.failBootSource(statusCtx, bm.Name, fmt.Sprintf("Invalid spec: %v", err))
 		return
 	}
 
@@ -126,22 +126,22 @@ func (c *Controller) downloadBootMedia(parentCtx context.Context, bm *k8s.BootMe
 
 	// Initialize status
 	status := initDownloadStatus(bm)
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s to Downloading: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s to Downloading: %v", bm.Name, err)
 		return
 	}
 
 	// Dispatch to the appropriate download flow
 	if bm.Spec.ISO != nil {
-		c.downloadBootMediaISO(parentCtx, bm, status, bmDir, hasFirmware)
+		c.downloadBootSourceISO(parentCtx, bm, status, bmDir, hasFirmware)
 	} else {
-		c.downloadBootMediaDirect(parentCtx, bm, status, bmDir, hasFirmware)
+		c.downloadBootSourceDirect(parentCtx, bm, status, bmDir, hasFirmware)
 	}
 }
 
 // initDownloadStatus creates initial status with Pending entries for each file
-func initDownloadStatus(bm *k8s.BootMedia) *k8s.BootMediaStatus {
-	status := &k8s.BootMediaStatus{
+func initDownloadStatus(bm *k8s.BootSource) *k8s.BootSourceStatus {
+	status := &k8s.BootSourceStatus{
 		Phase:   "Downloading",
 		Message: "Starting downloads",
 	}
@@ -176,8 +176,8 @@ func initDownloadStatus(bm *k8s.BootMedia) *k8s.BootMediaStatus {
 	return status
 }
 
-// downloadBootMediaDirect downloads kernel and initrd directly from URLs
-func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *k8s.BootMedia, status *k8s.BootMediaStatus, bmDir string, hasFirmware bool) {
+// downloadBootSourceDirect downloads kernel and initrd directly from URLs
+func (c *Controller) downloadBootSourceDirect(parentCtx context.Context, bm *k8s.BootSource, status *k8s.BootSourceStatus, bmDir string, hasFirmware bool) {
 	statusCtx := context.Background()
 
 	// Download kernel -> {bmDir}/{kernelFilename}
@@ -185,15 +185,15 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *k8s.
 	kernelDest := filepath.Join(bmDir, kernelFilename)
 
 	status.Kernel.Phase = "Downloading"
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 
 	dlCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
 	sha, err := c.downloadFile(dlCtx, bm.Spec.Kernel.URL, bm.Spec.Kernel.ChecksumURL, kernelDest)
 	cancel()
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Kernel, fmt.Sprintf("Failed to download kernel: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.Kernel, fmt.Sprintf("Failed to download kernel: %v", err))
 		return
 	}
 	status.Kernel.Phase = "Complete"
@@ -209,22 +209,22 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *k8s.
 	}
 
 	status.Initrd.Phase = "Downloading"
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 
 	dlCtx, cancel = context.WithTimeout(parentCtx, downloadRequestTimeout)
 	sha, err = c.downloadFile(dlCtx, bm.Spec.Initrd.URL, bm.Spec.Initrd.ChecksumURL, initrdDest)
 	cancel()
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Initrd, fmt.Sprintf("Failed to download initrd: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.Initrd, fmt.Sprintf("Failed to download initrd: %v", err))
 		return
 	}
 	status.Initrd.Phase = "Complete"
 	status.Initrd.SHA256 = sha
 
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 
 	// Download and concatenate firmware if present
@@ -238,32 +238,32 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *k8s.
 	// All done
 	status.Phase = "Complete"
 	status.Message = "All files downloaded"
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s to Complete: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s to Complete: %v", bm.Name, err)
 	}
-	log.Printf("Controller: BootMedia %s download complete", bm.Name)
+	log.Printf("Controller: BootSource %s download complete", bm.Name)
 }
 
-// failBootMedia sets the BootMedia to Failed with the given message
-func (c *Controller) failBootMedia(ctx context.Context, name, message string) {
-	status := &k8s.BootMediaStatus{
+// failBootSource sets the BootSource to Failed with the given message
+func (c *Controller) failBootSource(ctx context.Context, name, message string) {
+	status := &k8s.BootSourceStatus{
 		Phase:   "Failed",
 		Message: message,
 	}
-	if updateErr := c.k8sClient.UpdateBootMediaStatus(ctx, name, status); updateErr != nil {
-		log.Printf("Controller: failed to update BootMedia %s to Failed: %v", name, updateErr)
+	if updateErr := c.k8sClient.UpdateBootSourceStatus(ctx, name, status); updateErr != nil {
+		log.Printf("Controller: failed to update BootSource %s to Failed: %v", name, updateErr)
 	}
 }
 
-// failBootMediaStatus sets a file status to Failed and the overall status to Failed
-func (c *Controller) failBootMediaStatus(ctx context.Context, name string, status *k8s.BootMediaStatus, fileStatus *k8s.FileStatus, message string) {
+// failBootSourceStatus sets a file status to Failed and the overall status to Failed
+func (c *Controller) failBootSourceStatus(ctx context.Context, name string, status *k8s.BootSourceStatus, fileStatus *k8s.FileStatus, message string) {
 	status.Phase = "Failed"
 	status.Message = message
 	if fileStatus != nil {
 		fileStatus.Phase = "Failed"
 	}
-	if updateErr := c.k8sClient.UpdateBootMediaStatus(ctx, name, status); updateErr != nil {
-		log.Printf("Controller: failed to update BootMedia %s to Failed: %v", name, updateErr)
+	if updateErr := c.k8sClient.UpdateBootSourceStatus(ctx, name, status); updateErr != nil {
+		log.Printf("Controller: failed to update BootSource %s to Failed: %v", name, updateErr)
 	}
 }
 
@@ -440,14 +440,14 @@ func truncHash(h string) string {
 	return h[:8] + "..."
 }
 
-// downloadBootMediaISO downloads an ISO and extracts kernel/initrd from it
-func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.BootMedia, status *k8s.BootMediaStatus, bmDir string, hasFirmware bool) {
+// downloadBootSourceISO downloads an ISO and extracts kernel/initrd from it
+func (c *Controller) downloadBootSourceISO(parentCtx context.Context, bm *k8s.BootSource, status *k8s.BootSourceStatus, bmDir string, hasFirmware bool) {
 	statusCtx := context.Background()
 
 	// Download ISO to temp directory
 	tmpDir, err := os.MkdirTemp("", "isoboot-iso-*")
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.ISO, fmt.Sprintf("Failed to create temp dir: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.ISO, fmt.Sprintf("Failed to create temp dir: %v", err))
 		return
 	}
 	defer os.RemoveAll(tmpDir)
@@ -456,15 +456,15 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 	isoDest := filepath.Join(tmpDir, isoFilename)
 
 	status.ISO.Phase = "Downloading"
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 
 	dlCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
 	sha, err := c.downloadFile(dlCtx, bm.Spec.ISO.URL, bm.Spec.ISO.ChecksumURL, isoDest)
 	cancel()
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.ISO, fmt.Sprintf("Failed to download ISO: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.ISO, fmt.Sprintf("Failed to download ISO: %v", err))
 		return
 	}
 	status.ISO.Phase = "Complete"
@@ -473,20 +473,20 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 	// Open ISO and extract files
 	isoReader, err := iso.OpenISO9660(isoDest)
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.ISO, fmt.Sprintf("Failed to open ISO: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.ISO, fmt.Sprintf("Failed to open ISO: %v", err))
 		return
 	}
 	defer isoReader.Close()
 
 	// Extract kernel
 	status.Kernel.Phase = "Extracting"
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 
 	kernelData, err := isoReader.ReadFile(bm.Spec.ISO.Kernel)
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Kernel, fmt.Sprintf("Failed to extract kernel from ISO: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.Kernel, fmt.Sprintf("Failed to extract kernel from ISO: %v", err))
 		return
 	}
 
@@ -494,7 +494,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 	kernelDest := filepath.Join(bmDir, kernelFilename)
 	sha, err = writeFileAtomic(kernelDest, kernelData)
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Kernel, fmt.Sprintf("Failed to write kernel: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.Kernel, fmt.Sprintf("Failed to write kernel: %v", err))
 		return
 	}
 	status.Kernel.Phase = "Complete"
@@ -502,13 +502,13 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 
 	// Extract initrd
 	status.Initrd.Phase = "Extracting"
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 
 	initrdData, err := isoReader.ReadFile(bm.Spec.ISO.Initrd)
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Initrd, fmt.Sprintf("Failed to extract initrd from ISO: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.Initrd, fmt.Sprintf("Failed to extract initrd from ISO: %v", err))
 		return
 	}
 
@@ -521,14 +521,14 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 	}
 	sha, err = writeFileAtomic(initrdDest, initrdData)
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Initrd, fmt.Sprintf("Failed to write initrd: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.Initrd, fmt.Sprintf("Failed to write initrd: %v", err))
 		return
 	}
 	status.Initrd.Phase = "Complete"
 	status.Initrd.SHA256 = sha
 
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 
 	// Download and concatenate firmware if present
@@ -542,20 +542,20 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *k8s.Boo
 	// All done
 	status.Phase = "Complete"
 	status.Message = "All files downloaded and extracted"
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s to Complete: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s to Complete: %v", bm.Name, err)
 	}
-	log.Printf("Controller: BootMedia %s download complete", bm.Name)
+	log.Printf("Controller: BootSource %s download complete", bm.Name)
 }
 
 // downloadAndConcatenateFirmware downloads firmware and concatenates it with the initrd
-func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, bm *k8s.BootMedia, status *k8s.BootMediaStatus, bmDir string) {
+func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, bm *k8s.BootSource, status *k8s.BootSourceStatus, bmDir string) {
 	statusCtx := context.Background()
 
 	// Download firmware to temp directory
 	tmpDir, err := os.MkdirTemp("", "isoboot-fw-*")
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Firmware, fmt.Sprintf("Failed to create temp dir: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.Firmware, fmt.Sprintf("Failed to create temp dir: %v", err))
 		return
 	}
 	defer os.RemoveAll(tmpDir)
@@ -564,15 +564,15 @@ func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, b
 	fwDest := filepath.Join(tmpDir, fwFilename)
 
 	status.Firmware.Phase = "Downloading"
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 
 	dlCtx, cancel := context.WithTimeout(parentCtx, downloadRequestTimeout)
 	sha, err := c.downloadFile(dlCtx, bm.Spec.Firmware.URL, bm.Spec.Firmware.ChecksumURL, fwDest)
 	cancel()
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.Firmware, fmt.Sprintf("Failed to download firmware: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.Firmware, fmt.Sprintf("Failed to download firmware: %v", err))
 		return
 	}
 	status.Firmware.Phase = "Complete"
@@ -584,20 +584,20 @@ func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, b
 	withFwInitrd := filepath.Join(bmDir, "with-firmware", initrdFilename)
 
 	status.FirmwareInitrd.Phase = "Building"
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 
 	sha, err = concatenateFiles(withFwInitrd, noFwInitrd, fwDest)
 	if err != nil {
-		c.failBootMediaStatus(statusCtx, bm.Name, status, status.FirmwareInitrd, fmt.Sprintf("Failed to build firmware initrd: %v", err))
+		c.failBootSourceStatus(statusCtx, bm.Name, status, status.FirmwareInitrd, fmt.Sprintf("Failed to build firmware initrd: %v", err))
 		return
 	}
 	status.FirmwareInitrd.Phase = "Complete"
 	status.FirmwareInitrd.SHA256 = sha
 
-	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
-		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
+	if err := c.k8sClient.UpdateBootSourceStatus(statusCtx, bm.Name, status); err != nil {
+		log.Printf("Controller: failed to update BootSource %s status: %v", bm.Name, err)
 	}
 }
 

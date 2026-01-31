@@ -10,55 +10,55 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TestCheckBootMediaStatus tests the BootMedia status checking logic
-func TestCheckBootMediaStatus(t *testing.T) {
+// TestCheckBootSourceStatus tests the BootSource status checking logic
+func TestCheckBootSourceStatus(t *testing.T) {
 	tests := []struct {
 		name          string
-		bootMedia     *k8s.BootMedia
+		bootMedia     *k8s.BootSource
 		expectReady   bool
 		expectMsgPart string
 	}{
 		{
-			name: "Complete BootMedia is ready",
-			bootMedia: &k8s.BootMedia{
+			name: "Complete BootSource is ready",
+			bootMedia: &k8s.BootSource{
 				ObjectMeta: metav1.ObjectMeta{Name: "debian-13"},
-				Status:     k8s.BootMediaStatus{Phase: "Complete"},
+				Status:     k8s.BootSourceStatus{Phase: "Complete"},
 			},
 			expectReady:   true,
 			expectMsgPart: "",
 		},
 		{
-			name: "Failed BootMedia returns error message",
-			bootMedia: &k8s.BootMedia{
+			name: "Failed BootSource returns error message",
+			bootMedia: &k8s.BootSource{
 				ObjectMeta: metav1.ObjectMeta{Name: "failed-media"},
-				Status:     k8s.BootMediaStatus{Phase: "Failed", Message: "HTTP 404"},
+				Status:     k8s.BootSourceStatus{Phase: "Failed", Message: "HTTP 404"},
 			},
 			expectReady:   false,
 			expectMsgPart: "failed: HTTP 404",
 		},
 		{
-			name: "Downloading BootMedia",
-			bootMedia: &k8s.BootMedia{
+			name: "Downloading BootSource",
+			bootMedia: &k8s.BootSource{
 				ObjectMeta: metav1.ObjectMeta{Name: "downloading-media"},
-				Status:     k8s.BootMediaStatus{Phase: "Downloading"},
+				Status:     k8s.BootSourceStatus{Phase: "Downloading"},
 			},
 			expectReady:   false,
 			expectMsgPart: "downloading",
 		},
 		{
-			name: "Pending BootMedia",
-			bootMedia: &k8s.BootMedia{
+			name: "Pending BootSource",
+			bootMedia: &k8s.BootSource{
 				ObjectMeta: metav1.ObjectMeta{Name: "pending-media"},
-				Status:     k8s.BootMediaStatus{Phase: "Pending"},
+				Status:     k8s.BootSourceStatus{Phase: "Pending"},
 			},
 			expectReady:   false,
 			expectMsgPart: "pending",
 		},
 		{
 			name: "Empty phase treated as pending",
-			bootMedia: &k8s.BootMedia{
+			bootMedia: &k8s.BootSource{
 				ObjectMeta: metav1.ObjectMeta{Name: "new-media"},
-				Status:     k8s.BootMediaStatus{},
+				Status:     k8s.BootSourceStatus{},
 			},
 			expectReady:   false,
 			expectMsgPart: "pending",
@@ -67,7 +67,7 @@ func TestCheckBootMediaStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ready, msg := checkBootMediaStatus(tt.bootMedia)
+			ready, msg := checkBootSourceStatus(tt.bootMedia)
 			if ready != tt.expectReady {
 				t.Errorf("expected ready=%v, got ready=%v", tt.expectReady, ready)
 			}
@@ -122,11 +122,11 @@ func TestReconcileProvision_InitializePending(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso", Template: "#!ipxe\n"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso", Template: "#!ipxe\n"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+			Status:     k8s.BootSourceStatus{Phase: "Complete"},
 		},
 	)
 
@@ -202,7 +202,7 @@ func TestReconcileProvision_ConfigError_MissingBootTarget(t *testing.T) {
 	}
 }
 
-func TestReconcileProvision_ConfigError_MissingBootMedia(t *testing.T) {
+func TestReconcileProvision_ConfigError_MissingBootSource(t *testing.T) {
 	ctx := context.Background()
 	provision := &k8s.Provision{
 		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
@@ -220,7 +220,7 @@ func TestReconcileProvision_ConfigError_MissingBootMedia(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "missing-bm"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "missing-bm"},
 		},
 	)
 
@@ -234,8 +234,8 @@ func TestReconcileProvision_ConfigError_MissingBootMedia(t *testing.T) {
 	if updated.Status.Phase != "ConfigError" {
 		t.Errorf("expected phase ConfigError, got %q", updated.Status.Phase)
 	}
-	if !strings.Contains(updated.Status.Message, "BootMedia") {
-		t.Errorf("expected message about BootMedia, got %q", updated.Status.Message)
+	if !strings.Contains(updated.Status.Message, "BootSource") {
+		t.Errorf("expected message about BootSource, got %q", updated.Status.Message)
 	}
 }
 
@@ -258,11 +258,11 @@ func TestReconcileProvision_ConfigError_InvalidMachineId(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+			Status:     k8s.BootSourceStatus{Phase: "Complete"},
 		},
 	)
 
@@ -300,11 +300,11 @@ func TestReconcileProvision_ConfigError_MissingConfigMap(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+			Status:     k8s.BootSourceStatus{Phase: "Complete"},
 		},
 	)
 
@@ -342,11 +342,11 @@ func TestReconcileProvision_ConfigError_MissingSecret(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+			Status:     k8s.BootSourceStatus{Phase: "Complete"},
 		},
 	)
 
@@ -365,7 +365,7 @@ func TestReconcileProvision_ConfigError_MissingSecret(t *testing.T) {
 	}
 }
 
-func TestReconcileProvision_WaitingForBootMedia(t *testing.T) {
+func TestReconcileProvision_WaitingForBootSource(t *testing.T) {
 	ctx := context.Background()
 	provision := &k8s.Provision{
 		ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
@@ -383,11 +383,11 @@ func TestReconcileProvision_WaitingForBootMedia(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Downloading"},
+			Status:     k8s.BootSourceStatus{Phase: "Downloading"},
 		},
 	)
 
@@ -398,8 +398,8 @@ func TestReconcileProvision_WaitingForBootMedia(t *testing.T) {
 	if err := k.Get(ctx, k.Key("prov-1"), &updated); err != nil {
 		t.Fatalf("failed to get provision: %v", err)
 	}
-	if updated.Status.Phase != "WaitingForBootMedia" {
-		t.Errorf("expected phase WaitingForBootMedia, got %q", updated.Status.Phase)
+	if updated.Status.Phase != "WaitingForBootSource" {
+		t.Errorf("expected phase WaitingForBootSource, got %q", updated.Status.Phase)
 	}
 }
 
@@ -421,11 +421,11 @@ func TestReconcileProvision_ConfigErrorRecovery(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+			Status:     k8s.BootSourceStatus{Phase: "Complete"},
 		},
 	)
 
@@ -462,11 +462,11 @@ func TestReconcileProvision_TimeoutInProgress(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+			Status:     k8s.BootSourceStatus{Phase: "Complete"},
 		},
 	)
 
@@ -506,11 +506,11 @@ func TestReconcileProvision_InProgressNotTimedOut(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+			Status:     k8s.BootSourceStatus{Phase: "Complete"},
 		},
 	)
 
@@ -544,11 +544,11 @@ func TestReconcileProvision_CompleteIsNoop(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+			Status:     k8s.BootSourceStatus{Phase: "Complete"},
 		},
 	)
 
@@ -573,11 +573,11 @@ func TestValidateProvisionRefs_AllValid(t *testing.T) {
 		},
 		&k8s.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
-			Spec:       k8s.BootTargetSpec{BootMediaRef: "debian-iso"},
+			Spec:       k8s.BootTargetSpec{BootSourceRef: "debian-iso"},
 		},
-		&k8s.BootMedia{
+		&k8s.BootSource{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
-			Status:     k8s.BootMediaStatus{Phase: "Complete"},
+			Status:     k8s.BootSourceStatus{Phase: "Complete"},
 		},
 		&k8s.ResponseTemplate{
 			ObjectMeta: metav1.ObjectMeta{Name: "preseed", Namespace: "default"},

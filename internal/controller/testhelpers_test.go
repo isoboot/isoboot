@@ -22,7 +22,7 @@ func newTestK8sClient(objs ...client.Object) *k8s.Client {
 	cl := fake.NewClientBuilder().
 		WithScheme(testScheme()).
 		WithObjects(objs...).
-		WithStatusSubresource(&k8s.Provision{}, &k8s.BootMedia{}).
+		WithStatusSubresource(&k8s.Provision{}, &k8s.BootSource{}).
 		Build()
 	return k8s.NewClientFromClient(cl, "default")
 }
