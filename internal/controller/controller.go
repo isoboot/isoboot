@@ -89,8 +89,8 @@ func (c *Controller) run() {
 func (c *Controller) reconcile() {
 	ctx := context.Background()
 
-	// Reconcile DiskImages first (downloads)
-	c.reconcileDiskImages(ctx)
+	// Reconcile BootMedias first (downloads)
+	c.reconcileBootMedias(ctx)
 
 	// Then reconcile Provisions
 	provisions, err := c.k8sClient.ListProvisions(ctx)
@@ -116,20 +116,20 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 		return
 	}
 
-	// Check if DiskImage is ready
-	diskImageReady, diskImageMsg := c.checkDiskImageReady(ctx, provision)
-	if !diskImageReady {
-		if provision.Status.Phase != "WaitingForDiskImage" || provision.Status.Message != diskImageMsg {
-			log.Printf("Controller: %s waiting for DiskImage: %s", provision.Name, diskImageMsg)
-			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "WaitingForDiskImage", diskImageMsg, ""); err != nil {
-				log.Printf("Controller: failed to set WaitingForDiskImage for %s: %v", provision.Name, err)
+	// Check if BootTarget is ready
+	bootTargetReady, bootTargetMsg := c.checkBootTargetReady(ctx, provision)
+	if !bootTargetReady {
+		if provision.Status.Phase != "WaitingForBootMedia" || provision.Status.Message != bootTargetMsg {
+			log.Printf("Controller: %s waiting for BootTarget: %s", provision.Name, bootTargetMsg)
+			if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "WaitingForBootMedia", bootTargetMsg, ""); err != nil {
+				log.Printf("Controller: failed to set WaitingForBootMedia for %s: %v", provision.Name, err)
 			}
 		}
 		return
 	}
 
-	// If previously in ConfigError or WaitingForDiskImage but now valid, reset to Pending
-	if provision.Status.Phase == "ConfigError" || provision.Status.Phase == "WaitingForDiskImage" {
+	// If previously in ConfigError or WaitingForBootMedia but now valid, reset to Pending
+	if provision.Status.Phase == "ConfigError" || provision.Status.Phase == "WaitingForBootMedia" {
 		log.Printf("Controller: %s now ready, setting to Pending", provision.Name)
 		if err := c.k8sClient.UpdateProvisionStatus(ctx, provision.Name, "Pending", "Ready for boot", ""); err != nil {
 			log.Printf("Controller: failed to reset %s to Pending: %v", provision.Name, err)
@@ -158,34 +158,32 @@ func (c *Controller) reconcileProvision(ctx context.Context, provision *k8s.Prov
 	}
 }
 
-// checkDiskImageReady checks if the DiskImage for this Provision is ready
-func (c *Controller) checkDiskImageReady(ctx context.Context, provision *k8s.Provision) (bool, string) {
-	// Get BootTarget to find DiskImage reference
-	bootTarget, err := c.k8sClient.GetBootTarget(ctx, provision.Spec.BootTargetRef)
-	if err != nil {
+// checkBootTargetReady checks if the BootMedia for this Provision's BootTarget is ready
+func (c *Controller) checkBootTargetReady(ctx context.Context, provision *k8s.Provision) (bool, string) {
+	var bootTarget typed.BootTarget
+	if err := c.typedK8s.Get(ctx, c.typedK8s.Key(provision.Spec.BootTargetRef), &bootTarget); err != nil {
 		return false, fmt.Sprintf("BootTarget '%s' not found", provision.Spec.BootTargetRef)
 	}
 
-	// Get DiskImage
-	diskImage, err := c.k8sClient.GetDiskImage(ctx, bootTarget.DiskImageRef)
-	if err != nil {
-		return false, fmt.Sprintf("DiskImage '%s' not found", bootTarget.DiskImageRef)
+	var bootMedia typed.BootMedia
+	if err := c.typedK8s.Get(ctx, c.typedK8s.Key(bootTarget.Spec.BootMediaRef), &bootMedia); err != nil {
+		return false, fmt.Sprintf("BootMedia '%s' not found (referenced by BootTarget '%s')", bootTarget.Spec.BootMediaRef, bootTarget.Name)
 	}
 
-	return checkDiskImageStatus(diskImage)
+	return checkBootMediaStatus(&bootMedia)
 }
 
-// checkDiskImageStatus checks the status of a DiskImage and returns whether it's ready
-func checkDiskImageStatus(diskImage *k8s.DiskImage) (bool, string) {
-	switch diskImage.Status.Phase {
+// checkBootMediaStatus checks the status of a BootMedia and returns whether it's ready
+func checkBootMediaStatus(bm *typed.BootMedia) (bool, string) {
+	switch bm.Status.Phase {
 	case "Complete":
 		return true, ""
 	case "Failed":
-		return false, fmt.Sprintf("DiskImage '%s' failed: %s", diskImage.Name, diskImage.Status.Message)
+		return false, fmt.Sprintf("BootMedia '%s' failed: %s", bm.Name, bm.Status.Message)
 	case "Downloading":
-		return false, fmt.Sprintf("DiskImage '%s' downloading (%d%%)", diskImage.Name, diskImage.Status.Progress)
+		return false, fmt.Sprintf("BootMedia '%s' downloading", bm.Name)
 	default:
-		return false, fmt.Sprintf("DiskImage '%s' pending", diskImage.Name)
+		return false, fmt.Sprintf("BootMedia '%s' pending", bm.Name)
 	}
 }
 

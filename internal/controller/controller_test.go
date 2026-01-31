@@ -7,67 +7,59 @@ import (
 	"time"
 
 	"github.com/isoboot/isoboot/internal/k8s"
+	"github.com/isoboot/isoboot/internal/k8s/typed"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TestCheckDiskImageStatus tests the DiskImage status checking logic
-func TestCheckDiskImageStatus(t *testing.T) {
+// TestCheckBootMediaStatus tests the BootMedia status checking logic
+func TestCheckBootMediaStatus(t *testing.T) {
 	tests := []struct {
 		name          string
-		diskImage     *k8s.DiskImage
+		bootMedia     *typed.BootMedia
 		expectReady   bool
 		expectMsgPart string
 	}{
 		{
-			name: "Complete DiskImage is ready",
-			diskImage: &k8s.DiskImage{
-				Name: "debian-13",
-				Status: k8s.DiskImageStatus{
-					Phase: "Complete",
-				},
+			name: "Complete BootMedia is ready",
+			bootMedia: &typed.BootMedia{
+				ObjectMeta: metav1.ObjectMeta{Name: "debian-13"},
+				Status:     typed.BootMediaStatus{Phase: "Complete"},
 			},
 			expectReady:   true,
 			expectMsgPart: "",
 		},
 		{
-			name: "Failed DiskImage returns error message",
-			diskImage: &k8s.DiskImage{
-				Name: "failed-image",
-				Status: k8s.DiskImageStatus{
-					Phase:   "Failed",
-					Message: "HTTP 404",
-				},
+			name: "Failed BootMedia returns error message",
+			bootMedia: &typed.BootMedia{
+				ObjectMeta: metav1.ObjectMeta{Name: "failed-media"},
+				Status:     typed.BootMediaStatus{Phase: "Failed", Message: "HTTP 404"},
 			},
 			expectReady:   false,
 			expectMsgPart: "failed: HTTP 404",
 		},
 		{
-			name: "Downloading DiskImage shows progress",
-			diskImage: &k8s.DiskImage{
-				Name: "downloading-image",
-				Status: k8s.DiskImageStatus{
-					Phase:    "Downloading",
-					Progress: 50,
-				},
+			name: "Downloading BootMedia",
+			bootMedia: &typed.BootMedia{
+				ObjectMeta: metav1.ObjectMeta{Name: "downloading-media"},
+				Status:     typed.BootMediaStatus{Phase: "Downloading"},
 			},
 			expectReady:   false,
-			expectMsgPart: "downloading (50%)",
+			expectMsgPart: "downloading",
 		},
 		{
-			name: "Pending DiskImage",
-			diskImage: &k8s.DiskImage{
-				Name: "pending-image",
-				Status: k8s.DiskImageStatus{
-					Phase: "Pending",
-				},
+			name: "Pending BootMedia",
+			bootMedia: &typed.BootMedia{
+				ObjectMeta: metav1.ObjectMeta{Name: "pending-media"},
+				Status:     typed.BootMediaStatus{Phase: "Pending"},
 			},
 			expectReady:   false,
 			expectMsgPart: "pending",
 		},
 		{
 			name: "Empty phase treated as pending",
-			diskImage: &k8s.DiskImage{
-				Name:   "new-image",
-				Status: k8s.DiskImageStatus{},
+			bootMedia: &typed.BootMedia{
+				ObjectMeta: metav1.ObjectMeta{Name: "new-media"},
+				Status:     typed.BootMediaStatus{},
 			},
 			expectReady:   false,
 			expectMsgPart: "pending",
@@ -76,7 +68,7 @@ func TestCheckDiskImageStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ready, msg := checkDiskImageStatus(tt.diskImage)
+			ready, msg := checkBootMediaStatus(tt.bootMedia)
 			if ready != tt.expectReady {
 				t.Errorf("expected ready=%v, got ready=%v", tt.expectReady, ready)
 			}
@@ -126,12 +118,18 @@ func TestReconcileProvision_InitializePending(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
-	fake.diskImages["debian-iso"] = &k8s.DiskImage{
-		Name:   "debian-iso",
-		Status: k8s.DiskImageStatus{Phase: "Complete"},
-	}
 
 	ctrl := New(fake)
+	ctrl.typedK8s = newTestTypedClient(
+		&typed.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       typed.BootTargetSpec{BootMediaRef: "debian-iso", Template: "#!ipxe\n"},
+		},
+		&typed.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
+			Status:     typed.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
 
 	s, ok := fake.getProvisionStatus("prov-1")
@@ -271,7 +269,7 @@ func TestReconcileProvision_ConfigError_MissingSecret(t *testing.T) {
 	}
 }
 
-func TestReconcileProvision_WaitingForDiskImage(t *testing.T) {
+func TestReconcileProvision_WaitingForBootMedia(t *testing.T) {
 	fake := newFakeK8sClient()
 	fake.provisions["prov-1"] = &k8s.Provision{
 		Name: "prov-1",
@@ -283,17 +281,23 @@ func TestReconcileProvision_WaitingForDiskImage(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
-	fake.diskImages["debian-iso"] = &k8s.DiskImage{
-		Name:   "debian-iso",
-		Status: k8s.DiskImageStatus{Phase: "Downloading", Progress: 42},
-	}
 
 	ctrl := New(fake)
+	ctrl.typedK8s = newTestTypedClient(
+		&typed.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       typed.BootTargetSpec{BootMediaRef: "debian-iso", Template: "#!ipxe\n"},
+		},
+		&typed.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
+			Status:     typed.BootMediaStatus{Phase: "Downloading"},
+		},
+	)
 	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
 
 	s, _ := fake.getProvisionStatus("prov-1")
-	if s.Phase != "WaitingForDiskImage" {
-		t.Errorf("expected phase WaitingForDiskImage, got %q", s.Phase)
+	if s.Phase != "WaitingForBootMedia" {
+		t.Errorf("expected phase WaitingForBootMedia, got %q", s.Phase)
 	}
 }
 
@@ -309,12 +313,18 @@ func TestReconcileProvision_ConfigErrorRecovery(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
-	fake.diskImages["debian-iso"] = &k8s.DiskImage{
-		Name:   "debian-iso",
-		Status: k8s.DiskImageStatus{Phase: "Complete"},
-	}
 
 	ctrl := New(fake)
+	ctrl.typedK8s = newTestTypedClient(
+		&typed.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       typed.BootTargetSpec{BootMediaRef: "debian-iso", Template: "#!ipxe\n"},
+		},
+		&typed.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
+			Status:     typed.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
 
 	s, _ := fake.getProvisionStatus("prov-1")
@@ -338,12 +348,18 @@ func TestReconcileProvision_TimeoutInProgress(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
-	fake.diskImages["debian-iso"] = &k8s.DiskImage{
-		Name:   "debian-iso",
-		Status: k8s.DiskImageStatus{Phase: "Complete"},
-	}
 
 	ctrl := New(fake)
+	ctrl.typedK8s = newTestTypedClient(
+		&typed.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       typed.BootTargetSpec{BootMediaRef: "debian-iso", Template: "#!ipxe\n"},
+		},
+		&typed.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
+			Status:     typed.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
 
 	s, _ := fake.getProvisionStatus("prov-1")
@@ -370,12 +386,18 @@ func TestReconcileProvision_InProgressNotTimedOut(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
-	fake.diskImages["debian-iso"] = &k8s.DiskImage{
-		Name:   "debian-iso",
-		Status: k8s.DiskImageStatus{Phase: "Complete"},
-	}
 
 	ctrl := New(fake)
+	ctrl.typedK8s = newTestTypedClient(
+		&typed.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       typed.BootTargetSpec{BootMediaRef: "debian-iso", Template: "#!ipxe\n"},
+		},
+		&typed.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
+			Status:     typed.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
 
 	// Should NOT have updated the status (still within timeout)
@@ -396,12 +418,18 @@ func TestReconcileProvision_CompleteIsNoop(t *testing.T) {
 	}
 	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
 	fake.bootTargets["debian-13"] = &k8s.BootTarget{Name: "debian-13", DiskImageRef: "debian-iso"}
-	fake.diskImages["debian-iso"] = &k8s.DiskImage{
-		Name:   "debian-iso",
-		Status: k8s.DiskImageStatus{Phase: "Complete"},
-	}
 
 	ctrl := New(fake)
+	ctrl.typedK8s = newTestTypedClient(
+		&typed.BootTarget{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
+			Spec:       typed.BootTargetSpec{BootMediaRef: "debian-iso", Template: "#!ipxe\n"},
+		},
+		&typed.BootMedia{
+			ObjectMeta: metav1.ObjectMeta{Name: "debian-iso", Namespace: "default"},
+			Status:     typed.BootMediaStatus{Phase: "Complete"},
+		},
+	)
 	ctrl.reconcileProvision(context.Background(), fake.provisions["prov-1"])
 
 	// Complete provisions should not trigger any status update
