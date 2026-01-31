@@ -332,7 +332,11 @@ func (c *Controller) fetchChecksumFile(ctx context.Context, checksumURL string) 
 	}
 	defer resp.Body.Close()
 
-	return parseChecksumFile(resp.Body)
+	checksums := parseChecksumFile(resp.Body)
+	if len(checksums) == 0 {
+		return nil
+	}
+	return checksums
 }
 
 // checksumKey computes the key to look up in the parsed checksums map.
