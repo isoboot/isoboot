@@ -5,15 +5,12 @@ HTTP handlers for isoboot-http server.
 ## Handlers
 
 ### BootHandler (boot.go)
-- `GET /boot/boot.ipxe` - Initial iPXE script (chains to conditional-boot)
 - `GET /boot/conditional-boot?mac=xx-xx-xx-xx-xx-xx` - Returns BootTarget template if Provision exists, 404 otherwise
 - `GET /boot/done?mac={mac}` - Marks Provision as completed (call from preseed late_command with `{{ .MAC }}`)
 
-Template variables: Host, Port, MachineName, Hostname, Domain, BootTarget, ProvisionName
+Template variables: Host, Port, MachineName, Hostname, Domain, BootTarget, BootMedia, UseFirmware, ProvisionName, KernelFilename, InitrdFilename, HasFirmware
 
-### ISOHandler (iso.go)
-- `GET /iso/content/{bootTarget}/{isoFile}/{path...}` - Serves extracted ISO contents
-- Firmware merging: If BootTarget has `includeFirmwarePath` and path matches, appends firmware.cpio.gz
+Port detection: `portFromRequest(r)` reads `X-Forwarded-Port` header (set by nginx), falls back to port from `Host` header, defaults to "80".
 
 ### AnswerHandler (answer.go)
 - `GET /answer/{provisionName}/{filename}` - Serves rendered ResponseTemplate files
