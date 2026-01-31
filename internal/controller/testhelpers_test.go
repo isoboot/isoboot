@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"net/http"
+
 	"github.com/isoboot/isoboot/internal/k8s/typed"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +34,16 @@ func newTypedConfigMap(name string, data map[string]string) *corev1.ConfigMap {
 		Data:       data,
 	}
 }
+
+// fakeHTTPDoer is a mock HTTP client for tests
+type fakeHTTPDoer struct {
+	doFunc func(req *http.Request) (*http.Response, error)
+}
+
+func (f *fakeHTTPDoer) Do(req *http.Request) (*http.Response, error) {
+	return f.doFunc(req)
+}
+
 
 // newTypedSecret is a helper to create a corev1.Secret for testing
 func newTypedSecret(name string, data map[string][]byte) *corev1.Secret {
