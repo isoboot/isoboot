@@ -21,15 +21,13 @@ type AnswerClient interface {
 
 type AnswerHandler struct {
 	host       string
-	port       string
 	proxyPort  string
 	ctrlClient AnswerClient
 }
 
-func NewAnswerHandler(host, port, proxyPort string, ctrlClient AnswerClient) *AnswerHandler {
+func NewAnswerHandler(host, proxyPort string, ctrlClient AnswerClient) *AnswerHandler {
 	return &AnswerHandler{
 		host:       host,
-		port:       port,
 		proxyPort:  proxyPort,
 		ctrlClient: ctrlClient,
 	}
@@ -127,7 +125,7 @@ func (h *AnswerHandler) ServeAnswer(w http.ResponseWriter, r *http.Request) {
 
 	// Add system variables
 	data["Host"] = h.host
-	data["Port"] = h.port
+	data["Port"] = portFromRequest(r)
 	data["Hostname"] = provision.MachineRef
 	data["Target"] = provision.BootTargetRef
 

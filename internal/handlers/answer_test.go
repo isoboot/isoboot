@@ -65,7 +65,7 @@ func TestServeAnswer_Success(t *testing.T) {
 		},
 	}
 
-	h := NewAnswerHandler("10.0.0.1", "8080", "3128", mock)
+	h := NewAnswerHandler("10.0.0.1", "3128", mock)
 	req := httptest.NewRequest("GET", "/answer/prov-1/preseed.cfg", nil)
 	w := httptest.NewRecorder()
 
@@ -87,7 +87,7 @@ func TestServeAnswer_Success(t *testing.T) {
 }
 
 func TestServeAnswer_InvalidPath(t *testing.T) {
-	h := NewAnswerHandler("10.0.0.1", "8080", "3128", &mockAnswerClient{})
+	h := NewAnswerHandler("10.0.0.1", "3128", &mockAnswerClient{})
 	req := httptest.NewRequest("GET", "/answer/only-one-segment", nil)
 	w := httptest.NewRecorder()
 
@@ -105,7 +105,7 @@ func TestServeAnswer_ProvisionNotFound(t *testing.T) {
 		},
 	}
 
-	h := NewAnswerHandler("10.0.0.1", "8080", "3128", mock)
+	h := NewAnswerHandler("10.0.0.1", "3128", mock)
 	req := httptest.NewRequest("GET", "/answer/missing-prov/preseed.cfg", nil)
 	w := httptest.NewRecorder()
 
@@ -123,7 +123,7 @@ func TestServeAnswer_GRPCError(t *testing.T) {
 		},
 	}
 
-	h := NewAnswerHandler("10.0.0.1", "8080", "3128", mock)
+	h := NewAnswerHandler("10.0.0.1", "3128", mock)
 	req := httptest.NewRequest("GET", "/answer/prov-1/preseed.cfg", nil)
 	w := httptest.NewRecorder()
 
@@ -149,7 +149,7 @@ func TestServeAnswer_FileNotInTemplate(t *testing.T) {
 		},
 	}
 
-	h := NewAnswerHandler("10.0.0.1", "8080", "3128", mock)
+	h := NewAnswerHandler("10.0.0.1", "3128", mock)
 	req := httptest.NewRequest("GET", "/answer/prov-1/nonexistent.cfg", nil)
 	w := httptest.NewRecorder()
 

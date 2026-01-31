@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -20,22 +19,20 @@ type BootClient interface {
 	GetMachineByMAC(ctx context.Context, mac string) (string, error)
 	GetProvisionsByMachine(ctx context.Context, machineName string) ([]controllerclient.ProvisionSummary, error)
 	GetBootTarget(ctx context.Context, name string) (*controllerclient.BootTargetInfo, error)
-	GetDiskImage(ctx context.Context, name string) (*controllerclient.DiskImageInfo, error)
+	GetBootMedia(ctx context.Context, name string) (*controllerclient.BootMediaInfo, error)
 	UpdateProvisionStatus(ctx context.Context, name, status, message, ip string) error
 }
 
 type BootHandler struct {
 	host       string
-	port       string
 	proxyPort  string
 	ctrlClient BootClient
 	configMap  string
 }
 
-func NewBootHandler(host, port, proxyPort string, ctrlClient BootClient, configMap string) *BootHandler {
+func NewBootHandler(host, proxyPort string, ctrlClient BootClient, configMap string) *BootHandler {
 	return &BootHandler{
 		host:       host,
-		port:       port,
 		proxyPort:  proxyPort,
 		ctrlClient: ctrlClient,
 		configMap:  configMap,
@@ -44,15 +41,32 @@ func NewBootHandler(host, port, proxyPort string, ctrlClient BootClient, configM
 
 // TemplateData is passed to boot templates
 type TemplateData struct {
-	Host          string
-	Port          string
-	ProxyPort     string // Squid proxy port for mirror/http/proxy
-	MachineName   string // Full machine name (e.g., "vm-deb-0099.lan")
-	Hostname      string // First part before dot (e.g., "vm-deb-0099")
-	Domain        string // Everything after first dot (e.g., "lan")
-	BootTarget    string
-	ProvisionName string // Provision resource name (use for answer file URLs)
-	DiskImageFile string // ISO filename from DiskImage (e.g., "ubuntu-24.04.iso")
+	Host              string
+	Port              string
+	ProxyPort         string // Squid proxy port for mirror/http/proxy
+	MachineName       string // Full machine name (e.g., "vm-deb-0099.lan")
+	Hostname          string // First part before dot (e.g., "vm-deb-0099")
+	Domain            string // Everything after first dot (e.g., "lan")
+	BootTarget        string
+	BootMedia         string // BootMedia resource name (for static file paths)
+	UseFirmware       bool   // Whether to use firmware-combined initrd
+	ProvisionName     string // Provision resource name (use for answer file URLs)
+	KernelFilename    string // e.g., "linux" or "vmlinuz"
+	InitrdFilename    string // e.g., "initrd.gz"
+	HasFirmware       bool   // Whether BootMedia has firmware
+}
+
+// portFromRequest returns the X-Forwarded-Port header if present,
+// otherwise extracts the port from the Host header.
+func portFromRequest(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-Port"); fwd != "" {
+		return fwd
+	}
+	_, port, err := net.SplitHostPort(r.Host)
+	if err == nil && port != "" {
+		return port
+	}
+	return "80"
 }
 
 // splitHostDomain splits a machine name into hostname and domain.
@@ -72,36 +86,6 @@ func (h *BootHandler) loadTemplate(ctx context.Context, name string) (*template.
 		return nil, err
 	}
 	return template.New(name).Parse(value)
-}
-
-// ServeBootIPXE serves the initial boot.ipxe script
-func (h *BootHandler) ServeBootIPXE(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	tmpl, err := h.loadTemplate(ctx, "boot.ipxe")
-	if err != nil {
-		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	data := TemplateData{
-		Host:      h.host,
-		Port:      h.port,
-		ProxyPort: h.proxyPort,
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", buf.Len()))
-	w.WriteHeader(http.StatusOK)
-	w.Write(buf.Bytes())
 }
 
 // ServeConditionalBoot checks Provision CRDs and returns appropriate boot script
@@ -173,21 +157,16 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get DiskImage for the filename (optional - not all templates use it)
-	var diskImageFile string
-	if bootTarget.DiskImage != "" {
-		diskImageInfo, err := h.ctrlClient.GetDiskImage(ctx, bootTarget.DiskImage)
-		switch {
-		case err != nil && errors.Is(err, controllerclient.ErrNotFound):
-			log.Printf("DiskImage %s not found for BootTarget %s", bootTarget.DiskImage, pendingProvision.BootTargetRef)
-		case err != nil:
-			log.Printf("Error loading DiskImage %s for BootTarget %s: %v", bootTarget.DiskImage, pendingProvision.BootTargetRef, err)
-		default:
-			diskImageFile = diskImageInfo.ISOFilename
-		}
+	// 5. Get BootMedia
+	bootMedia, err := h.ctrlClient.GetBootMedia(ctx, bootTarget.BootMediaRef)
+	if err != nil {
+		log.Printf("Error loading BootMedia %s: %v", bootTarget.BootMediaRef, err)
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusBadGateway)
+		return
 	}
 
-	// 5. Parse and render template
+	// 6. Parse and render template
 	tmpl, err := template.New(pendingProvision.BootTargetRef).Parse(bootTarget.Template)
 	if err != nil {
 		log.Printf("Error parsing template for %s: %v", pendingProvision.BootTargetRef, err)
@@ -198,15 +177,19 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 
 	hostname, domain := splitHostDomain(machineName)
 	data := TemplateData{
-		Host:          h.host,
-		Port:          h.port,
-		ProxyPort:     h.proxyPort,
-		MachineName:   machineName,
-		Hostname:      hostname,
-		Domain:        domain,
-		BootTarget:    pendingProvision.BootTargetRef,
-		ProvisionName: pendingProvision.Name,
-		DiskImageFile: diskImageFile,
+		Host:           h.host,
+		Port:           portFromRequest(r),
+		ProxyPort:      h.proxyPort,
+		MachineName:    machineName,
+		Hostname:       hostname,
+		Domain:         domain,
+		BootTarget:     pendingProvision.BootTargetRef,
+		BootMedia:      bootTarget.BootMediaRef,
+		UseFirmware:    bootTarget.UseFirmware,
+		ProvisionName:  pendingProvision.Name,
+		KernelFilename: bootMedia.KernelFilename,
+		InitrdFilename: bootMedia.InitrdFilename,
+		HasFirmware:    bootMedia.HasFirmware,
 	}
 
 	var buf bytes.Buffer
@@ -221,7 +204,7 @@ func (h *BootHandler) ServeConditionalBoot(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	w.Write(buf.Bytes())
 
-	// 6. Mark provision as InProgress
+	// 7. Mark provision as InProgress
 	if err := h.ctrlClient.UpdateProvisionStatus(ctx, pendingProvision.Name, "InProgress", "Boot script served", ""); err != nil {
 		log.Printf("Warning: failed to mark boot started for %s: %v", pendingProvision.Name, err)
 	}
@@ -305,7 +288,6 @@ func (h *BootHandler) ServeBootDone(w http.ResponseWriter, r *http.Request) {
 
 // RegisterRoutes registers boot-related routes
 func (h *BootHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/boot/boot.ipxe", h.ServeBootIPXE)
 	mux.HandleFunc("/boot/conditional-boot", h.ServeConditionalBoot)
 	mux.HandleFunc("/boot/done", h.ServeBootDone)
 }
