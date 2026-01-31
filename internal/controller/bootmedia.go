@@ -64,12 +64,8 @@ func parseChecksumFile(r io.Reader) map[string]string {
 
 // reconcileBootMedias reconciles all BootMedia resources
 func (c *Controller) reconcileBootMedias(ctx context.Context) {
-	if c.typedK8s == nil {
-		return
-	}
-
 	var bmList typed.BootMediaList
-	if err := c.typedK8s.List(ctx, &bmList, client.InNamespace(c.typedK8s.Namespace())); err != nil {
+	if err := c.k8sClient.List(ctx, &bmList, client.InNamespace(c.k8sClient.Namespace())); err != nil {
 		log.Printf("Controller: failed to list bootmedias: %v", err)
 		return
 	}
@@ -88,7 +84,7 @@ func (c *Controller) reconcileBootMedia(ctx context.Context, bm *typed.BootMedia
 			Phase:   "Pending",
 			Message: "Waiting for download",
 		}
-		if err := c.typedK8s.UpdateBootMediaStatus(ctx, bm.Name, status); err != nil {
+		if err := c.k8sClient.UpdateBootMediaStatus(ctx, bm.Name, status); err != nil {
 			log.Printf("Controller: failed to initialize BootMedia %s: %v", bm.Name, err)
 		}
 		return
@@ -130,7 +126,7 @@ func (c *Controller) downloadBootMedia(parentCtx context.Context, bm *typed.Boot
 
 	// Initialize status
 	status := initDownloadStatus(bm)
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s to Downloading: %v", bm.Name, err)
 		return
 	}
@@ -189,7 +185,7 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *type
 	kernelDest := filepath.Join(bmDir, kernelFilename)
 
 	status.Kernel.Phase = "Downloading"
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
@@ -213,7 +209,7 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *type
 	}
 
 	status.Initrd.Phase = "Downloading"
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
@@ -227,7 +223,7 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *type
 	status.Initrd.Phase = "Complete"
 	status.Initrd.SHA256 = sha
 
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
@@ -242,7 +238,7 @@ func (c *Controller) downloadBootMediaDirect(parentCtx context.Context, bm *type
 	// All done
 	status.Phase = "Complete"
 	status.Message = "All files downloaded"
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s to Complete: %v", bm.Name, err)
 	}
 	log.Printf("Controller: BootMedia %s download complete", bm.Name)
@@ -254,7 +250,7 @@ func (c *Controller) failBootMedia(ctx context.Context, name, message string) {
 		Phase:   "Failed",
 		Message: message,
 	}
-	if updateErr := c.typedK8s.UpdateBootMediaStatus(ctx, name, status); updateErr != nil {
+	if updateErr := c.k8sClient.UpdateBootMediaStatus(ctx, name, status); updateErr != nil {
 		log.Printf("Controller: failed to update BootMedia %s to Failed: %v", name, updateErr)
 	}
 }
@@ -266,7 +262,7 @@ func (c *Controller) failBootMediaStatus(ctx context.Context, name string, statu
 	if fileStatus != nil {
 		fileStatus.Phase = "Failed"
 	}
-	if updateErr := c.typedK8s.UpdateBootMediaStatus(ctx, name, status); updateErr != nil {
+	if updateErr := c.k8sClient.UpdateBootMediaStatus(ctx, name, status); updateErr != nil {
 		log.Printf("Controller: failed to update BootMedia %s to Failed: %v", name, updateErr)
 	}
 }
@@ -460,7 +456,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *typed.B
 	isoDest := filepath.Join(tmpDir, isoFilename)
 
 	status.ISO.Phase = "Downloading"
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
@@ -484,7 +480,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *typed.B
 
 	// Extract kernel
 	status.Kernel.Phase = "Extracting"
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
@@ -506,7 +502,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *typed.B
 
 	// Extract initrd
 	status.Initrd.Phase = "Extracting"
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
@@ -531,7 +527,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *typed.B
 	status.Initrd.Phase = "Complete"
 	status.Initrd.SHA256 = sha
 
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
@@ -546,7 +542,7 @@ func (c *Controller) downloadBootMediaISO(parentCtx context.Context, bm *typed.B
 	// All done
 	status.Phase = "Complete"
 	status.Message = "All files downloaded and extracted"
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s to Complete: %v", bm.Name, err)
 	}
 	log.Printf("Controller: BootMedia %s download complete", bm.Name)
@@ -568,7 +564,7 @@ func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, b
 	fwDest := filepath.Join(tmpDir, fwFilename)
 
 	status.Firmware.Phase = "Downloading"
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
@@ -588,7 +584,7 @@ func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, b
 	withFwInitrd := filepath.Join(bmDir, "with-firmware", initrdFilename)
 
 	status.FirmwareInitrd.Phase = "Building"
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 
@@ -600,7 +596,7 @@ func (c *Controller) downloadAndConcatenateFirmware(parentCtx context.Context, b
 	status.FirmwareInitrd.Phase = "Complete"
 	status.FirmwareInitrd.SHA256 = sha
 
-	if err := c.typedK8s.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
+	if err := c.k8sClient.UpdateBootMediaStatus(statusCtx, bm.Name, status); err != nil {
 		log.Printf("Controller: failed to update BootMedia %s status: %v", bm.Name, err)
 	}
 }

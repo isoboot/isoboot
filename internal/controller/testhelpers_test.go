@@ -27,14 +27,6 @@ func newTestTypedClient(objs ...client.Object) *typed.Client {
 	return typed.NewClientFromClient(cl, "default")
 }
 
-// newTypedConfigMap is a helper to create a corev1.ConfigMap for testing
-func newTypedConfigMap(name string, data map[string]string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-		Data:       data,
-	}
-}
-
 // fakeHTTPDoer is a mock HTTP client for tests
 type fakeHTTPDoer struct {
 	doFunc func(req *http.Request) (*http.Response, error)
@@ -44,9 +36,16 @@ func (f *fakeHTTPDoer) Do(req *http.Request) (*http.Response, error) {
 	return f.doFunc(req)
 }
 
+// newConfigMap is a helper to create a corev1.ConfigMap for testing
+func newConfigMap(name string, data map[string]string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Data:       data,
+	}
+}
 
-// newTypedSecret is a helper to create a corev1.Secret for testing
-func newTypedSecret(name string, data map[string][]byte) *corev1.Secret {
+// newSecret is a helper to create a corev1.Secret for testing
+func newSecret(name string, data map[string][]byte) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
 		Data:       data,

@@ -5,16 +5,19 @@ import (
 	"testing"
 
 	pb "github.com/isoboot/isoboot/api/controllerpb"
-	"github.com/isoboot/isoboot/internal/k8s"
 	"github.com/isoboot/isoboot/internal/k8s/typed"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestGRPC_GetMachineByMAC_Found(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	k := newTestTypedClient(
+		&typed.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       typed.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetMachineByMAC(context.Background(), &pb.GetMachineByMACRequest{Mac: "AA-BB-CC-DD-EE-FF"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -28,9 +31,9 @@ func TestGRPC_GetMachineByMAC_Found(t *testing.T) {
 }
 
 func TestGRPC_GetMachineByMAC_NotFound(t *testing.T) {
-	fake := newFakeK8sClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetMachineByMAC(context.Background(), &pb.GetMachineByMACRequest{Mac: "aa-bb-cc-dd-ee-ff"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -41,10 +44,14 @@ func TestGRPC_GetMachineByMAC_NotFound(t *testing.T) {
 }
 
 func TestGRPC_GetMachine_Found(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.machines["vm-01"] = &k8s.Machine{Name: "vm-01", MAC: "aa-bb-cc-dd-ee-ff"}
+	k := newTestTypedClient(
+		&typed.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm-01", Namespace: "default"},
+			Spec:       typed.MachineSpec{MAC: "aa-bb-cc-dd-ee-ff"},
+		},
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetMachine(context.Background(), &pb.GetMachineRequest{Name: "vm-01"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -58,9 +65,9 @@ func TestGRPC_GetMachine_Found(t *testing.T) {
 }
 
 func TestGRPC_GetMachine_NotFound(t *testing.T) {
-	fake := newFakeK8sClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetMachine(context.Background(), &pb.GetMachineRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -71,19 +78,20 @@ func TestGRPC_GetMachine_NotFound(t *testing.T) {
 }
 
 func TestGRPC_GetProvisionsByMachine(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
-		Spec: k8s.ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
-		Status: k8s.ProvisionStatus{Phase: "Pending"},
-	}
-	fake.provisions["prov-2"] = &k8s.Provision{
-		Name: "prov-2",
-		Spec: k8s.ProvisionSpec{MachineRef: "vm-02", BootTargetRef: "debian-13"},
-		Status: k8s.ProvisionStatus{Phase: "InProgress"},
-	}
+	k := newTestTypedClient(
+		&typed.Provision{
+			ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
+			Spec:       typed.ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
+			Status:     typed.ProvisionStatus{Phase: "Pending"},
+		},
+		&typed.Provision{
+			ObjectMeta: metav1.ObjectMeta{Name: "prov-2", Namespace: "default"},
+			Spec:       typed.ProvisionSpec{MachineRef: "vm-02", BootTargetRef: "debian-13"},
+			Status:     typed.ProvisionStatus{Phase: "InProgress"},
+		},
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetProvisionsByMachine(context.Background(), &pb.GetProvisionsByMachineRequest{MachineName: "vm-01"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -100,9 +108,9 @@ func TestGRPC_GetProvisionsByMachine(t *testing.T) {
 }
 
 func TestGRPC_GetProvisionsByMachine_Empty(t *testing.T) {
-	fake := newFakeK8sClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetProvisionsByMachine(context.Background(), &pb.GetProvisionsByMachineRequest{MachineName: "vm-01"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -113,14 +121,15 @@ func TestGRPC_GetProvisionsByMachine_Empty(t *testing.T) {
 }
 
 func TestGRPC_UpdateProvisionStatus(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
-		Spec: k8s.ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
-		Status: k8s.ProvisionStatus{Phase: "Pending"},
-	}
+	k := newTestTypedClient(
+		&typed.Provision{
+			ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
+			Spec:       typed.ProvisionSpec{MachineRef: "vm-01", BootTargetRef: "debian-13"},
+			Status:     typed.ProvisionStatus{Phase: "Pending"},
+		},
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.UpdateProvisionStatus(context.Background(), &pb.UpdateProvisionStatusRequest{
 		Name:    "prov-1",
 		Status:  "InProgress",
@@ -134,22 +143,22 @@ func TestGRPC_UpdateProvisionStatus(t *testing.T) {
 		t.Errorf("expected Success=true, got error: %s", resp.Error)
 	}
 
-	s, ok := fake.getProvisionStatus("prov-1")
-	if !ok {
-		t.Fatal("expected provision status to be updated")
+	var updated typed.Provision
+	if err := k.Get(context.Background(), k.Key("prov-1"), &updated); err != nil {
+		t.Fatalf("failed to get provision: %v", err)
 	}
-	if s.Phase != "InProgress" {
-		t.Errorf("expected phase InProgress, got %q", s.Phase)
+	if updated.Status.Phase != "InProgress" {
+		t.Errorf("expected phase InProgress, got %q", updated.Status.Phase)
 	}
-	if s.IP != "10.0.0.5" {
-		t.Errorf("expected IP 10.0.0.5, got %q", s.IP)
+	if updated.Status.IP != "10.0.0.5" {
+		t.Errorf("expected IP 10.0.0.5, got %q", updated.Status.IP)
 	}
 }
 
 func TestGRPC_UpdateProvisionStatus_NotFound(t *testing.T) {
-	fake := newFakeK8sClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.UpdateProvisionStatus(context.Background(), &pb.UpdateProvisionStatusRequest{
 		Name:   "missing",
 		Status: "InProgress",
@@ -163,12 +172,13 @@ func TestGRPC_UpdateProvisionStatus_NotFound(t *testing.T) {
 }
 
 func TestGRPC_GetConfigMapValue_Found(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.configMaps["isoboot-templates"] = newConfigMap("isoboot-templates", map[string]string{
-		"boot.ipxe": "#!ipxe\nchain ...\n",
-	})
+	k := newTestTypedClient(
+		newConfigMap("isoboot-templates", map[string]string{
+			"boot.ipxe": "#!ipxe\nchain ...\n",
+		}),
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetConfigMapValue(context.Background(), &pb.GetConfigMapValueRequest{
 		ConfigmapName: "isoboot-templates",
 		Key:           "boot.ipxe",
@@ -185,10 +195,11 @@ func TestGRPC_GetConfigMapValue_Found(t *testing.T) {
 }
 
 func TestGRPC_GetConfigMapValue_KeyNotFound(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.configMaps["cm"] = newConfigMap("cm", map[string]string{"a": "b"})
+	k := newTestTypedClient(
+		newConfigMap("cm", map[string]string{"a": "b"}),
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetConfigMapValue(context.Background(), &pb.GetConfigMapValueRequest{
 		ConfigmapName: "cm",
 		Key:           "missing-key",
@@ -202,9 +213,9 @@ func TestGRPC_GetConfigMapValue_KeyNotFound(t *testing.T) {
 }
 
 func TestGRPC_GetConfigMapValue_ConfigMapNotFound(t *testing.T) {
-	fake := newFakeK8sClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetConfigMapValue(context.Background(), &pb.GetConfigMapValueRequest{
 		ConfigmapName: "missing",
 		Key:           "key",
@@ -218,15 +229,14 @@ func TestGRPC_GetConfigMapValue_ConfigMapNotFound(t *testing.T) {
 }
 
 func TestGRPC_GetBootTarget_Found(t *testing.T) {
-	fake := newFakeK8sClient()
-	typedClient := newTestTypedClient(
+	k := newTestTypedClient(
 		&typed.BootTarget{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
 			Spec:       typed.BootTargetSpec{BootMediaRef: "debian-media", UseFirmware: true, Template: "#!ipxe\nkernel ...\n"},
 		},
 	)
 
-	srv := NewGRPCServer(New(fake), typedClient)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "debian-13"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -246,10 +256,9 @@ func TestGRPC_GetBootTarget_Found(t *testing.T) {
 }
 
 func TestGRPC_GetBootTarget_NotFound(t *testing.T) {
-	fake := newFakeK8sClient()
-	typedClient := newTestTypedClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), typedClient)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetBootTarget(context.Background(), &pb.GetBootTargetRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -260,15 +269,18 @@ func TestGRPC_GetBootTarget_NotFound(t *testing.T) {
 }
 
 func TestGRPC_GetResponseTemplate_Found(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.responseTemplates["preseed-tmpl"] = &k8s.ResponseTemplate{
-		Name: "preseed-tmpl",
-		Files: map[string]string{
-			"preseed.cfg": "d-i netcfg/hostname string {{ .Hostname }}",
+	k := newTestTypedClient(
+		&typed.ResponseTemplate{
+			ObjectMeta: metav1.ObjectMeta{Name: "preseed-tmpl", Namespace: "default"},
+			Spec: typed.ResponseTemplateSpec{
+				Files: map[string]string{
+					"preseed.cfg": "d-i netcfg/hostname string {{ .Hostname }}",
+				},
+			},
 		},
-	}
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetResponseTemplate(context.Background(), &pb.GetResponseTemplateRequest{Name: "preseed-tmpl"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -282,9 +294,9 @@ func TestGRPC_GetResponseTemplate_Found(t *testing.T) {
 }
 
 func TestGRPC_GetResponseTemplate_NotFound(t *testing.T) {
-	fake := newFakeK8sClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetResponseTemplate(context.Background(), &pb.GetResponseTemplateRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -295,20 +307,21 @@ func TestGRPC_GetResponseTemplate_NotFound(t *testing.T) {
 }
 
 func TestGRPC_GetProvision_Found(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.provisions["prov-1"] = &k8s.Provision{
-		Name: "prov-1",
-		Spec: k8s.ProvisionSpec{
-			MachineRef:          "vm-01",
-			BootTargetRef:       "debian-13",
-			ResponseTemplateRef: "preseed",
-			ConfigMaps:          []string{"net-cfg"},
-			Secrets:             []string{"ssh-keys"},
-			MachineId:           "0123456789abcdef0123456789abcdef",
+	k := newTestTypedClient(
+		&typed.Provision{
+			ObjectMeta: metav1.ObjectMeta{Name: "prov-1", Namespace: "default"},
+			Spec: typed.ProvisionSpec{
+				MachineRef:          "vm-01",
+				BootTargetRef:       "debian-13",
+				ResponseTemplateRef: "preseed",
+				ConfigMaps:          []string{"net-cfg"},
+				Secrets:             []string{"ssh-keys"},
+				MachineId:           "0123456789abcdef0123456789abcdef",
+			},
 		},
-	}
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetProvision(context.Background(), &pb.GetProvisionRequest{Name: "prov-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -337,9 +350,9 @@ func TestGRPC_GetProvision_Found(t *testing.T) {
 }
 
 func TestGRPC_GetProvision_NotFound(t *testing.T) {
-	fake := newFakeK8sClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetProvision(context.Background(), &pb.GetProvisionRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -350,11 +363,12 @@ func TestGRPC_GetProvision_NotFound(t *testing.T) {
 }
 
 func TestGRPC_GetConfigMaps_MergesData(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.configMaps["cm-1"] = newConfigMap("cm-1", map[string]string{"a": "1", "b": "2"})
-	fake.configMaps["cm-2"] = newConfigMap("cm-2", map[string]string{"c": "3"})
+	k := newTestTypedClient(
+		newConfigMap("cm-1", map[string]string{"a": "1", "b": "2"}),
+		newConfigMap("cm-2", map[string]string{"c": "3"}),
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetConfigMaps(context.Background(), &pb.GetConfigMapsRequest{Names: []string{"cm-1", "cm-2"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -368,10 +382,11 @@ func TestGRPC_GetConfigMaps_MergesData(t *testing.T) {
 }
 
 func TestGRPC_GetConfigMaps_MissingConfigMap(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.configMaps["cm-1"] = newConfigMap("cm-1", map[string]string{"a": "1"})
+	k := newTestTypedClient(
+		newConfigMap("cm-1", map[string]string{"a": "1"}),
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetConfigMaps(context.Background(), &pb.GetConfigMapsRequest{Names: []string{"cm-1", "missing"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -382,11 +397,12 @@ func TestGRPC_GetConfigMaps_MissingConfigMap(t *testing.T) {
 }
 
 func TestGRPC_GetSecrets_MergesData(t *testing.T) {
-	fake := newFakeK8sClient()
-	fake.secrets["s-1"] = newSecret("s-1", map[string][]byte{"key1": []byte("val1")})
-	fake.secrets["s-2"] = newSecret("s-2", map[string][]byte{"key2": []byte("val2")})
+	k := newTestTypedClient(
+		newSecret("s-1", map[string][]byte{"key1": []byte("val1")}),
+		newSecret("s-2", map[string][]byte{"key2": []byte("val2")}),
+	)
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetSecrets(context.Background(), &pb.GetSecretsRequest{Names: []string{"s-1", "s-2"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -400,9 +416,9 @@ func TestGRPC_GetSecrets_MergesData(t *testing.T) {
 }
 
 func TestGRPC_GetSecrets_MissingSecret(t *testing.T) {
-	fake := newFakeK8sClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), nil)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetSecrets(context.Background(), &pb.GetSecretsRequest{Names: []string{"missing"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -413,8 +429,7 @@ func TestGRPC_GetSecrets_MissingSecret(t *testing.T) {
 }
 
 func TestGRPC_GetBootMedia_Found(t *testing.T) {
-	fake := newFakeK8sClient()
-	typedClient := newTestTypedClient(
+	k := newTestTypedClient(
 		&typed.BootMedia{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
 			Spec: typed.BootMediaSpec{
@@ -424,7 +439,7 @@ func TestGRPC_GetBootMedia_Found(t *testing.T) {
 		},
 	)
 
-	srv := NewGRPCServer(New(fake), typedClient)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "debian-13"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -444,8 +459,7 @@ func TestGRPC_GetBootMedia_Found(t *testing.T) {
 }
 
 func TestGRPC_GetBootMedia_WithFirmware(t *testing.T) {
-	fake := newFakeK8sClient()
-	typedClient := newTestTypedClient(
+	k := newTestTypedClient(
 		&typed.BootMedia{
 			ObjectMeta: metav1.ObjectMeta{Name: "debian-13", Namespace: "default"},
 			Spec: typed.BootMediaSpec{
@@ -456,7 +470,7 @@ func TestGRPC_GetBootMedia_WithFirmware(t *testing.T) {
 		},
 	)
 
-	srv := NewGRPCServer(New(fake), typedClient)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "debian-13"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -473,10 +487,9 @@ func TestGRPC_GetBootMedia_WithFirmware(t *testing.T) {
 }
 
 func TestGRPC_GetBootMedia_NotFound(t *testing.T) {
-	fake := newFakeK8sClient()
-	typedClient := newTestTypedClient()
+	k := newTestTypedClient()
 
-	srv := NewGRPCServer(New(fake), typedClient)
+	srv := NewGRPCServer(New(k))
 	resp, err := srv.GetBootMedia(context.Background(), &pb.GetBootMediaRequest{Name: "missing"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
