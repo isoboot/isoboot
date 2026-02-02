@@ -53,8 +53,9 @@ collaborate on pull requests:
    - **Disagrees**: Replies with rationale, resolves the thread
    - **Out of scope**: Creates a GitHub issue to track it, replies with issue reference, resolves the thread
 4. If changes were made, Claude pushes a new commit, triggering another Copilot review
-5. The loop repeats for up to **2 full review cycles**
-6. The loop ends when Copilot's review has no unresolved comments
+5. The loop repeats for up to **2 full review cycles**, after which the automated loop stops
+6. Within those 2 cycles, the loop ends early if Copilot's review has no unresolved comments
+7. If unresolved comments remain after 2 cycles, the PR stays open for human maintainer review
 
 All Claude replies in PR threads are prefixed with `"From Claude:"` on their own line
 to clearly distinguish AI-to-AI conversation from human comments.
