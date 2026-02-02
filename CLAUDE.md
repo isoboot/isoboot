@@ -52,10 +52,18 @@ collaborate on pull requests:
    - **Agrees**: Makes the suggested change, replies explaining the fix, resolves the thread
    - **Disagrees**: Replies with rationale, resolves the thread
    - **Out of scope**: Creates a GitHub issue to track it, replies with issue reference, resolves the thread
-4. If changes were made, Claude pushes a new commit, triggering another Copilot review
-5. The loop repeats for up to **2 full review cycles**, after which the automated loop stops
-6. Within those 2 cycles, the loop ends early if Copilot's review has no unresolved comments
-7. If unresolved comments remain after 2 cycles, the PR stays open for human maintainer review
+4. If changes were made, Claude commits, pushes, and **explicitly re-requests Copilot review**
+5. The loop ends when Copilot's review has no addressable comments
+6. After **10 cycles**, the automated loop pauses. A human maintainer can comment
+   `"Initiate AI review feedback loop"` to trigger another 10 cycles
 
 All Claude replies in PR threads are prefixed with `"From Claude:"` on their own line
 to clearly distinguish AI-to-AI conversation from human comments.
+
+### Re-requesting Copilot Review
+
+After pushing changes that address review feedback, Claude must explicitly re-request
+Copilot review rather than relying solely on `review_on_push`. This is done by
+attempting `gh pr edit --add-reviewer copilot-pull-request-reviewer` (falling back to
+the GraphQL `requestReviews` mutation with bot ID `BOT_kgDOCnlnWA` if needed). If
+neither method works, adding a PR comment `@copilot review` can prompt re-review.
