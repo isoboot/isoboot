@@ -94,10 +94,12 @@ spec:
                   initrdPath:
                     description: initrdPath is the path within the ISO to the initrd
                       file.
+                    minLength: 1
                     type: string
                   kernelPath:
                     description: kernelPath is the path within the ISO to the kernel
                       file.
+                    minLength: 1
                     type: string
                   shasum:
                     description: shasum is the expected SHA256 checksum of the resource.

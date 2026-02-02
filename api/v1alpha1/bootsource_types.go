@@ -40,10 +40,12 @@ type ISOSource struct {
 
 	// kernelPath is the path within the ISO to the kernel file.
 	// +required
+	// +kubebuilder:validation:MinLength=1
 	KernelPath string `json:"kernelPath"`
 
 	// initrdPath is the path within the ISO to the initrd file.
 	// +required
+	// +kubebuilder:validation:MinLength=1
 	InitrdPath string `json:"initrdPath"`
 }
 

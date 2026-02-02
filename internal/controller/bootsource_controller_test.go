@@ -210,6 +210,32 @@ var _ = Describe("BootSource Controller", func() {
 			Expect(errors.IsInvalid(err)).To(BeTrue())
 		})
 
+		It("should reject iso with kernelPath but no initrdPath", func() {
+			err := createBootSource(ctx, "invalid-iso-no-initrdpath", isobootv1alpha1.BootSourceSpec{
+				ISO: &isobootv1alpha1.ISOSource{
+					DownloadableResource: isobootv1alpha1.DownloadableResource{
+						URL:       debianMiniISO,
+						ShasumURL: ptr.To(debianSHA256),
+					},
+					KernelPath: "/linux",
+				},
+			})
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should reject iso with initrdPath but no kernelPath", func() {
+			err := createBootSource(ctx, "invalid-iso-no-kernelpath", isobootv1alpha1.BootSourceSpec{
+				ISO: &isobootv1alpha1.ISOSource{
+					DownloadableResource: isobootv1alpha1.DownloadableResource{
+						URL:       debianMiniISO,
+						ShasumURL: ptr.To(debianSHA256),
+					},
+					InitrdPath: "/initrd.gz",
+				},
+			})
+			Expect(err).To(HaveOccurred())
+		})
+
 		It("should reject kernel without any checksum", func() {
 			err := createBootSource(ctx, "invalid-no-checksum", isobootv1alpha1.BootSourceSpec{
 				Kernel: &isobootv1alpha1.DownloadableResource{
