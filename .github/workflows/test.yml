@@ -21,7 +21,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: bin
-          key: tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          key: tools-${{ runner.os }}-${{ hashFiles('go.sum') }}
 
       - name: Running Tests
         run: |
