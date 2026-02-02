@@ -20,6 +20,7 @@ const (
 
 // DownloadableResource defines a resource that can be downloaded and verified.
 // +kubebuilder:validation:XValidation:rule="has(self.shasumURL) || has(self.shasum)",message="at least one of shasumURL or shasum must be specified"
+// +kubebuilder:validation:XValidation:rule="!(has(self.shasumURL) && has(self.shasum))",message="shasumURL and shasum are mutually exclusive"
 type DownloadableResource struct {
 	// url is the download URL for the resource.
 	// +required

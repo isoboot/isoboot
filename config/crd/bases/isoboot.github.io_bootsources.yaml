@@ -70,6 +70,8 @@ spec:
                 x-kubernetes-validations:
                 - message: at least one of shasumURL or shasum must be specified
                   rule: has(self.shasumURL) || has(self.shasum)
+                - message: shasumURL and shasum are mutually exclusive
+                  rule: '!(has(self.shasumURL) && has(self.shasum))'
               initrd:
                 description: initrd is a direct initrd download source.
                 properties:
@@ -88,6 +90,8 @@ spec:
                 x-kubernetes-validations:
                 - message: at least one of shasumURL or shasum must be specified
                   rule: has(self.shasumURL) || has(self.shasum)
+                - message: shasumURL and shasum are mutually exclusive
+                  rule: '!(has(self.shasumURL) && has(self.shasum))'
               iso:
                 description: iso is an ISO image source containing kernel and initrd.
                 properties:
@@ -118,6 +122,8 @@ spec:
                 x-kubernetes-validations:
                 - message: at least one of shasumURL or shasum must be specified
                   rule: has(self.shasumURL) || has(self.shasum)
+                - message: shasumURL and shasum are mutually exclusive
+                  rule: '!(has(self.shasumURL) && has(self.shasum))'
               kernel:
                 description: kernel is a direct kernel download source.
                 properties:
@@ -136,6 +142,8 @@ spec:
                 x-kubernetes-validations:
                 - message: at least one of shasumURL or shasum must be specified
                   rule: has(self.shasumURL) || has(self.shasum)
+                - message: shasumURL and shasum are mutually exclusive
+                  rule: '!(has(self.shasumURL) && has(self.shasum))'
             type: object
             x-kubernetes-validations:
             - message: must specify either (kernel and initrd) or iso

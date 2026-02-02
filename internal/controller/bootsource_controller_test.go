@@ -236,6 +236,62 @@ var _ = Describe("BootSource Controller", func() {
 			Expect(err).To(HaveOccurred())
 		})
 
+		It("should reject kernel with both shasumURL and shasum", func() {
+			err := createBootSource(ctx, "invalid-kernel-both-checksums", isobootv1alpha1.BootSourceSpec{
+				Kernel: &isobootv1alpha1.DownloadableResource{
+					URL:       debianKernel,
+					ShasumURL: ptr.To(debianSHA256),
+					Shasum:    ptr.To(exampleSHA256Sum),
+				},
+				Initrd: validInitrd(),
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("should reject initrd with both shasumURL and shasum", func() {
+			err := createBootSource(ctx, "invalid-initrd-both-checksums", isobootv1alpha1.BootSourceSpec{
+				Kernel: validKernel(),
+				Initrd: &isobootv1alpha1.DownloadableResource{
+					URL:       debianInitrd,
+					ShasumURL: ptr.To(debianSHA256),
+					Shasum:    ptr.To(exampleSHA256Sum),
+				},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("should reject iso with both shasumURL and shasum", func() {
+			err := createBootSource(ctx, "invalid-iso-both-checksums", isobootv1alpha1.BootSourceSpec{
+				ISO: &isobootv1alpha1.ISOSource{
+					DownloadableResource: isobootv1alpha1.DownloadableResource{
+						URL:       debianMiniISO,
+						ShasumURL: ptr.To(debianSHA256),
+						Shasum:    ptr.To(exampleSHA256Sum),
+					},
+					KernelPath: "/linux",
+					InitrdPath: "/initrd.gz",
+				},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("should reject firmware with both shasumURL and shasum", func() {
+			err := createBootSource(ctx, "invalid-firmware-both-checksums", isobootv1alpha1.BootSourceSpec{
+				Kernel: validKernel(),
+				Initrd: validInitrd(),
+				Firmware: &isobootv1alpha1.DownloadableResource{
+					URL:       debianFirmware,
+					ShasumURL: ptr.To(debianFwSHA512),
+					Shasum:    ptr.To(exampleSHA256Sum),
+				},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
 		It("should reject kernel without any checksum", func() {
 			err := createBootSource(ctx, "invalid-no-checksum", isobootv1alpha1.BootSourceSpec{
 				Kernel: &isobootv1alpha1.DownloadableResource{
