@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,7 +36,16 @@ var _ = Describe("BootSource Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: isobootv1alpha1.BootSourceSpec{
+						Kernel: &isobootv1alpha1.DownloadableResource{
+							URL:    "https://example.com/vmlinuz",
+							Shasum: ptr.To("abc123"),
+						},
+						Initrd: &isobootv1alpha1.DownloadableResource{
+							URL:    "https://example.com/initrd.gz",
+							Shasum: ptr.To("def456"),
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
