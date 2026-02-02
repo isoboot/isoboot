@@ -17,7 +17,11 @@ import (
 
 var _ = Describe("BootSource Controller", func() {
 	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+		const (
+			resourceName = "test-resource"
+			debianISO    = "https://ftp.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/mini.iso"
+			debianSHA256 = "https://ftp.debian.org/debian/dists/trixie/main/installer-amd64/current/images/SHA256SUMS"
+		)
 
 		ctx := context.Background()
 
@@ -37,13 +41,13 @@ var _ = Describe("BootSource Controller", func() {
 						Namespace: "default",
 					},
 					Spec: isobootv1alpha1.BootSourceSpec{
-						Kernel: &isobootv1alpha1.DownloadableResource{
-							URL:    "https://example.com/vmlinuz",
-							Shasum: ptr.To("abc123"),
-						},
-						Initrd: &isobootv1alpha1.DownloadableResource{
-							URL:    "https://example.com/initrd.gz",
-							Shasum: ptr.To("def456"),
+						ISO: &isobootv1alpha1.ISOSource{
+							DownloadableResource: isobootv1alpha1.DownloadableResource{
+								URL:       debianISO,
+								ShasumURL: ptr.To(debianSHA256),
+							},
+							KernelPath: "/linux",
+							InitrdPath: "/initrd.gz",
 						},
 					},
 				}
