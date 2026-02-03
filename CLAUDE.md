@@ -50,6 +50,8 @@ standalone library packages (with `httptest`, temp files, etc.).
 
 - **No force pushes** to `main`
 - **Pull requests required** for all changes to `main`
+- **All PRs must target `main`** — do not create PRs that merge into non-main branches
+  (no stacked PRs, no intermediate base branches like `pr/01-scaffold-v2`)
 - **Squash merge** is the preferred merge strategy
 - Commit messages should be concise and descriptive (imperative mood)
 - Branch naming: `feat/`, `fix/`, `docs/`, `refactor/`, `pr/` prefixes
