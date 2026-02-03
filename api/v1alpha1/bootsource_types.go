@@ -63,6 +63,8 @@ type ISOSource struct {
 }
 
 // BootSourceSpec defines the desired state of BootSource
+// +kubebuilder:validation:XValidation:rule="(has(self.kernel) && has(self.initrd)) || has(self.iso)",message="must specify either (kernel and initrd) or iso"
+// +kubebuilder:validation:XValidation:rule="!((has(self.kernel) || has(self.initrd)) && has(self.iso))",message="cannot specify both (kernel or initrd) and iso"
 type BootSourceSpec struct {
 	// Kernel specifies the kernel binary source
 	// +optional
