@@ -182,6 +182,9 @@ func (r *BootSourceReconciler) reconcileAllResources(
 			bs.Status.Resources["firmware"] = *status
 			currentFirmwareStatus = status
 		}
+	} else {
+		// Clean up stale firmware and derived artifacts when firmware is removed from spec
+		r.cleanupStaleArtifacts(bs, destDir)
 	}
 
 	// Build initrdWithFirmware only if firmware is specified AND both current reconciles succeeded
@@ -517,7 +520,7 @@ func worstPhase(phases []isobootv1alpha1.BootSourcePhase) isobootv1alpha1.BootSo
 }
 
 // extractFromISO extracts kernel and initrd from an ISO image.
-// Re-extracts if the ISO hash changes or if extracted files are missing/corrupted.
+// Re-extracts if the ISO hash changes, requested paths change, or extracted files are missing.
 func (r *BootSourceReconciler) extractFromISO(
 	ctx context.Context,
 	isoPath, isoShasum, kernelPath, initrdPath, destDir string,
@@ -702,7 +705,6 @@ func (r *BootSourceReconciler) reconcileInitrdWithFirmware(
 	expectedMarker := initrdShasum + "+" + firmwareShasum
 
 	// Check if existing file is valid and built from current sources
-	needBuild := true
 	if existingStatus != nil && existingStatus.Path != "" {
 		// Check marker file for source hashes
 		if markerData, err := os.ReadFile(markerFile); err == nil && string(markerData) == expectedMarker {
@@ -720,10 +722,6 @@ func (r *BootSourceReconciler) reconcileInitrdWithFirmware(
 		}
 	}
 
-	if !needBuild {
-		return isobootv1alpha1.BootSourcePhaseReady, existingStatus, nil
-	}
-
 	// Build initrdWithFirmware
 	log.Info("Building initrdWithFirmware", "initrd", initrdPath, "firmware", firmwarePath)
 	status, err := r.buildInitrdWithFirmware(initrdPath, firmwarePath, destPath)
@@ -737,4 +735,17 @@ func (r *BootSourceReconciler) reconcileInitrdWithFirmware(
 	}
 
 	return isobootv1alpha1.BootSourcePhaseReady, status, nil
+}
+
+// cleanupStaleArtifacts removes firmware and initrdWithFirmware status entries
+// and files when firmware is no longer specified in the spec.
+func (r *BootSourceReconciler) cleanupStaleArtifacts(bs *isobootv1alpha1.BootSource, destDir string) {
+	// Remove status entries
+	delete(bs.Status.Resources, "firmware")
+	delete(bs.Status.Resources, "initrdWithFirmware")
+
+	// Remove files (best effort, ignore errors)
+	_ = os.Remove(filepath.Join(destDir, "firmware"))
+	_ = os.Remove(filepath.Join(destDir, "initrdWithFirmware"))
+	_ = os.Remove(filepath.Join(destDir, ".initrdWithFirmware-sources"))
 }

@@ -593,8 +593,8 @@ var _ = Describe("BootSource Controller", func() {
 		})
 
 		It("should set Failed phase when ISO extraction fails", func() {
-			// Create an ISO that doesn't contain the expected paths
-			isoContent := createTestISOWithPaths("/different/path", "/another/path")
+			// Create an ISO that doesn't contain the expected paths (using different top-level filenames)
+			isoContent := createTestISOWithPaths("/otherlinux", "/otherinitrd")
 			isoHash := sha256sum(isoContent)
 
 			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {

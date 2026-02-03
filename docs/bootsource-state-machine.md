@@ -22,9 +22,10 @@ This document describes the state machine that governs BootSource resource lifec
 > - **ISO mode**: Implemented and tested
 > - **Building phase (firmware combining)**: Implemented and tested
 >
-> The current implementation performs download and verification synchronously within
-> a single reconcile, transitioning directly to the final phase (Ready/Failed/Corrupted)
-> rather than showing intermediate Downloading/Verifying phases.
+> The current implementation performs download, verification, extraction, and building
+> synchronously within a single reconcile, transitioning directly to the final phase
+> (Ready/Failed/Corrupted) rather than setting intermediate phases. Transitions marked
+> "(sync)" are implemented but the intermediate phase is not observable in status.
 
 | From | To | Condition | Tested |
 |------|-----|-----------|--------|
@@ -35,15 +36,15 @@ This document describes the state machine that governs BootSource resource lifec
 | Pending | Downloading | Reconciler starts processing | :x: (async) |
 | Downloading | Verifying | All downloads completed successfully | :x: (async) |
 | Downloading | Failed | Network error, HTTP error, or timeout | :x: (async) |
-| Verifying | Extracting | Hash verified, ISO mode, need to extract | :white_check_mark: |
-| Verifying | Building | Hash verified, firmware specified, need to combine | :white_check_mark: |
+| Verifying | Extracting | Hash verified, ISO mode, need to extract | :white_check_mark: (sync) |
+| Verifying | Building | Hash verified, firmware specified, need to combine | :white_check_mark: (sync) |
 | Verifying | Ready | Hash verified, no extraction or building needed | :x: (async) |
 | Verifying | Corrupted | Hash mismatch detected | :x: (async) |
-| Extracting | Building | Extraction complete, firmware specified | :white_check_mark: |
-| Extracting | Ready | Extraction complete, no firmware | :white_check_mark: |
-| Extracting | Failed | Extraction error (file not found, corrupt ISO) | :white_check_mark: |
-| Building | Ready | Initrd + firmware combined successfully | :white_check_mark: |
-| Building | Failed | Build error (I/O failure during concatenation) | :white_check_mark: |
+| Extracting | Building | Extraction complete, firmware specified | :white_check_mark: (sync) |
+| Extracting | Ready | Extraction complete, no firmware | :white_check_mark: (sync) |
+| Extracting | Failed | Extraction error (file not found, corrupt ISO) | :white_check_mark: (sync) |
+| Building | Ready | Initrd + firmware combined successfully | :white_check_mark: (sync) |
+| Building | Failed | Build error (I/O failure during concatenation) | :white_check_mark: (sync) |
 | Ready | Verifying | Re-verification triggered (e.g., file watcher) | :x: |
 | Corrupted | Downloading | Re-download triggered (manual or automatic) | :x: |
 
