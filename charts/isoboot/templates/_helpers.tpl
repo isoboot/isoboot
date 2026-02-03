@@ -81,3 +81,13 @@ Validate image pull policy
 {{- fail "image.pullPolicy must be one of: Always, IfNotPresent, Never" }}
 {{- end }}
 {{- end }}
+
+{{/*
+Validate replica count with leader election
+Running multiple replicas without leader election causes concurrent reconciliation conflicts.
+*/}}
+{{- define "isoboot.validateReplicaCount" -}}
+{{- if and (gt (int .Values.replicaCount) 1) (not .Values.controller.leaderElection.enabled) }}
+{{- fail "replicaCount > 1 requires controller.leaderElection.enabled=true to avoid concurrent reconciliation conflicts" }}
+{{- end }}
+{{- end }}

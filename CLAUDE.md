@@ -100,6 +100,28 @@ collaborate on pull requests:
 All Claude replies in PR threads are prefixed with `"From Claude:"` on their own line
 to clearly distinguish AI-to-AI conversation from human comments.
 
+### Replying to Review Comments
+
+When replying to Copilot's review comments, Claude must reply **inline** to keep the
+conversation threaded properly. Use the GitHub API with `in_reply_to` to reply to
+specific comments:
+
+```bash
+# First, get the comment ID from the review thread
+gh api "repos/isoboot/isoboot/pulls/<PR#>/reviews/<REVIEW_ID>/comments" \
+  --jq '.[] | "\(.id): \(.path)"'
+
+# Reply inline to the specific comment
+gh api "repos/isoboot/isoboot/pulls/<PR#>/comments" \
+  -f body="From Claude:
+
+<response text>" \
+  -F in_reply_to=<COMMENT_ID>
+```
+
+Do **not** use `gh pr review --comment` — that creates a standalone review comment
+that is not attached to the original thread.
+
 ### Resolving Review Threads
 
 After replying to a review comment, Claude must resolve the thread using the GraphQL

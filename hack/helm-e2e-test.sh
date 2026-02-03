@@ -159,8 +159,9 @@ else
 fi
 
 # Test 8: Chart upgrades successfully
+# Pin storage.hostPath.path to keep using the pre-created directory while changing baseDir
 log_info "Test 8: Chart upgrades successfully"
-if helm upgrade "${RELEASE_NAME}" "${CHART_PATH}" -n "${NAMESPACE}" --set controller.baseDir=/var/lib/isoboot-upgraded --wait --timeout 120s 2>&1; then
+if helm upgrade "${RELEASE_NAME}" "${CHART_PATH}" -n "${NAMESPACE}" --set controller.baseDir=/var/lib/isoboot-upgraded --set storage.hostPath.path=/var/lib/isoboot --wait --timeout 120s 2>&1; then
     log_pass "Chart upgrades successfully"
 else
     log_fail "Chart upgrades successfully"
