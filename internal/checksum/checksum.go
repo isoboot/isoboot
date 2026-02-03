@@ -222,3 +222,19 @@ func relativePath(fileURL, shasumURL string) (string, error) {
 func stripDotSlash(p string) string {
 	return strings.TrimPrefix(p, "./")
 }
+
+// ComputeFileHash reads the file at path and returns its SHA-256 hash as a hex string.
+func ComputeFileHash(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("opening file: %w", err)
+	}
+	defer f.Close() //nolint:errcheck // read-only file
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("reading file: %w", err)
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}

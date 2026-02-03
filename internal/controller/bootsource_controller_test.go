@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -65,6 +66,152 @@ const (
 	debianFwSHA512   = "https://cdimage.debian.org/cdimage/firmware/trixie/13.3.0/SHA512SUMS"
 	exampleSHA256Sum = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 )
+
+// createTestISO creates a minimal ISO 9660 image with /linux and /initrd.gz files.
+func createTestISO(tempDir string) []byte {
+	return createTestISOWithPaths(tempDir, "/linux", "/initrd.gz")
+}
+
+// createTestISOWithPaths creates a minimal ISO 9660 image with the specified paths.
+func createTestISOWithPaths(_ string, kernelPath, initrdPath string) []byte {
+	return createMinimalISO(kernelPath, initrdPath)
+}
+
+// createMinimalISO creates a minimal but valid ISO 9660 image in memory.
+func createMinimalISO(kernelPath, initrdPath string) []byte {
+	// ISO 9660 sector size
+	const sectorSize = 2048
+
+	// We need at least 17 sectors: 16 system area + 1 PVD
+	// Plus directory records and file data
+	kernelContent := []byte("test kernel content")
+	initrdContent := []byte("test initrd content")
+
+	// Calculate sectors needed
+	// Sector 16: Primary Volume Descriptor
+	// Sector 17: Root directory
+	// Sector 18+: File data
+	kernelSectors := (len(kernelContent) + sectorSize - 1) / sectorSize
+	initrdSectors := (len(initrdContent) + sectorSize - 1) / sectorSize
+
+	totalSectors := 19 + kernelSectors + initrdSectors
+	isoData := make([]byte, totalSectors*sectorSize)
+
+	// Write Primary Volume Descriptor at sector 16
+	pvd := isoData[16*sectorSize : 17*sectorSize]
+	pvd[0] = 1                              // Type: PVD
+	copy(pvd[1:6], "CD001")                 // Standard identifier
+	pvd[6] = 1                              // Version
+	copy(pvd[8:40], padString("", 32))      // System identifier
+	copy(pvd[40:72], padString("TEST", 32)) // Volume identifier
+
+	// Volume space size (little endian at 80, big endian at 84)
+	writeInt32Both(pvd[80:88], uint32(totalSectors))
+
+	// Set size (little endian at 120)
+	writeInt16Both(pvd[120:124], 1)
+
+	// Volume set size
+	writeInt16Both(pvd[124:128], 1)
+
+	// Volume sequence number
+	writeInt16Both(pvd[128:132], 1)
+
+	// Logical block size
+	writeInt16Both(pvd[132:136], sectorSize)
+
+	// Path table size (placeholder)
+	writeInt32Both(pvd[136:144], 10)
+
+	// Root directory record at offset 156 (34 bytes)
+	rootDir := pvd[156:190]
+	rootDir[0] = 34                            // Length of directory record
+	rootDir[1] = 0                             // Extended attribute record length
+	writeInt32Both(rootDir[2:10], 17)          // Location of extent (sector 17)
+	writeInt32Both(rootDir[10:18], sectorSize) // Data length
+	rootDir[25] = 0x02                         // File flags: directory
+	rootDir[32] = 1                            // File identifier length
+	rootDir[33] = 0                            // File identifier (root)
+
+	// Volume descriptor set terminator at sector 17 would go here,
+	// but for simplicity we'll put root directory at sector 17
+
+	// Write root directory at sector 17
+	rootDirData := isoData[17*sectorSize : 18*sectorSize]
+
+	// . entry (self)
+	offset := 0
+	dotEntry := rootDirData[offset : offset+34]
+	dotEntry[0] = 34
+	writeInt32Both(dotEntry[2:10], 17)
+	writeInt32Both(dotEntry[10:18], sectorSize)
+	dotEntry[25] = 0x02
+	dotEntry[32] = 1
+	dotEntry[33] = 0x00
+	offset += 34
+
+	// .. entry (parent, same as self for root)
+	dotDotEntry := rootDirData[offset : offset+34]
+	copy(dotDotEntry, dotEntry)
+	dotDotEntry[33] = 0x01
+	offset += 34
+
+	// linux file entry
+	kernelName := strings.TrimPrefix(kernelPath, "/")
+	kernelEntry := rootDirData[offset : offset+33+len(kernelName)+1]
+	kernelEntry[0] = byte(33 + len(kernelName) + (len(kernelName)+1)%2) // Record length (padded to even)
+	writeInt32Both(kernelEntry[2:10], 18)                               // Location at sector 18
+	writeInt32Both(kernelEntry[10:18], uint32(len(kernelContent)))
+	kernelEntry[25] = 0x00                  // File flags: regular file
+	kernelEntry[32] = byte(len(kernelName)) // File ID length
+	copy(kernelEntry[33:], kernelName+";1")
+	offset += int(kernelEntry[0])
+
+	// initrd.gz file entry
+	initrdName := strings.TrimPrefix(initrdPath, "/")
+	initrdEntry := rootDirData[offset : offset+33+len(initrdName)+3] // +3 for ";1" and padding
+	initrdEntry[0] = byte(33 + len(initrdName) + 2 + (len(initrdName))%2)
+	writeInt32Both(initrdEntry[2:10], uint32(18+kernelSectors))
+	writeInt32Both(initrdEntry[10:18], uint32(len(initrdContent)))
+	initrdEntry[25] = 0x00
+	initrdEntry[32] = byte(len(initrdName) + 2)
+	copy(initrdEntry[33:], initrdName+";1")
+
+	// Write file data
+	copy(isoData[18*sectorSize:], kernelContent)
+	copy(isoData[(18+kernelSectors)*sectorSize:], initrdContent)
+
+	return isoData
+}
+
+func padString(s string, length int) string {
+	if len(s) >= length {
+		return s[:length]
+	}
+	return s + strings.Repeat(" ", length-len(s))
+}
+
+func writeInt32Both(b []byte, v uint32) {
+	// Little endian
+	b[0] = byte(v)
+	b[1] = byte(v >> 8)
+	b[2] = byte(v >> 16)
+	b[3] = byte(v >> 24)
+	// Big endian
+	b[4] = byte(v >> 24)
+	b[5] = byte(v >> 16)
+	b[6] = byte(v >> 8)
+	b[7] = byte(v)
+}
+
+func writeInt16Both(b []byte, v uint16) {
+	// Little endian
+	b[0] = byte(v)
+	b[1] = byte(v >> 8)
+	// Big endian
+	b[2] = byte(v >> 8)
+	b[3] = byte(v)
+}
 
 // validKernel returns a DownloadableResource for the Debian netboot kernel.
 func validKernel() *isobootv1alpha1.DownloadableResource {
@@ -372,35 +519,374 @@ var _ = Describe("BootSource Controller", func() {
 				"test-hash-mismatch",
 				"test-network-failure",
 				"test-delete-cleanup",
+				"test-iso-extraction",
+				"test-iso-extraction-failure",
+				"test-iso-firmware",
+				"test-initrd-firmware-direct",
+				"test-initrd-firmware-rebuild",
+				"test-initrd-firmware-missing",
 			} {
 				deleteBootSource(ctx, name)
 			}
 		})
 
-		It("should skip ISO mode with pending status", func() {
-			Expect(createBootSource(ctx, "test-reconcile-iso", isobootv1alpha1.BootSourceSpec{
-				ISO:      validISO(),
-				Firmware: validFirmware(),
+		It("should reach Ready phase for ISO mode with extraction", func() {
+			isoContent := createTestISO(GinkgoT().TempDir())
+			isoHash := sha256sum(isoContent)
+
+			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
+				if url == debianSHA256 {
+					return fmt.Appendf(nil, "%s  mini.iso\n", isoHash), nil
+				}
+				return nil, fmt.Errorf("unexpected URL: %s", url)
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				if url == debianMiniISO {
+					return os.WriteFile(destPath, isoContent, 0o644)
+				}
+				return fmt.Errorf("unexpected URL: %s", url)
+			}
+
+			Expect(createBootSource(ctx, "test-iso-extraction", isobootv1alpha1.BootSourceSpec{
+				ISO: &isobootv1alpha1.ISOSource{
+					DownloadableResource: isobootv1alpha1.DownloadableResource{
+						URL:       debianMiniISO,
+						ShasumURL: ptr.To(debianSHA256),
+					},
+					KernelPath: "/linux",
+					InitrdPath: "/initrd.gz",
+				},
 			})).To(Succeed())
 
 			// First reconcile adds finalizer
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: "test-reconcile-iso", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-iso-extraction", Namespace: "default"},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(1 * time.Millisecond))
 
-			// Second reconcile sets ISO mode pending status
+			// Second reconcile downloads ISO and extracts
 			_, err = reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: "test-reconcile-iso", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-iso-extraction", Namespace: "default"},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify status
 			var bs isobootv1alpha1.BootSource
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-reconcile-iso", Namespace: "default"}, &bs)).To(Succeed())
-			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhasePending))
-			Expect(bs.Status.Message).To(ContainSubstring("ISO mode not yet implemented"))
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-iso-extraction", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			Expect(bs.Status.Resources).To(HaveKey("iso"))
+			Expect(bs.Status.Resources).To(HaveKey("kernel"))
+			Expect(bs.Status.Resources).To(HaveKey("initrd"))
+
+			// Verify extracted files exist
+			Expect(filepath.Join(tempDir, "default", "test-iso-extraction", "kernel")).To(BeAnExistingFile())
+			Expect(filepath.Join(tempDir, "default", "test-iso-extraction", "initrd")).To(BeAnExistingFile())
+		})
+
+		It("should set Failed phase when ISO extraction fails", func() {
+			// Create an ISO that doesn't contain the expected paths
+			isoContent := createTestISOWithPaths(GinkgoT().TempDir(), "/different/path", "/another/path")
+			isoHash := sha256sum(isoContent)
+
+			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
+				if url == debianSHA256 {
+					return fmt.Appendf(nil, "%s  mini.iso\n", isoHash), nil
+				}
+				return nil, fmt.Errorf("unexpected URL: %s", url)
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				if url == debianMiniISO {
+					return os.WriteFile(destPath, isoContent, 0o644)
+				}
+				return fmt.Errorf("unexpected URL: %s", url)
+			}
+
+			Expect(createBootSource(ctx, "test-iso-extraction-failure", isobootv1alpha1.BootSourceSpec{
+				ISO: &isobootv1alpha1.ISOSource{
+					DownloadableResource: isobootv1alpha1.DownloadableResource{
+						URL:       debianMiniISO,
+						ShasumURL: ptr.To(debianSHA256),
+					},
+					KernelPath: "/linux",     // This path doesn't exist in our test ISO
+					InitrdPath: "/initrd.gz", // This path doesn't exist either
+				},
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-iso-extraction-failure", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile downloads ISO but fails extraction
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-iso-extraction-failure", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(5 * time.Minute)) // Error requeue
+
+			// Verify status
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-iso-extraction-failure", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseFailed))
+			Expect(bs.Status.Message).To(ContainSubstring("extraction"))
+		})
+
+		It("should build initrdWithFirmware for ISO mode with firmware", func() {
+			isoContent := createTestISO(GinkgoT().TempDir())
+			isoHash := sha256sum(isoContent)
+			firmwareContent := []byte("firmware cpio content")
+			firmwareHash := sha512sum(firmwareContent)
+
+			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
+				if url == debianSHA256 {
+					return fmt.Appendf(nil, "%s  mini.iso\n", isoHash), nil
+				}
+				if url == debianFwSHA512 {
+					return fmt.Appendf(nil, "%s  firmware.cpio.gz\n", firmwareHash), nil
+				}
+				return nil, fmt.Errorf("unexpected URL: %s", url)
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				switch url {
+				case debianMiniISO:
+					return os.WriteFile(destPath, isoContent, 0o644)
+				case debianFirmware:
+					return os.WriteFile(destPath, firmwareContent, 0o644)
+				default:
+					return fmt.Errorf("unexpected URL: %s", url)
+				}
+			}
+
+			Expect(createBootSource(ctx, "test-iso-firmware", isobootv1alpha1.BootSourceSpec{
+				ISO: &isobootv1alpha1.ISOSource{
+					DownloadableResource: isobootv1alpha1.DownloadableResource{
+						URL:       debianMiniISO,
+						ShasumURL: ptr.To(debianSHA256),
+					},
+					KernelPath: "/linux",
+					InitrdPath: "/initrd.gz",
+				},
+				Firmware: validFirmware(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-iso-firmware", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile downloads, extracts, and builds initrdWithFirmware
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-iso-firmware", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify status
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-iso-firmware", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			Expect(bs.Status.Resources).To(HaveKey("initrdWithFirmware"))
+			Expect(bs.Status.Resources["initrdWithFirmware"].Path).NotTo(BeEmpty())
+
+			// Verify file exists
+			Expect(filepath.Join(tempDir, "default", "test-iso-firmware", "initrdWithFirmware")).To(BeAnExistingFile())
+		})
+
+		It("should build initrdWithFirmware for direct mode with firmware", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			firmwareContent := []byte("firmware cpio content")
+			kernelHash := sha256sum(kernelContent)
+			initrdHash := sha256sum(initrdContent)
+			firmwareHash := sha512sum(firmwareContent)
+
+			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
+				if url == debianSHA256 {
+					return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, initrdHash), nil
+				}
+				if url == debianFwSHA512 {
+					return fmt.Appendf(nil, "%s  firmware.cpio.gz\n", firmwareHash), nil
+				}
+				return nil, fmt.Errorf("unexpected URL: %s", url)
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				switch url {
+				case debianKernel:
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				case debianInitrd:
+					return os.WriteFile(destPath, initrdContent, 0o644)
+				case debianFirmware:
+					return os.WriteFile(destPath, firmwareContent, 0o644)
+				default:
+					return fmt.Errorf("unexpected URL: %s", url)
+				}
+			}
+
+			Expect(createBootSource(ctx, "test-initrd-firmware-direct", isobootv1alpha1.BootSourceSpec{
+				Kernel:   validKernel(),
+				Initrd:   validInitrd(),
+				Firmware: validFirmware(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-initrd-firmware-direct", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile downloads and builds initrdWithFirmware
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-initrd-firmware-direct", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify status
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-initrd-firmware-direct", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			Expect(bs.Status.Resources).To(HaveKey("initrdWithFirmware"))
+
+			// Verify initrdWithFirmware has correct concatenated content
+			combinedPath := filepath.Join(tempDir, "default", "test-initrd-firmware-direct", "initrdWithFirmware")
+			Expect(combinedPath).To(BeAnExistingFile())
+
+			combinedContent, err := os.ReadFile(combinedPath)
+			Expect(err).NotTo(HaveOccurred())
+			expectedContent := append(initrdContent, firmwareContent...)
+			Expect(combinedContent).To(Equal(expectedContent))
+		})
+
+		It("should rebuild corrupted initrdWithFirmware", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			firmwareContent := []byte("firmware cpio content")
+			kernelHash := sha256sum(kernelContent)
+			initrdHash := sha256sum(initrdContent)
+			firmwareHash := sha512sum(firmwareContent)
+
+			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
+				if url == debianSHA256 {
+					return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, initrdHash), nil
+				}
+				if url == debianFwSHA512 {
+					return fmt.Appendf(nil, "%s  firmware.cpio.gz\n", firmwareHash), nil
+				}
+				return nil, fmt.Errorf("unexpected URL: %s", url)
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				switch url {
+				case debianKernel:
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				case debianInitrd:
+					return os.WriteFile(destPath, initrdContent, 0o644)
+				case debianFirmware:
+					return os.WriteFile(destPath, firmwareContent, 0o644)
+				default:
+					return fmt.Errorf("unexpected URL: %s", url)
+				}
+			}
+
+			Expect(createBootSource(ctx, "test-initrd-firmware-rebuild", isobootv1alpha1.BootSourceSpec{
+				Kernel:   validKernel(),
+				Initrd:   validInitrd(),
+				Firmware: validFirmware(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-initrd-firmware-rebuild", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile builds initrdWithFirmware
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-initrd-firmware-rebuild", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Corrupt the initrdWithFirmware file
+			combinedPath := filepath.Join(tempDir, "default", "test-initrd-firmware-rebuild", "initrdWithFirmware")
+			Expect(os.WriteFile(combinedPath, []byte("corrupted"), 0o644)).To(Succeed())
+
+			// Third reconcile should detect corruption and rebuild
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-initrd-firmware-rebuild", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify file was rebuilt correctly
+			combinedContent, err := os.ReadFile(combinedPath)
+			Expect(err).NotTo(HaveOccurred())
+			expectedContent := append(initrdContent, firmwareContent...)
+			Expect(combinedContent).To(Equal(expectedContent))
+		})
+
+		It("should rebuild missing initrdWithFirmware", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			firmwareContent := []byte("firmware cpio content")
+			kernelHash := sha256sum(kernelContent)
+			initrdHash := sha256sum(initrdContent)
+			firmwareHash := sha512sum(firmwareContent)
+
+			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
+				if url == debianSHA256 {
+					return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, initrdHash), nil
+				}
+				if url == debianFwSHA512 {
+					return fmt.Appendf(nil, "%s  firmware.cpio.gz\n", firmwareHash), nil
+				}
+				return nil, fmt.Errorf("unexpected URL: %s", url)
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				switch url {
+				case debianKernel:
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				case debianInitrd:
+					return os.WriteFile(destPath, initrdContent, 0o644)
+				case debianFirmware:
+					return os.WriteFile(destPath, firmwareContent, 0o644)
+				default:
+					return fmt.Errorf("unexpected URL: %s", url)
+				}
+			}
+
+			Expect(createBootSource(ctx, "test-initrd-firmware-missing", isobootv1alpha1.BootSourceSpec{
+				Kernel:   validKernel(),
+				Initrd:   validInitrd(),
+				Firmware: validFirmware(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-initrd-firmware-missing", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile builds initrdWithFirmware
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-initrd-firmware-missing", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Delete the initrdWithFirmware file
+			combinedPath := filepath.Join(tempDir, "default", "test-initrd-firmware-missing", "initrdWithFirmware")
+			Expect(os.Remove(combinedPath)).To(Succeed())
+
+			// Third reconcile should detect missing file and rebuild
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-initrd-firmware-missing", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify file was rebuilt
+			Expect(combinedPath).To(BeAnExistingFile())
+			combinedContent, err := os.ReadFile(combinedPath)
+			Expect(err).NotTo(HaveOccurred())
+			expectedContent := append(initrdContent, firmwareContent...)
+			Expect(combinedContent).To(Equal(expectedContent))
 		})
 
 		It("should reach Ready phase for kernel+initrd", func() {

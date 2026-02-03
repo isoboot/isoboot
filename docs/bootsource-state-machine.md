@@ -19,8 +19,8 @@ This document describes the state machine that governs BootSource resource lifec
 
 > **Implementation Status:**
 > - **Direct mode (kernel+initrd)**: Implemented and tested
-> - **ISO mode**: Not yet implemented (returns Pending)
-> - **Building phase (firmware combining)**: Not yet implemented
+> - **ISO mode**: Implemented and tested
+> - **Building phase (firmware combining)**: Implemented and tested
 >
 > The current implementation performs download and verification synchronously within
 > a single reconcile, transitioning directly to the final phase (Ready/Failed/Corrupted)
@@ -35,15 +35,15 @@ This document describes the state machine that governs BootSource resource lifec
 | Pending | Downloading | Reconciler starts processing | :x: (async) |
 | Downloading | Verifying | All downloads completed successfully | :x: (async) |
 | Downloading | Failed | Network error, HTTP error, or timeout | :x: (async) |
-| Verifying | Extracting | Hash verified, ISO mode, need to extract | :x: |
-| Verifying | Building | Hash verified, firmware specified, need to combine | :x: |
+| Verifying | Extracting | Hash verified, ISO mode, need to extract | :white_check_mark: |
+| Verifying | Building | Hash verified, firmware specified, need to combine | :white_check_mark: |
 | Verifying | Ready | Hash verified, no extraction or building needed | :x: (async) |
 | Verifying | Corrupted | Hash mismatch detected | :x: (async) |
-| Extracting | Building | Extraction complete, firmware specified | :x: |
-| Extracting | Ready | Extraction complete, no firmware | :x: |
-| Extracting | Failed | Extraction error (file not found, corrupt ISO) | :x: |
-| Building | Ready | Initrd + firmware combined successfully | :x: |
-| Building | Failed | Build error (cpio/gzip failure) | :x: |
+| Extracting | Building | Extraction complete, firmware specified | :white_check_mark: |
+| Extracting | Ready | Extraction complete, no firmware | :white_check_mark: |
+| Extracting | Failed | Extraction error (file not found, corrupt ISO) | :white_check_mark: |
+| Building | Ready | Initrd + firmware combined successfully | :white_check_mark: |
+| Building | Failed | Build error (cpio/gzip failure) | :white_check_mark: |
 | Ready | Verifying | Re-verification triggered (e.g., file watcher) | :x: |
 | Corrupted | Downloading | Re-download triggered (manual or automatic) | :x: |
 
