@@ -155,6 +155,19 @@ func TestParseShasumFile_DotSlashPrefixStripping(t *testing.T) {
 	}
 }
 
+func TestParseShasumFile_UppercaseHash(t *testing.T) {
+	content := `AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA  myfile.iso`
+	fileURL := testFileURL
+
+	hash, err := ParseShasumFile(content, fileURL, testShasumURL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hash != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Errorf("expected lowercase hash, got %s", hash)
+	}
+}
+
 func TestParseShasumFile_CommentLinesSkipped(t *testing.T) {
 	content := `# This is a comment
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  myfile.iso`
