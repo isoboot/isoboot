@@ -49,6 +49,7 @@ type mockHTTPServer struct {
 	kernelDownloads   int
 	initrdDownloads   int
 	firmwareDownloads int
+	isoDownloads      int
 }
 
 // newMockHTTPServer creates a mock HTTPS server with fake boot resources.
@@ -138,10 +139,11 @@ func newMockHTTPServer() *mockHTTPServer {
 
 	// Serve ISO
 	mux.HandleFunc("/boot.iso", func(w http.ResponseWriter, _ *http.Request) {
-		m.mu.RLock()
+		m.mu.Lock()
+		m.isoDownloads++
 		fail := m.failISO
 		status := m.httpStatusCode
-		m.mu.RUnlock()
+		m.mu.Unlock()
 
 		if fail {
 			if status == 0 {
@@ -244,6 +246,7 @@ func (m *mockHTTPServer) ResetDownloadCounts() {
 	m.kernelDownloads = 0
 	m.initrdDownloads = 0
 	m.firmwareDownloads = 0
+	m.isoDownloads = 0
 }
 
 var _ = Describe("BootSource Integration", func() {
