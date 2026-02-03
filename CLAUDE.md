@@ -84,7 +84,11 @@ monitor that:
 4. If Copilot does not respond within **15 minutes**, posts a PR comment:
    `"From Claude: Copilot did not respond within 15 minutes of the review request."`
 
-**Important**: When parsing review data from `gh api`, use separate `--jq` queries for
-each field (e.g., `.[-1].submitted_at`, `.[-1].user.login`, `.[-1].body`). Do **not**
-combine fields into a delimited string with `cut -d'|'` — Copilot review bodies contain
-`|` characters from markdown tables which corrupt the parsing.
+**Important pitfalls when polling reviews:**
+
+- Use separate `--jq` queries per field (`.[-1].submitted_at`, `.[-1].user.login`,
+  `.[-1].body`). Do **not** combine into a delimited string with `cut -d'|'` — Copilot
+  review bodies contain `|` from markdown tables which corrupts parsing.
+- Always use `?per_page=100` when fetching reviews — the GitHub API defaults to 30
+  results per page, so `.[-1]` may not return the actual latest review on PRs with
+  many review rounds.
