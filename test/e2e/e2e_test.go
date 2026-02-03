@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -37,8 +37,12 @@ var _ = Describe("Manager", Ordered, func() {
 	// and deploying the controller.
 	BeforeAll(func() {
 		By("creating manager namespace")
-		cmd := exec.Command("kubectl", "create", "ns", namespace)
-		_, err := utils.Run(cmd)
+		cmd := exec.Command("kubectl", "create", "ns", namespace, "--dry-run=client", "-o", "yaml")
+		nsYAML, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to generate namespace YAML")
+		cmd = exec.Command("kubectl", "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(nsYAML)
+		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
 
 		By("labeling the namespace to enforce the restricted security policy")
@@ -62,7 +66,11 @@ var _ = Describe("Manager", Ordered, func() {
 	// and deleting the namespace.
 	AfterAll(func() {
 		By("cleaning up the curl pod for metrics")
-		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
+		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace, "--ignore-not-found")
+		_, _ = utils.Run(cmd)
+
+		By("cleaning up the metrics ClusterRoleBinding")
+		cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName, "--ignore-not-found")
 		_, _ = utils.Run(cmd)
 
 		By("undeploying the controller-manager")
@@ -162,8 +170,13 @@ var _ = Describe("Manager", Ordered, func() {
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
 				"--clusterrole=isoboot-metrics-reader",
 				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
+				"--dry-run=client", "-o", "yaml",
 			)
-			_, err := utils.Run(cmd)
+			crbYAML, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to generate ClusterRoleBinding YAML")
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(crbYAML)
+			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
 
 			By("validating that the metrics service is available")
@@ -201,13 +214,13 @@ var _ = Describe("Manager", Ordered, func() {
 			By("creating the curl-metrics pod to access the metrics endpoint")
 			cmd = exec.Command("kubectl", "run", "curl-metrics", "--restart=Never",
 				"--namespace", namespace,
-				"--image=curlimages/curl:latest",
+				"--image=curlimages/curl:8.5.0",
 				"--overrides",
 				fmt.Sprintf(`{
 					"spec": {
 						"containers": [{
 							"name": "curl",
-							"image": "curlimages/curl:latest",
+							"image": "curlimages/curl:8.5.0",
 							"command": ["/bin/sh", "-c"],
 							"args": ["curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics"],
 							"securityContext": {
@@ -273,12 +286,18 @@ func serviceAccountToken() (string, error) {
 		"kind": "TokenRequest"
 	}`
 
-	// Temporary file to store the token request
-	secretName := fmt.Sprintf("%s-token-request", serviceAccountName)
-	tokenRequestFile := filepath.Join("/tmp", secretName)
-	err := os.WriteFile(tokenRequestFile, []byte(tokenRequestRawString), os.FileMode(0o644))
+	// Create a unique temporary file for the token request
+	tokenRequestFile, err := os.CreateTemp("", "token-request-*.json")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tokenRequestFile.Name())
+
+	if _, err := tokenRequestFile.WriteString(tokenRequestRawString); err != nil {
+		return "", fmt.Errorf("failed to write token request: %w", err)
+	}
+	if err := tokenRequestFile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close temp file: %w", err)
 	}
 
 	var out string
@@ -288,7 +307,7 @@ func serviceAccountToken() (string, error) {
 			"/api/v1/namespaces/%s/serviceaccounts/%s/token",
 			namespace,
 			serviceAccountName,
-		), "-f", tokenRequestFile)
+		), "-f", tokenRequestFile.Name())
 
 		output, err := cmd.CombinedOutput()
 		g.Expect(err).NotTo(HaveOccurred())
@@ -302,7 +321,7 @@ func serviceAccountToken() (string, error) {
 	}
 	Eventually(verifyTokenCreation).Should(Succeed())
 
-	return out, err
+	return out, nil
 }
 
 // getMetricsOutput retrieves and returns the logs from the curl pod used to access the metrics endpoint.
