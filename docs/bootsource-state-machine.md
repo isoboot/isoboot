@@ -21,11 +21,15 @@ This document describes the state machine that governs BootSource resource lifec
 > - **Direct mode (kernel+initrd)**: Implemented and tested
 > - **ISO mode**: Implemented and tested
 > - **Building phase (firmware combining)**: Implemented and tested
+> - **File watcher integration**: Implemented and tested
 >
 > The current implementation performs download, verification, extraction, and building
 > synchronously within a single reconcile, transitioning directly to the final phase
 > (Ready/Failed/Corrupted) rather than setting intermediate phases. Transitions marked
 > "(sync)" are implemented but the intermediate phase is not observable in status.
+>
+> File watcher integration enables automatic reconciliation when watched files change,
+> supporting the Ready → Verifying transition triggered by file modifications.
 
 | From | To | Condition | Tested |
 |------|-----|-----------|--------|
@@ -45,7 +49,7 @@ This document describes the state machine that governs BootSource resource lifec
 | Extracting | Failed | Extraction error (file not found, corrupt ISO) | :white_check_mark: (sync) |
 | Building | Ready | Initrd + firmware combined successfully | :white_check_mark: (sync) |
 | Building | Failed | Build error (I/O failure during concatenation) | :white_check_mark: (sync) |
-| Ready | Verifying | Re-verification triggered (e.g., file watcher) | :x: |
+| Ready | Verifying | Re-verification triggered (e.g., file watcher) | :white_check_mark: |
 | Corrupted | Downloading | Re-download triggered (manual or automatic) | :x: |
 
 ## Terminal States

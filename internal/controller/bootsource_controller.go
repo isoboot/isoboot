@@ -14,14 +14,18 @@ import (
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/checksum"
 	"github.com/isoboot/isoboot/internal/downloader"
+	"github.com/isoboot/isoboot/internal/filewatcher"
 	"github.com/isoboot/isoboot/internal/isoextract"
 )
 
@@ -52,8 +56,9 @@ func (f *HTTPResourceFetcher) Download(ctx context.Context, url, destPath string
 type BootSourceReconciler struct {
 	client.Client
 	Scheme  *runtime.Scheme
-	BaseDir string          // Base directory for storing downloaded resources
-	Fetcher ResourceFetcher // Fetcher for downloads (uses default HTTP fetcher if nil)
+	BaseDir string               // Base directory for storing downloaded resources
+	Fetcher ResourceFetcher      // Fetcher for downloads (uses default HTTP fetcher if nil)
+	Watcher *filewatcher.Watcher // File watcher for triggering reconciles on file changes
 }
 
 const (
@@ -140,6 +145,18 @@ func (r *BootSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Update status
 	if err := r.Status().Update(ctx, &bs); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	// Register file watches for all local paths
+	if r.Watcher != nil {
+		key := types.NamespacedName{Namespace: bs.Namespace, Name: bs.Name}
+		for _, rs := range bs.Status.Resources {
+			if rs.Path != "" {
+				if err := r.Watcher.Watch(rs.Path, key); err != nil {
+					log.Error(err, "failed to watch path", "path", rs.Path)
+				}
+			}
+		}
 	}
 
 	return resultForPhase(overallPhase), nil
@@ -323,10 +340,17 @@ func buildStatusMessage(phase isobootv1alpha1.BootSourcePhase, messages []string
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *BootSourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&isobootv1alpha1.BootSource{}).
-		Named("bootsource").
-		Complete(r)
+		Named("bootsource")
+
+	if r.Watcher != nil {
+		builder = builder.WatchesRawSource(
+			source.TypedChannel(r.Watcher.Events(), &handler.TypedEnqueueRequestForObject[client.Object]{}),
+		)
+	}
+
+	return builder.Complete(r)
 }
 
 // resultForPhase returns the appropriate ctrl.Result for a given phase.
@@ -344,6 +368,14 @@ func resultForPhase(phase isobootv1alpha1.BootSourcePhase) ctrl.Result {
 
 // handleDeletion cleans up resources when a BootSource is deleted.
 func (r *BootSourceReconciler) handleDeletion(_ context.Context, bs *isobootv1alpha1.BootSource) error {
+	// Unwatch all paths for this CR before cleanup
+	if r.Watcher != nil {
+		r.Watcher.UnwatchAll(types.NamespacedName{
+			Namespace: bs.Namespace,
+			Name:      bs.Name,
+		})
+	}
+
 	if r.BaseDir == "" {
 		return nil // Nothing to clean up if BaseDir is not configured
 	}

@@ -21,6 +21,7 @@ import (
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/controller"
+	"github.com/isoboot/isoboot/internal/filewatcher"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -45,6 +46,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var baseDir string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -63,6 +65,8 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(&baseDir, "base-dir", "/var/lib/isoboot",
+		"Base directory for storing downloaded boot resources")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -162,9 +166,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create filewatcher for monitoring downloaded resources
+	fw, err := filewatcher.New(100)
+	if err != nil {
+		setupLog.Error(err, "unable to create filewatcher")
+		os.Exit(1)
+	}
+
+	// Start filewatcher in background goroutine
+	ctx := ctrl.SetupSignalHandler()
+	go func() {
+		if err := fw.Start(ctx); err != nil {
+			setupLog.Error(err, "filewatcher error")
+		}
+	}()
+
 	if err := (&controller.BootSourceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:  mgr.GetClient(),
+		Scheme:  mgr.GetScheme(),
+		BaseDir: baseDir,
+		Watcher: fw,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BootSource")
 		os.Exit(1)
@@ -181,7 +202,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
