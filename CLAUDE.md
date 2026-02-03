@@ -62,8 +62,18 @@ to clearly distinguish AI-to-AI conversation from human comments.
 
 ### Re-requesting Copilot Review
 
-After pushing changes that address review feedback, Claude must explicitly re-request
-Copilot review rather than relying solely on `review_on_push`. This is done by
-attempting `gh pr edit --add-reviewer copilot-pull-request-reviewer` (falling back to
-the GraphQL `requestReviews` mutation with bot ID `BOT_kgDOCnlnWA` if needed). If
-neither method works, adding a PR comment `@copilot review` can prompt re-review.
+After pushing changes that address review feedback, Claude must **always** explicitly
+re-request Copilot review using:
+
+```
+gh pr edit <PR#> --add-reviewer 'copilot-pull-request-reviewer[bot]'
+```
+
+The `[bot]` suffix is required. Do **not** use any other method (closing/reopening the
+PR, `@copilot review` comments, or the GraphQL `requestReviews` mutation).
+
+### Handling Copilot Review Errors
+
+If Copilot responds with `"Copilot encountered an error and was unable to review this
+pull request"`, Claude must immediately re-request the review using the same command
+above. Retry up to 3 times with a short delay between attempts.
