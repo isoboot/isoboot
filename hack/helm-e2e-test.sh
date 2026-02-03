@@ -235,10 +235,16 @@ fi
 
 # Test 11: Pod fails to start with invalid image
 log_info "Test 11: Pod fails to start with invalid image"
-helm install "${RELEASE_NAME}-neg2" "${CHART_PATH}" -n "${NAMESPACE}" \
+set +e
+INSTALL_OUTPUT_NEG2=$(helm install "${RELEASE_NAME}-neg2" "${CHART_PATH}" -n "${NAMESPACE}" \
     --set image.repository=invalid-registry.example.com/nonexistent \
     --set image.tag=v999.999.999 \
-    --timeout 30s 2>/dev/null || true
+    --timeout 30s 2>&1)
+INSTALL_EXIT_NEG2=$?
+set -e
+if [[ "${INSTALL_EXIT_NEG2}" -ne 0 ]]; then
+    log_fail "Helm install for invalid image test (Test 11) failed unexpectedly: ${INSTALL_OUTPUT_NEG2}"
+fi
 
 # Poll for pod to be created and enter image pull error state (up to 60s)
 POD_STATUS=""
@@ -260,7 +266,13 @@ helm uninstall "${RELEASE_NAME}-neg2" -n "${NAMESPACE}" 2>/dev/null || true
 # Test 12: Pod liveness probe is configured for restart
 # Note: Not using --wait since controller image may not exist; just check rendered probe config
 log_info "Test 12: Pod liveness probe is configured for restart"
-helm install "${RELEASE_NAME}-neg3" "${CHART_PATH}" -n "${NAMESPACE}" 2>/dev/null || true
+set +e
+INSTALL_OUTPUT_NEG3=$(helm install "${RELEASE_NAME}-neg3" "${CHART_PATH}" -n "${NAMESPACE}" 2>&1)
+INSTALL_EXIT_NEG3=$?
+set -e
+if [[ "${INSTALL_EXIT_NEG3}" -ne 0 ]]; then
+    log_fail "Helm install for liveness probe test (Test 12) failed unexpectedly: ${INSTALL_OUTPUT_NEG3}"
+fi
 # Wait for pod to be created
 POD_NAME=""
 for i in $(seq 1 30); do
