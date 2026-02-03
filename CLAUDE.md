@@ -32,6 +32,20 @@ make clean   # rm -f bin/*
 These targets will expand as kubebuilder scaffolding is added (e.g., `make manifests`,
 `make generate`, `make docker-build`).
 
+## Testing Convention
+
+All tests use **Ginkgo + Gomega**, consistent with controller-runtime and kubebuilder
+conventions. This applies to both controller integration tests (with envtest) and
+standalone library packages (with `httptest`, temp files, etc.).
+
+- Each package has a `suite_test.go` with `RunSpecs` as the entry point
+- Set `reporterConfig.Verbose = true` in `RunSpecs` so individual spec names appear
+  in CI output (do **not** pass `-ginkgo.v` via CLI — it breaks non-ginkgo binaries
+  if any exist)
+- Use `Describe`/`Context`/`It` blocks for readable spec names
+- Use `Eventually`/`Consistently` for async assertions in controller tests
+- Use `BeforeEach`/`AfterEach` for per-test setup/teardown
+
 ## Git Conventions
 
 - **No force pushes** to `main`
@@ -92,6 +106,12 @@ monitor that:
 - Always use `?per_page=100` when fetching reviews — the GitHub API defaults to 30
   results per page, so `.[-1]` may not return the actual latest review on PRs with
   many review rounds.
+- When a new Copilot review is detected, **always fetch the review's comments using
+  its review ID** (`/reviews/<ID>/comments`). Do **not** use date-based filtering on
+  `/pulls/<PR>/comments` — timestamps can be unreliable and cause comment counts to
+  show as zero even when comments exist. After fetching, Claude must immediately
+  process any comments (agree/disagree/out-of-scope) before waiting for the next
+  review cycle.
 
 ### CI Checks
 
@@ -101,7 +121,7 @@ inspect any failures using `gh run view <RUN_ID> --log-failed`. Common CI jobs:
 - **Lint** (`lint.yml`): Runs `golangci-lint`. Fix all reported issues (errcheck,
   goconst, modernize, prealloc, etc.) before pushing again.
 - **Tests** (`test.yml`): Runs `make test`. Ensure all packages compile and all tests
-  pass. Non-ginkgo test packages must not receive `-ginkgo.v` flags.
+  pass.
 - **E2E Tests** (`test-e2e.yml`): Runs `make test-e2e` with a Kind cluster.
 
 If CI fails, Claude must fix the issues, commit, push, and re-request Copilot review.
