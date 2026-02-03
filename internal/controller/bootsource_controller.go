@@ -1,3 +1,67 @@
+// Package controller implements the BootSource reconciliation logic.
+//
+// # BootSource State Machine
+//
+// The BootSource controller manages the lifecycle of boot resources through
+// the following phases:
+//
+//	Pending      - Initial state when BootSource is created
+//	Downloading  - Fetching kernel, initrd, ISO, and/or firmware from URLs
+//	Verifying    - Validating downloaded files against checksums
+//	Extracting   - Extracting kernel/initrd from ISO (ISO mode only)
+//	Building     - Combining initrd with firmware (when firmware specified)
+//	Ready        - All resources available and verified
+//	Corrupted    - Checksum verification failed
+//	Failed       - Unrecoverable error occurred
+//
+// # State Transitions
+//
+// The following table documents all valid state transitions and their conditions.
+//
+// NOTE: State transition logic is NOT YET IMPLEMENTED. The Reconcile function
+// is currently a stub. Tests for these transitions do not exist yet.
+//
+//	From         To            Condition
+//	──────────── ───────────── ─────────────────────────────────────────────────
+//	(new)        Pending       BootSource created
+//	Pending      Downloading   Reconciler starts processing
+//	Downloading  Verifying     All downloads completed successfully
+//	Downloading  Failed        Network error, HTTP error, or timeout
+//	Verifying    Extracting    Hash verified, ISO mode, need to extract
+//	Verifying    Building      Hash verified, firmware specified, need to combine
+//	Verifying    Ready         Hash verified, no extraction or building needed
+//	Verifying    Corrupted     Hash mismatch detected
+//	Extracting   Building      Extraction complete, firmware specified
+//	Extracting   Ready         Extraction complete, no firmware
+//	Extracting   Failed        Extraction error (file not found, corrupt ISO)
+//	Building     Ready         Initrd + firmware combined successfully
+//	Building     Failed        Build error (cpio/gzip failure)
+//	Ready        Verifying     Re-verification triggered (e.g., file watcher)
+//	Corrupted    Downloading   Re-download triggered (manual or automatic)
+//
+// # Terminal States
+//
+//   - Ready: Success state, resources available for PXE/iPXE serving
+//   - Failed: Unrecoverable error, requires spec change or manual intervention
+//   - Corrupted: Recoverable error, can retry download
+//
+// # Mode-Specific Flows
+//
+// Kernel + Initrd mode (no firmware):
+//
+//	Pending → Downloading → Verifying → Ready
+//
+// Kernel + Initrd mode (with firmware):
+//
+//	Pending → Downloading → Verifying → Building → Ready
+//
+// ISO mode (no firmware):
+//
+//	Pending → Downloading → Verifying → Extracting → Ready
+//
+// ISO mode (with firmware):
+//
+//	Pending → Downloading → Verifying → Extracting → Building → Ready
 package controller
 
 import (
