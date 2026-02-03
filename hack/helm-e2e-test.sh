@@ -105,9 +105,19 @@ else
     log_fail "Deployment is created"
 fi
 
+# Wait for pod to be created (may take a moment after deployment)
+log_info "Waiting for pod to be created..."
+POD_NAME=""
+for i in $(seq 1 30); do
+    POD_NAME=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [[ -n "${POD_NAME}" ]]; then
+        break
+    fi
+    sleep 2
+done
+
 # Test 3: Pod runs as non-root user
 log_info "Test 3: Pod runs as non-root user"
-POD_NAME=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 if [[ -n "${POD_NAME}" ]]; then
     RUN_AS_USER=$(kubectl get pod "${POD_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.containers[0].securityContext.runAsUser}' 2>/dev/null || echo "")
     if [[ "${RUN_AS_USER}" == "65532" ]]; then
