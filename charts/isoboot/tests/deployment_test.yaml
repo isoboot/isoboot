@@ -209,3 +209,29 @@ tests:
       - equal:
           path: spec.selector.matchLabels["app.kubernetes.io/component"]
           value: controller
+
+  # Init container tests
+  - it: should not include init container by default
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+
+  - it: should include init container when hostPath fixPermissions is enabled
+    set:
+      storage.type: hostPath
+      storage.hostPath.fixPermissions: true
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: fix-permissions
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.runAsUser
+          value: 0
+
+  - it: should not include init container for PVC storage even with fixPermissions
+    set:
+      storage.type: pvc
+      storage.hostPath.fixPermissions: true
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers

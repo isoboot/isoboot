@@ -23,11 +23,19 @@ controller:
 # Storage configuration for boot files
 storage:
   # Type of storage: "hostPath" or "pvc"
+  # Note: For hostPath, ensure the directory is writable by UID 65532 (the non-root user).
+  # PVC with fsGroup is recommended for production as it handles permissions automatically.
   type: hostPath
   # hostPath configuration (used when type: hostPath)
+  # WARNING: kubelet creates DirectoryOrCreate as root-owned. You must either:
+  # - Pre-create and chown the directory to 65532:65532, OR
+  # - Set storage.hostPath.fixPermissions=true to use an init container, OR
+  # - Use storage.type=pvc which handles permissions via fsGroup
   hostPath:
     path: /var/lib/isoboot
     type: DirectoryOrCreate
+    # Enable init container to fix hostPath permissions (requires privileged access)
+    fixPermissions: false
   # PVC configuration (used when type: pvc)
   pvc:
     # Name of existing PVC to use (leave empty to create one)
@@ -54,6 +62,8 @@ podAnnotations: {}
 # Pod security context
 podSecurityContext:
   runAsNonRoot: true
+  # fsGroup ensures mounted volumes are writable by the non-root user
+  fsGroup: 65532
   seccompProfile:
     type: RuntimeDefault
 
