@@ -138,7 +138,9 @@ monitor that:
 2. If Copilot responds with an error (`"Copilot encountered an error and was unable to
    review this pull request"`), re-requests the review immediately and resets the timer
 3. If Copilot posts a review with comments, reports any unresolved threads
-4. If Copilot does not respond within **25 minutes**, posts a PR comment:
+4. **After addressing comments and pushing fixes**, the monitor must continue watching
+   for the next Copilot review (triggered by the new push), not exit on success
+5. If Copilot does not respond within **25 minutes**, posts a PR comment:
    `"From Claude: Copilot did not respond within 25 minutes of the review request."`
 
 **Important pitfalls when polling reviews:**
@@ -149,6 +151,10 @@ monitor that:
 - Always use `?per_page=100` when fetching reviews — the GitHub API defaults to 30
   results per page, so `.[-1]` may not return the actual latest review on PRs with
   many review rounds.
+- When checking for Copilot errors, match the **exact** string `"Copilot encountered
+  an error"` — do **not** use a generic grep for "error" because legitimate reviews
+  often contain phrases like "error handling" or "error paths" which cause false
+  positives.
 - When a new Copilot review is detected, **always fetch the review's comments using
   its review ID** (`/reviews/<ID>/comments`). Do **not** use date-based filtering on
   `/pulls/<PR>/comments` — timestamps can be unreliable and cause comment counts to

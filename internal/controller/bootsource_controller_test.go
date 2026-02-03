@@ -3,11 +3,13 @@ package controller
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -20,6 +22,18 @@ import (
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
+
+// sha256sum computes the SHA-256 hash of data and returns it as a hex string.
+func sha256sum(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
+}
+
+// sha512sum computes the SHA-512 hash of data and returns it as a hex string.
+func sha512sum(data []byte) string {
+	hash := sha512.Sum512(data)
+	return hex.EncodeToString(hash[:])
+}
 
 // mockFetcher is a test double for ResourceFetcher.
 type mockFetcher struct {
@@ -330,32 +344,309 @@ var _ = Describe("BootSource Controller", func() {
 		})
 	})
 
-	// ── Reconciliation test ─────────────────────────────────────────────
+	// ── Reconciliation tests ────────────────────────────────────────────
 
 	Context("Reconciliation", func() {
-		const resourceName = "test-reconcile"
 		ctx := context.Background()
+		var tempDir string
+		var fetcher *mockFetcher
+		var reconciler *BootSourceReconciler
 
 		BeforeEach(func() {
-			Expect(createBootSource(ctx, resourceName, isobootv1alpha1.BootSourceSpec{
-				ISO:      validISO(),
-				Firmware: validFirmware(),
-			})).To(Succeed())
+			tempDir = GinkgoT().TempDir()
+			fetcher = &mockFetcher{}
+			reconciler = &BootSourceReconciler{
+				Client:  k8sClient,
+				Scheme:  k8sClient.Scheme(),
+				BaseDir: tempDir,
+				Fetcher: fetcher,
+			}
 		})
 
 		AfterEach(func() {
-			deleteBootSource(ctx, resourceName)
+			// Clean up test resources
+			for _, name := range []string{
+				"test-reconcile-iso",
+				"test-kernel-initrd",
+				"test-kernel-initrd-firmware",
+				"test-hash-mismatch",
+				"test-network-failure",
+				"test-delete-cleanup",
+			} {
+				deleteBootSource(ctx, name)
+			}
 		})
 
-		It("should successfully reconcile", func() {
-			controllerReconciler := &BootSourceReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: resourceName, Namespace: "default"},
+		It("should skip ISO mode with pending status", func() {
+			Expect(createBootSource(ctx, "test-reconcile-iso", isobootv1alpha1.BootSourceSpec{
+				ISO:      validISO(),
+				Firmware: validFirmware(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-reconcile-iso", Namespace: "default"},
 			})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(1 * time.Millisecond))
+
+			// Second reconcile sets ISO mode pending status
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-reconcile-iso", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify status
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-reconcile-iso", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhasePending))
+			Expect(bs.Status.Message).To(ContainSubstring("ISO mode not yet implemented"))
+		})
+
+		It("should reach Ready phase for kernel+initrd", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			kernelHash := sha256sum(kernelContent)
+			initrdHash := sha256sum(initrdContent)
+
+			// Mock fetcher returns hash for shasumURL and downloads content
+			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
+				return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, initrdHash), nil
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				if url == debianKernel {
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				}
+				if url == debianInitrd {
+					return os.WriteFile(destPath, initrdContent, 0o644)
+				}
+				return fmt.Errorf("unexpected URL: %s", url)
+			}
+
+			Expect(createBootSource(ctx, "test-kernel-initrd", isobootv1alpha1.BootSourceSpec{
+				Kernel: validKernel(),
+				Initrd: validInitrd(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-kernel-initrd", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(1 * time.Millisecond))
+
+			// Second reconcile downloads resources
+			result, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-kernel-initrd", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify status
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-kernel-initrd", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			Expect(bs.Status.Resources).To(HaveKey("kernel"))
+			Expect(bs.Status.Resources).To(HaveKey("initrd"))
+			Expect(bs.Status.Resources["kernel"].URL).To(Equal(debianKernel))
+			Expect(bs.Status.Resources["initrd"].URL).To(Equal(debianInitrd))
+
+			// Verify files exist
+			Expect(filepath.Join(tempDir, "default", "test-kernel-initrd", "kernel")).To(BeAnExistingFile())
+			Expect(filepath.Join(tempDir, "default", "test-kernel-initrd", "initrd")).To(BeAnExistingFile())
+		})
+
+		It("should reach Ready phase for kernel+initrd+firmware", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			firmwareContent := []byte("firmware cpio content")
+			kernelHash := sha256sum(kernelContent)
+			initrdHash := sha256sum(initrdContent)
+			firmwareHash := sha512sum(firmwareContent)
+
+			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
+				if url == debianSHA256 {
+					return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, initrdHash), nil
+				}
+				if url == debianFwSHA512 {
+					return fmt.Appendf(nil, "%s  firmware.cpio.gz\n", firmwareHash), nil
+				}
+				return nil, fmt.Errorf("unexpected URL: %s", url)
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				switch url {
+				case debianKernel:
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				case debianInitrd:
+					return os.WriteFile(destPath, initrdContent, 0o644)
+				case debianFirmware:
+					return os.WriteFile(destPath, firmwareContent, 0o644)
+				default:
+					return fmt.Errorf("unexpected URL: %s", url)
+				}
+			}
+
+			Expect(createBootSource(ctx, "test-kernel-initrd-firmware", isobootv1alpha1.BootSourceSpec{
+				Kernel:   validKernel(),
+				Initrd:   validInitrd(),
+				Firmware: validFirmware(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-kernel-initrd-firmware", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile downloads resources
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-kernel-initrd-firmware", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify status
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-kernel-initrd-firmware", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			Expect(bs.Status.Resources).To(HaveKey("kernel"))
+			Expect(bs.Status.Resources).To(HaveKey("initrd"))
+			Expect(bs.Status.Resources).To(HaveKey("firmware"))
+		})
+
+		It("should set Corrupted phase on hash mismatch", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			kernelHash := sha256sum(kernelContent)
+			wrongInitrdHash := exampleSHA256Sum // Wrong hash
+
+			fetcher.fetchContentFunc = func(_ context.Context, _ string) ([]byte, error) {
+				return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, wrongInitrdHash), nil
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				if url == debianKernel {
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				}
+				if url == debianInitrd {
+					return os.WriteFile(destPath, initrdContent, 0o644) // Correct content but wrong expected hash
+				}
+				return fmt.Errorf("unexpected URL: %s", url)
+			}
+
+			Expect(createBootSource(ctx, "test-hash-mismatch", isobootv1alpha1.BootSourceSpec{
+				Kernel: validKernel(),
+				Initrd: validInitrd(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-hash-mismatch", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile attempts downloads
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-hash-mismatch", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(5 * time.Minute)) // Error requeue interval
+
+			// Verify status
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-hash-mismatch", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseCorrupted))
+			Expect(bs.Status.Message).To(ContainSubstring("initrd"))
+		})
+
+		It("should set Failed phase on network failure", func() {
+			fetcher.fetchContentFunc = func(_ context.Context, _ string) ([]byte, error) {
+				return nil, errors.New("connection refused")
+			}
+
+			Expect(createBootSource(ctx, "test-network-failure", isobootv1alpha1.BootSourceSpec{
+				Kernel: validKernel(),
+				Initrd: validInitrd(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-network-failure", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile attempts downloads
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-network-failure", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(5 * time.Minute)) // Error requeue interval
+
+			// Verify status
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-network-failure", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseFailed))
+		})
+
+		It("should clean up files on deletion", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			kernelHash := sha256sum(kernelContent)
+			initrdHash := sha256sum(initrdContent)
+
+			fetcher.fetchContentFunc = func(_ context.Context, _ string) ([]byte, error) {
+				return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, initrdHash), nil
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				if url == debianKernel {
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				}
+				if url == debianInitrd {
+					return os.WriteFile(destPath, initrdContent, 0o644)
+				}
+				return fmt.Errorf("unexpected URL: %s", url)
+			}
+
+			Expect(createBootSource(ctx, "test-delete-cleanup", isobootv1alpha1.BootSourceSpec{
+				Kernel: validKernel(),
+				Initrd: validInitrd(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-delete-cleanup", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile downloads resources
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-delete-cleanup", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify files exist
+			resourceDir := filepath.Join(tempDir, "default", "test-delete-cleanup")
+			Expect(resourceDir).To(BeADirectory())
+			Expect(filepath.Join(resourceDir, "kernel")).To(BeAnExistingFile())
+
+			// Delete the BootSource
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-delete-cleanup", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &bs)).To(Succeed())
+
+			// Reconcile to process deletion
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-delete-cleanup", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify files are cleaned up
+			Expect(resourceDir).NotTo(BeADirectory())
+		})
+
+		It("should return nil error for missing BootSource", func() {
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "nonexistent-bootsource", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
 		})
 	})
 
