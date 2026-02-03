@@ -2,12 +2,13 @@ suite: rbac tests
 templates:
   - templates/rbac.yaml
 tests:
-  # Positive Tests - ClusterRole
-  - it: should create ClusterRole and ClusterRoleBinding
+  # Positive Tests - Document count
+  - it: should create ClusterRole, ClusterRoleBinding, Role, and RoleBinding
     asserts:
       - hasDocuments:
-          count: 2
+          count: 4
 
+  # Positive Tests - ClusterRole
   - it: should create ClusterRole with correct name
     documentIndex: 0
     asserts:
@@ -114,12 +115,87 @@ tests:
           path: subjects[0].namespace
           value: NAMESPACE
 
-  # Tests with custom values
-  - it: should use custom service account name in binding
-    set:
-      serviceAccount.name: custom-sa
-    documentIndex: 1
+  # Positive Tests - Leader Election Role (namespaced)
+  - it: should create leader election Role
+    documentIndex: 2
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-isoboot-leader-election-role
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+
+  - it: should grant leases permissions for leader election
+    documentIndex: 2
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - coordination.k8s.io
+            resources:
+              - leases
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  # Positive Tests - Leader Election RoleBinding
+  - it: should create leader election RoleBinding
+    documentIndex: 3
+    asserts:
+      - isKind:
+          of: RoleBinding
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-isoboot-leader-election-rolebinding
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+
+  - it: should reference correct leader election Role
+    documentIndex: 3
     asserts:
       - equal:
+          path: roleRef.apiGroup
+          value: rbac.authorization.k8s.io
+      - equal:
+          path: roleRef.kind
+          value: Role
+      - equal:
+          path: roleRef.name
+          value: RELEASE-NAME-isoboot-leader-election-role
+
+  - it: should bind leader election to correct service account
+    documentIndex: 3
+    asserts:
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: RELEASE-NAME-isoboot
+      - equal:
+          path: subjects[0].namespace
+          value: NAMESPACE
+
+  # Tests with custom values
+  - it: should use custom service account name in all bindings
+    set:
+      serviceAccount.name: custom-sa
+    asserts:
+      - documentIndex: 1
+        equal:
+          path: subjects[0].name
+          value: custom-sa
+      - documentIndex: 3
+        equal:
           path: subjects[0].name
           value: custom-sa

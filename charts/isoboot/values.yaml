@@ -6,7 +6,7 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
-# Number of controller replicas
+# Number of controller replicas (currently limited to 1; the controller does not support multiple replicas)
 replicaCount: 1
 
 controller:

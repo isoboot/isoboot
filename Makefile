@@ -275,9 +275,10 @@ define gomodver
 $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
 endef
 
-# download-helm-unittest downloads helm-unittest binary from GitHub releases with checksum verification
+# download-helm-unittest downloads helm-unittest binary from GitHub releases with pinned checksum verification
 # $1 - target path with name of binary
 # $2 - version of helm-unittest (e.g., v0.7.0)
+# Pinned checksums for v0.7.0 (immutable content hashes checked into repo)
 define download-helm-unittest
 @[ -f "$(1)-$(2)" ] || { \
 set -e; \
@@ -295,9 +296,18 @@ echo "Downloading helm-unittest $(2) for $$os/$$arch"; \
 tmpdir=$$(mktemp -d); \
 tarball="helm-unittest-$$os-$$arch-$$version_num.tgz"; \
 curl -sSL "https://github.com/helm-unittest/helm-unittest/releases/download/$(2)/$$tarball" -o "$$tmpdir/$$tarball"; \
-curl -sSL "https://github.com/helm-unittest/helm-unittest/releases/download/$(2)/helm-unittest-checksum.sha" -o "$$tmpdir/checksum.sha"; \
-expected=$$(grep "$$tarball" "$$tmpdir/checksum.sha" | awk '{print $$1}'); \
-actual=$$(sha256sum "$$tmpdir/$$tarball" | awk '{print $$1}'); \
+case "$${os}_$${arch}" in \
+  linux_amd64)  expected="49f62d85ed69c4bbb1091dc2a69f45f3f7cfbb346c03a4696b3afdf809cc2642" ;; \
+  linux_arm64)  expected="25c62b36e2a17a2edc881069cf87047e348edd3e1b990accb7a034fabcf36f12" ;; \
+  macos_amd64)  expected="046f60a4d35b39619960456020df23e014122867aeb860aaf1d18ab4db37071e" ;; \
+  macos_arm64)  expected="b6c43b22f87239afb9479c1ed7b0adf783d9d63435ca5962a1edc2ef37053211" ;; \
+  *) echo "Unsupported platform: $${os}_$${arch}"; exit 1 ;; \
+esac; \
+if command -v sha256sum >/dev/null 2>&1; then \
+  actual=$$(sha256sum "$$tmpdir/$$tarball" | awk '{print $$1}'); \
+else \
+  actual=$$(shasum -a 256 "$$tmpdir/$$tarball" | awk '{print $$1}'); \
+fi; \
 if [ "$$expected" != "$$actual" ]; then \
   echo "Checksum verification failed for $$tarball"; \
   echo "Expected: $$expected"; \
