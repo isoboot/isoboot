@@ -1,17 +1,9 @@
 ## Go Version
 
-This project uses **Go 1.25** (see `Dockerfile` and `go.mod`). When reviewing code,
-assume all standard library features available in Go 1.25 are valid. This includes
-features added in Go 1.24 and Go 1.25 such as:
-
-- `strings.SplitSeq`, `strings.SplitAfterSeq`, `strings.FieldsSeq`, `strings.LinesSeq`
-  (iterator-based string splitting)
-- `bytes.SplitSeq`, `bytes.SplitAfterSeq`, `bytes.FieldsSeq`, `bytes.LinesSeq`
-- Range-over-func (iterator protocol via `iter.Seq` / `iter.Seq2`)
-- `slices.All`, `slices.Values`, `slices.Collect` and other iterator helpers
-
-Do **not** flag these functions as non-existent or suggest replacing them with older
-alternatives like `strings.Split`.
+Before reviewing, check the Go version in `Dockerfile` (the `FROM golang:` line) and
+`go.mod` (the `go` directive). Assume all standard library features available in that
+Go version are valid. Do **not** flag stdlib functions as non-existent based on older
+Go knowledge — always defer to the version declared in the project files.
 
 ## Testing Framework
 
@@ -21,5 +13,5 @@ All tests use **Ginkgo + Gomega** (BDD-style). Do not suggest converting to stdl
 ## Linting
 
 The project uses `golangci-lint` v2 with the `modernize` linter enabled, which
-enforces using iterator-based functions (e.g., `SplitSeq`) over slice-returning ones
-when the result is only iterated. Do not suggest reverting modernize-enforced patterns.
+enforces using newer stdlib APIs (e.g., iterator-based functions) over older
+alternatives when applicable. Do not suggest reverting modernize-enforced patterns.
