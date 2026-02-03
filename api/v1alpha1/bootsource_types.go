@@ -26,11 +26,11 @@ type DownloadableResource struct {
 	// +required
 	URL string `json:"url"`
 
-	// shasumURL is the URL to a SHA256SUMS file for verification.
+	// shasumURL is the URL to a checksum file (e.g., SHA256SUMS or SHA512SUMS) for verification.
 	// +optional
 	ShasumURL *string `json:"shasumURL,omitempty"`
 
-	// shasum is the expected SHA256 checksum of the resource.
+	// shasum is the expected checksum (SHA256 or SHA512) of the resource.
 	// +optional
 	Shasum *string `json:"shasum,omitempty"`
 }
@@ -77,7 +77,7 @@ type ResourceStatus struct {
 	// +optional
 	URL string `json:"url,omitempty"`
 
-	// shasum is the verified SHA256 checksum.
+	// shasum is the verified checksum of the resource.
 	// +optional
 	Shasum string `json:"shasum,omitempty"`
 
