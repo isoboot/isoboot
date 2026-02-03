@@ -1,0 +1,211 @@
+suite: deployment tests
+templates:
+  - templates/deployment.yaml
+tests:
+  # Positive Tests
+  - it: should render deployment with default values
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-isoboot
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: manager
+
+  - it: should use correct image with default tag
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/isoboot/isoboot:0.1.0
+
+  - it: should set base-dir argument correctly
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --base-dir=/var/lib/isoboot
+
+  - it: should enable leader election
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --leader-elect
+
+  - it: should configure health probes on port 8081
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: health
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: health
+
+  - it: should set security context for non-root user
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 65532
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+
+  - it: should set resource limits and requests
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 512Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 256Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 250m
+
+  - it: should use hostPath volume by default
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: boot-data
+      - equal:
+          path: spec.template.spec.volumes[0].hostPath.path
+          value: /var/lib/isoboot
+      - equal:
+          path: spec.template.spec.volumes[0].hostPath.type
+          value: DirectoryOrCreate
+
+  - it: should mount volume at baseDir
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].name
+          value: boot-data
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /var/lib/isoboot
+
+  # Tests with custom values
+  - it: should use custom image tag when specified
+    set:
+      image.tag: v1.2.3
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/isoboot/isoboot:v1.2.3
+
+  - it: should use custom repository when specified
+    set:
+      image.repository: custom-registry.io/isoboot
+      image.tag: latest
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: custom-registry.io/isoboot:latest
+
+  - it: should use custom baseDir when specified
+    set:
+      controller.baseDir: /custom/path
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --base-dir=/custom/path
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /custom/path
+
+  - it: should use PVC when storage type is pvc
+    set:
+      storage.type: pvc
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].persistentVolumeClaim.claimName
+          value: RELEASE-NAME-isoboot-data
+      - isNull:
+          path: spec.template.spec.volumes[0].hostPath
+
+  - it: should use existing PVC claim when specified
+    set:
+      storage.type: pvc
+      storage.pvc.existingClaim: my-existing-pvc
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].persistentVolumeClaim.claimName
+          value: my-existing-pvc
+
+  - it: should set pod annotations when specified
+    set:
+      podAnnotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/port"]
+          value: "8080"
+
+  - it: should set node selector when specified
+    set:
+      nodeSelector:
+        kubernetes.io/os: linux
+        node-type: worker
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/os"]
+          value: linux
+      - equal:
+          path: spec.template.spec.nodeSelector["node-type"]
+          value: worker
+
+  - it: should set tolerations when specified
+    set:
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "isoboot"
+          effect: "NoSchedule"
+    asserts:
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: dedicated
+      - equal:
+          path: spec.template.spec.tolerations[0].effect
+          value: NoSchedule
+
+  - it: should set custom resources when specified
+    set:
+      controller.resources.limits.memory: 1Gi
+      controller.resources.limits.cpu: "1"
+      controller.resources.requests.memory: 512Mi
+      controller.resources.requests.cpu: 500m
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 1Gi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: "1"
+
+  - it: should include component label
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: controller
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: controller

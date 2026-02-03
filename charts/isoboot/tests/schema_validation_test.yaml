@@ -1,0 +1,115 @@
+suite: schema validation tests
+templates:
+  - templates/deployment.yaml
+tests:
+  # These tests verify that the schema catches invalid values
+  # Note: helm-unittest doesn't directly test JSON schema validation,
+  # but we can verify that certain value combinations work/don't work
+
+  # Positive Tests - Valid configurations
+  - it: should accept valid pullPolicy Always
+    set:
+      image.pullPolicy: Always
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+
+  - it: should accept valid pullPolicy Never
+    set:
+      image.pullPolicy: Never
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+
+  - it: should accept valid pullPolicy IfNotPresent
+    set:
+      image.pullPolicy: IfNotPresent
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+
+  # Test various storage configurations
+  - it: should accept hostPath storage type
+    set:
+      storage.type: hostPath
+      storage.hostPath.path: /data/boot
+      storage.hostPath.type: Directory
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].hostPath.path
+          value: /data/boot
+      - equal:
+          path: spec.template.spec.volumes[0].hostPath.type
+          value: Directory
+
+  - it: should accept pvc storage type
+    set:
+      storage.type: pvc
+    asserts:
+      - isNotNull:
+          path: spec.template.spec.volumes[0].persistentVolumeClaim
+
+  # Test absolute path requirement for baseDir
+  - it: should accept absolute path for baseDir
+    set:
+      controller.baseDir: /opt/isoboot/data
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --base-dir=/opt/isoboot/data
+
+  # Test with all optional fields populated
+  - it: should render correctly with all optional fields
+    set:
+      image.repository: custom.io/isoboot
+      image.tag: v2.0.0
+      image.pullPolicy: Always
+      replicaCount: 1
+      controller.baseDir: /mnt/boot
+      controller.resources.limits.memory: 2Gi
+      controller.resources.limits.cpu: "2"
+      controller.resources.requests.memory: 1Gi
+      controller.resources.requests.cpu: "1"
+      serviceAccount.name: my-sa
+      podAnnotations:
+        test: annotation
+      nodeSelector:
+        disktype: ssd
+      tolerations:
+        - key: dedicated
+          operator: Exists
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - us-east-1a
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: custom.io/isoboot:v2.0.0
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --base-dir=/mnt/boot
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 2Gi
+      - equal:
+          path: spec.template.metadata.annotations.test
+          value: annotation
+      - equal:
+          path: spec.template.spec.nodeSelector.disktype
+          value: ssd
+      - isNotEmpty:
+          path: spec.template.spec.tolerations
+      - isNotEmpty:
+          path: spec.template.spec.affinity

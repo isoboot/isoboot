@@ -1,0 +1,125 @@
+suite: rbac tests
+templates:
+  - templates/rbac.yaml
+tests:
+  # Positive Tests - ClusterRole
+  - it: should create ClusterRole and ClusterRoleBinding
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: should create ClusterRole with correct name
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-isoboot-manager-role
+
+  - it: should grant bootsources permissions
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - isoboot.github.io
+            resources:
+              - bootsources
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  - it: should grant bootsources/status permissions
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - isoboot.github.io
+            resources:
+              - bootsources/status
+            verbs:
+              - get
+              - patch
+              - update
+
+  - it: should grant bootsources/finalizers permissions
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - isoboot.github.io
+            resources:
+              - bootsources/finalizers
+            verbs:
+              - update
+
+  - it: should grant events permissions for recording
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+            resources:
+              - events
+            verbs:
+              - create
+              - patch
+
+  # Positive Tests - ClusterRoleBinding
+  - it: should create ClusterRoleBinding with correct name
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-isoboot-manager-rolebinding
+
+  - it: should reference correct ClusterRole
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: roleRef.apiGroup
+          value: rbac.authorization.k8s.io
+      - equal:
+          path: roleRef.kind
+          value: ClusterRole
+      - equal:
+          path: roleRef.name
+          value: RELEASE-NAME-isoboot-manager-role
+
+  - it: should bind to correct service account
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: RELEASE-NAME-isoboot
+      - equal:
+          path: subjects[0].namespace
+          value: NAMESPACE
+
+  # Tests with custom values
+  - it: should use custom service account name in binding
+    set:
+      serviceAccount.name: custom-sa
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: subjects[0].name
+          value: custom-sa

@@ -1,0 +1,18 @@
+{{- if and (eq .Values.storage.type "pvc") (not .Values.storage.pvc.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "isoboot.fullname" . }}-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.storage.pvc.accessMode }}
+  {{- if .Values.storage.pvc.storageClass }}
+  storageClassName: {{ .Values.storage.pvc.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.pvc.size }}
+{{- end }}

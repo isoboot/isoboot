@@ -1,0 +1,78 @@
+# Default values for isoboot.
+
+image:
+  repository: ghcr.io/isoboot/isoboot
+  # Overrides the image tag whose default is the chart appVersion
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Number of controller replicas
+replicaCount: 1
+
+controller:
+  # Base directory for storing downloaded boot resources
+  baseDir: /var/lib/isoboot
+  resources:
+    limits:
+      memory: 512Mi
+      cpu: 500m
+    requests:
+      memory: 256Mi
+      cpu: 250m
+
+# Storage configuration for boot files
+storage:
+  # Type of storage: "hostPath" or "pvc"
+  type: hostPath
+  # hostPath configuration (used when type: hostPath)
+  hostPath:
+    path: /var/lib/isoboot
+    type: DirectoryOrCreate
+  # PVC configuration (used when type: pvc)
+  pvc:
+    # Name of existing PVC to use (leave empty to create one)
+    existingClaim: ""
+    # Storage class for dynamic provisioning
+    storageClass: ""
+    # Access mode for the PVC
+    accessMode: ReadWriteOnce
+    # Size of the PVC
+    size: 10Gi
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+
+# Node selector for pod scheduling
+nodeSelector: {}
+
+# Tolerations for pod scheduling
+tolerations: []
+
+# Affinity rules for pod scheduling
+affinity: {}

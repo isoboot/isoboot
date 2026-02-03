@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["image", "controller", "serviceAccount", "storage"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository", "pullPolicy"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Container image repository"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Container image tag (defaults to appVersion)"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"],
+          "description": "Image pull policy"
+        }
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1,
+      "description": "Number of controller replicas (must be 1 for leader election)"
+    },
+    "controller": {
+      "type": "object",
+      "required": ["baseDir", "resources"],
+      "properties": {
+        "baseDir": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/",
+          "description": "Base directory for boot resources (must be absolute path)"
+        },
+        "resources": {
+          "type": "object",
+          "required": ["limits", "requests"],
+          "properties": {
+            "limits": {
+              "type": "object",
+              "properties": {
+                "memory": { "type": "string" },
+                "cpu": { "type": "string" }
+              }
+            },
+            "requests": {
+              "type": "object",
+              "properties": {
+                "memory": { "type": "string" },
+                "cpu": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["hostPath", "pvc"],
+          "description": "Storage type for boot files"
+        },
+        "hostPath": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["Directory", "DirectoryOrCreate", ""]
+            }
+          }
+        },
+        "pvc": {
+          "type": "object",
+          "properties": {
+            "existingClaim": { "type": "string" },
+            "storageClass": { "type": "string" },
+            "accessMode": {
+              "type": "string",
+              "enum": ["ReadWriteOnce", "ReadWriteMany", "ReadOnlyMany"]
+            },
+            "size": { "type": "string" }
+          }
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "required": ["create"],
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Whether to create a service account"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "name": {
+          "type": "string",
+          "description": "Service account name"
+        }
+      }
+    },
+    "podAnnotations": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "tolerations": {
+      "type": "array"
+    },
+    "affinity": {
+      "type": "object"
+    }
+  }
+}

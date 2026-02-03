@@ -1,0 +1,91 @@
+suite: pvc tests
+templates:
+  - templates/pvc.yaml
+tests:
+  # Negative Tests - PVC not created by default
+  - it: should not create PVC when storage type is hostPath (default)
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should not create PVC when using existing claim
+    set:
+      storage.type: pvc
+      storage.pvc.existingClaim: my-existing-pvc
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # Positive Tests - PVC creation
+  - it: should create PVC when storage type is pvc
+    set:
+      storage.type: pvc
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-isoboot-data
+
+  - it: should set correct access mode
+    set:
+      storage.type: pvc
+    asserts:
+      - equal:
+          path: spec.accessModes[0]
+          value: ReadWriteOnce
+
+  - it: should set correct storage size
+    set:
+      storage.type: pvc
+    asserts:
+      - equal:
+          path: spec.resources.requests.storage
+          value: 10Gi
+
+  - it: should use custom storage size when specified
+    set:
+      storage.type: pvc
+      storage.pvc.size: 50Gi
+    asserts:
+      - equal:
+          path: spec.resources.requests.storage
+          value: 50Gi
+
+  - it: should set storage class when specified
+    set:
+      storage.type: pvc
+      storage.pvc.storageClass: fast-ssd
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: fast-ssd
+
+  - it: should not set storage class when empty
+    set:
+      storage.type: pvc
+      storage.pvc.storageClass: ""
+    asserts:
+      - isNull:
+          path: spec.storageClassName
+
+  - it: should use custom access mode when specified
+    set:
+      storage.type: pvc
+      storage.pvc.accessMode: ReadWriteMany
+    asserts:
+      - equal:
+          path: spec.accessModes[0]
+          value: ReadWriteMany
+
+  - it: should include standard labels
+    set:
+      storage.type: pvc
+    asserts:
+      - isNotEmpty:
+          path: metadata.labels["helm.sh/chart"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: isoboot

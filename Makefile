@@ -171,6 +171,24 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -
 
+##@ Helm
+
+.PHONY: helm-sync
+helm-sync: manifests ## Sync CRDs to Helm chart crds directory.
+	cp config/crd/bases/isoboot.github.io_bootsources.yaml charts/isoboot/crds/bootsource.yaml
+
+.PHONY: helm-lint
+helm-lint: ## Lint Helm chart.
+	helm lint charts/isoboot/
+
+.PHONY: helm-template
+helm-template: ## Render Helm chart templates locally.
+	helm template test charts/isoboot/
+
+.PHONY: helm-test
+helm-test: helm-unittest ## Run Helm unit tests.
+	"$(HELM_UNITTEST)" charts/isoboot/
+
 ##@ Dependencies
 
 ## Location to install dependencies to
@@ -185,6 +203,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+HELM_UNITTEST ?= $(LOCALBIN)/helm-unittest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.7.1
@@ -201,6 +220,8 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.7.2
+HELM_UNITTEST_VERSION ?= v0.7.0
+
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
@@ -229,6 +250,11 @@ golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
+.PHONY: helm-unittest
+helm-unittest: $(HELM_UNITTEST) ## Download helm-unittest locally if necessary.
+$(HELM_UNITTEST): $(LOCALBIN)
+	$(call download-helm-unittest,$(HELM_UNITTEST),$(HELM_UNITTEST_VERSION))
+
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
 # $2 - package url which can be installed
@@ -247,4 +273,29 @@ endef
 
 define gomodver
 $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
+endef
+
+# download-helm-unittest downloads helm-unittest binary from GitHub releases
+# $1 - target path with name of binary
+# $2 - version of helm-unittest (e.g., v0.7.0)
+define download-helm-unittest
+@[ -f "$(1)-$(2)" ] || { \
+set -e; \
+os=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+arch=$$(uname -m); \
+case $$arch in \
+  x86_64) arch="amd64" ;; \
+  aarch64|arm64) arch="arm64" ;; \
+esac; \
+case $$os in \
+  darwin) os="macos" ;; \
+esac; \
+version_num=$$(echo "$(2)" | sed 's/^v//'); \
+echo "Downloading helm-unittest $(2) for $$os/$$arch"; \
+tmpdir=$$(mktemp -d); \
+curl -sSL "https://github.com/helm-unittest/helm-unittest/releases/download/$(2)/helm-unittest-$$os-$$arch-$$version_num.tgz" | tar xz -C "$$tmpdir"; \
+mv "$$tmpdir/untt" "$(1)-$(2)"; \
+rm -rf "$$tmpdir"; \
+}; \
+ln -sf "$$(realpath "$(1)-$(2)")" "$(1)"
 endef
