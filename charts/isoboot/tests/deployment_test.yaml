@@ -115,6 +115,13 @@ tests:
           path: spec.template.spec.volumes[0].hostPath.type
           value: Directory
 
+  - it: should omit type when empty
+    set:
+      storage.hostPath.type: ""
+    asserts:
+      - isNull:
+          path: spec.template.spec.volumes[0].hostPath.type
+
   - it: should mount volume at baseDir
     asserts:
       - equal:

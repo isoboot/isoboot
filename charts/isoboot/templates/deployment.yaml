@@ -89,4 +89,6 @@ spec:
         - name: boot-data
           hostPath:
             path: {{ default .Values.controller.baseDir .Values.storage.hostPath.path }}
-            type: {{ .Values.storage.hostPath.type }}
+            {{- with .Values.storage.hostPath.type }}
+            type: {{ . }}
+            {{- end }}

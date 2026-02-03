@@ -305,6 +305,12 @@ endef
 define download-helm-unittest
 @[ -f "$(1)-$(2)" ] || { \
 set -e; \
+os=$$(uname -s); \
+if [ "$$os" != "Linux" ]; then \
+  echo "Error: helm-unittest download requires Linux (detected: $$os)"; \
+  echo "For macOS/Windows, use Docker: docker run -it --rm -v \$$(pwd):/workspace -w /workspace ubuntu:22.04 bash"; \
+  exit 1; \
+fi; \
 arch=$$(uname -m); \
 case $$arch in \
   x86_64) arch="amd64" ;; \
