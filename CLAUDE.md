@@ -34,10 +34,9 @@ These targets will expand as kubebuilder scaffolding is added (e.g., `make manif
 
 ## Testing Convention
 
-New tests should use **Ginkgo + Gomega**, consistent with controller-runtime and
-kubebuilder conventions; existing stdlib tests are being migrated (see #153). This
-applies to both controller integration tests (with envtest) and standalone library
-packages (with `httptest`, temp files, etc.).
+All tests use **Ginkgo + Gomega**, consistent with controller-runtime and kubebuilder
+conventions. This applies to both controller integration tests (with envtest) and
+standalone library packages (with `httptest`, temp files, etc.).
 
 - Each package has a `suite_test.go` with `RunSpecs` as the entry point
 - Set `reporterConfig.Verbose = true` in `RunSpecs` so individual spec names appear
