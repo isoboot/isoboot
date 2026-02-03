@@ -254,10 +254,9 @@ func (r *BootSourceReconciler) reconcileResource(
 	}
 
 	// Check if file already exists with correct hash
-	if _, statErr := os.Stat(destPath); statErr == nil {
+	if info, statErr := os.Stat(destPath); statErr == nil {
 		if verifyErr := r.verifyResource(destPath, expectedHash); verifyErr == nil {
 			// File exists and hash matches - Ready
-			info, _ := os.Stat(destPath)
 			status := &isobootv1alpha1.ResourceStatus{
 				URL:    dr.URL,
 				Shasum: expectedHash,
@@ -285,8 +284,12 @@ func (r *BootSourceReconciler) reconcileResource(
 		return isobootv1alpha1.BootSourcePhaseCorrupted, nil, err
 	}
 
-	// Success
-	info, _ := os.Stat(destPath)
+	// Success - get file size for status
+	info, statErr := os.Stat(destPath)
+	if statErr != nil {
+		log.Error(statErr, "Failed to stat downloaded file", "resource", name)
+		return isobootv1alpha1.BootSourcePhaseFailed, nil, statErr
+	}
 	status := &isobootv1alpha1.ResourceStatus{
 		URL:    dr.URL,
 		Shasum: expectedHash,
