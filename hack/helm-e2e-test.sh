@@ -142,8 +142,8 @@ else
     log_fail "hostPath volume is mounted (pod not found)"
 fi
 
-# Test 5: Controller responds to health probe
-log_info "Test 5: Controller responds to health probe"
+# Test 5: Health probe is configured
+log_info "Test 5: Health probe is configured"
 if [[ -n "${POD_NAME}" ]]; then
     HEALTH_PORT=$(kubectl get pod "${POD_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.containers[0].livenessProbe.httpGet.port}' 2>/dev/null || echo "")
     if [[ "${HEALTH_PORT}" == "health" ]]; then
@@ -152,11 +152,11 @@ if [[ -n "${POD_NAME}" ]]; then
         log_fail "Controller health probe configured (got: ${HEALTH_PORT}, expected: health)"
     fi
 else
-    log_fail "Controller responds to health probe (pod not found)"
+    log_fail "Health probe is configured (pod not found)"
 fi
 
-# Test 6: Controller responds to ready probe
-log_info "Test 6: Controller responds to ready probe"
+# Test 6: Ready probe is configured
+log_info "Test 6: Ready probe is configured"
 if [[ -n "${POD_NAME}" ]]; then
     READY_PATH=$(kubectl get pod "${POD_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.containers[0].readinessProbe.httpGet.path}' 2>/dev/null || echo "")
     if [[ "${READY_PATH}" == "/readyz" ]]; then
@@ -165,7 +165,7 @@ if [[ -n "${POD_NAME}" ]]; then
         log_fail "Controller readiness probe configured (got: ${READY_PATH}, expected: /readyz)"
     fi
 else
-    log_fail "Controller responds to ready probe (pod not found)"
+    log_fail "Ready probe is configured (pod not found)"
 fi
 
 # Test 7: ServiceAccount is created

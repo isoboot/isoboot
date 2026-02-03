@@ -321,7 +321,17 @@ case "$$arch" in \
   arm64)  expected="25c62b36e2a17a2edc881069cf87047e348edd3e1b990accb7a034fabcf36f12" ;; \
   *) echo "Unsupported architecture: $$arch"; exit 1 ;; \
 esac; \
-actual=$$(sha256sum "$$tmpdir/$$tarball" | awk '{print $$1}'); \
+if command -v sha256sum >/dev/null 2>&1; then \
+  actual=$$(sha256sum "$$tmpdir/$$tarball" | awk '{print $$1}'); \
+elif command -v shasum >/dev/null 2>&1; then \
+  actual=$$(shasum -a 256 "$$tmpdir/$$tarball" | awk '{print $$1}'); \
+elif command -v openssl >/dev/null 2>&1; then \
+  actual=$$(openssl dgst -sha256 "$$tmpdir/$$tarball" | awk '{print $$NF}'); \
+else \
+  echo "No SHA-256 checksum tool found (sha256sum, shasum, or openssl)"; \
+  rm -rf "$$tmpdir"; \
+  exit 1; \
+fi; \
 if [ "$$expected" != "$$actual" ]; then \
   echo "Checksum verification failed for $$tarball"; \
   echo "Expected: $$expected"; \

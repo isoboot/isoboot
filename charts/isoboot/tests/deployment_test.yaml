@@ -46,6 +46,12 @@ tests:
   - it: should configure health probes on port 8081
     asserts:
       - equal:
+          path: spec.template.spec.containers[0].ports[0].name
+          value: health
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 8081
+      - equal:
           path: spec.template.spec.containers[0].livenessProbe.httpGet.path
           value: /healthz
       - equal:
@@ -273,3 +279,10 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: "storage.hostPath.type must be one of: Directory, DirectoryOrCreate, File, FileOrCreate, Socket, CharDevice, BlockDevice (or empty)"
+
+  - it: should fail with relative hostPath path
+    set:
+      storage.hostPath.path: relative/path
+    asserts:
+      - failedTemplate:
+          errorMessage: "storage.hostPath.path must be an absolute path (start with /)"

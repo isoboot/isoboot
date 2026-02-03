@@ -101,3 +101,12 @@ Validate hostPath type
 {{- fail "storage.hostPath.type must be one of: Directory, DirectoryOrCreate, File, FileOrCreate, Socket, CharDevice, BlockDevice (or empty)" }}
 {{- end }}
 {{- end }}
+
+{{/*
+Validate hostPath path is absolute
+*/}}
+{{- define "isoboot.validateHostPathPath" -}}
+{{- if and .Values.storage.hostPath.path (not (hasPrefix "/" .Values.storage.hostPath.path)) }}
+{{- fail "storage.hostPath.path must be an absolute path (start with /)" }}
+{{- end }}
+{{- end }}
