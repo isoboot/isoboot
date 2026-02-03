@@ -1456,12 +1456,23 @@ var _ = Describe("BootSource Controller", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-fw-watch-paths", Namespace: "default"}, &bs)).To(Succeed())
 			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
 
-			// Verify both paths are watched (watcher accepts idempotent watch calls)
+			// Verify paths are watched by attempting to watch with a DIFFERENT key
+			// This should FAIL because the path is already watched by the controller's key
 			kernelPath := filepath.Join(tempDir, "default", "test-fw-watch-paths", "kernel")
 			initrdPath := filepath.Join(tempDir, "default", "test-fw-watch-paths", "initrd")
-			key := types.NamespacedName{Name: "test-fw-watch-paths", Namespace: "default"}
+			differentKey := types.NamespacedName{Name: "different-resource", Namespace: "default"}
 
-			// Idempotent watch should succeed
+			// Watch with different key should fail - proves the path is already watched
+			err = watcher.Watch(kernelPath, differentKey)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("already watched"))
+
+			err = watcher.Watch(initrdPath, differentKey)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("already watched"))
+
+			// Watch with same key should succeed (idempotent)
+			key := types.NamespacedName{Name: "test-fw-watch-paths", Namespace: "default"}
 			Expect(watcher.Watch(kernelPath, key)).To(Succeed())
 			Expect(watcher.Watch(initrdPath, key)).To(Succeed())
 		})
@@ -1502,6 +1513,15 @@ var _ = Describe("BootSource Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
+			// Verify the path IS watched by attempting to watch with a different key
+			// This should FAIL, proving the path is currently watched
+			kernelPath := filepath.Join(tempDir, "default", "test-fw-deletion-unwatch", "kernel")
+			differentKey := types.NamespacedName{Name: "other-resource", Namespace: "default"}
+
+			err = watcher.Watch(kernelPath, differentKey)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("already watched"))
+
 			// Delete the BootSource
 			var bs isobootv1alpha1.BootSource
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-fw-deletion-unwatch", Namespace: "default"}, &bs)).To(Succeed())
@@ -1514,17 +1534,13 @@ var _ = Describe("BootSource Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// After deletion, the paths should be unwatched
-			// We can verify by trying to watch them with a different key - this should now succeed
-			// (if they were still watched with the old key, it would fail with "already watched by")
-			kernelPath := filepath.Join(tempDir, "default", "test-fw-deletion-unwatch", "kernel")
-			newKey := types.NamespacedName{Name: "other-resource", Namespace: "default"}
-
+			// The same watch call that FAILED before should now SUCCEED
 			// Create a dummy file so the watch doesn't fail due to missing file
 			Expect(os.MkdirAll(filepath.Dir(kernelPath), 0o755)).To(Succeed())
 			Expect(os.WriteFile(kernelPath, []byte("test"), 0o644)).To(Succeed())
 
-			// This should succeed because the path was unwatched during deletion
-			err = watcher.Watch(kernelPath, newKey)
+			// This should now succeed because the path was unwatched during deletion
+			err = watcher.Watch(kernelPath, differentKey)
 			Expect(err).To(Succeed())
 		})
 

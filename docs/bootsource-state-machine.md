@@ -49,7 +49,7 @@ This document describes the state machine that governs BootSource resource lifec
 | Extracting | Failed | Extraction error (file not found, corrupt ISO) | :white_check_mark: (sync) |
 | Building | Ready | Initrd + firmware combined successfully | :white_check_mark: (sync) |
 | Building | Failed | Build error (I/O failure during concatenation) | :white_check_mark: (sync) |
-| Ready | Verifying | Re-verification triggered (e.g., file watcher) | :white_check_mark: |
+| Ready | Verifying | Re-verification triggered (e.g., file watcher) | :x: |
 | Corrupted | Downloading | Re-download triggered (manual or automatic) | :x: |
 
 ## Terminal States
