@@ -32,10 +32,13 @@ storage:
   # - Set storage.hostPath.fixPermissions=true to use an init container, OR
   # - Use storage.type=pvc which handles permissions via fsGroup
   hostPath:
-    path: /var/lib/isoboot
+    # Host path for storage (defaults to controller.baseDir if empty)
+    path: ""
     type: DirectoryOrCreate
     # Enable init container to fix hostPath permissions (runs as root, may be blocked by Pod Security 'restricted')
     fixPermissions: false
+    # Init container image for fixing permissions (only used when fixPermissions is true)
+    initImage: busybox:1.36
   # PVC configuration (used when type: pvc)
   pvc:
     # Name of existing PVC to use (leave empty to create one)

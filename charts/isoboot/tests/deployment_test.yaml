@@ -235,3 +235,13 @@ tests:
     asserts:
       - isNull:
           path: spec.template.spec.initContainers
+
+  - it: should use custom init image when specified
+    set:
+      storage.type: hostPath
+      storage.hostPath.fixPermissions: true
+      storage.hostPath.initImage: alpine:3.19
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].image
+          value: alpine:3.19

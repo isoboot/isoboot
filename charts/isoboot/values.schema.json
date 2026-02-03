@@ -75,7 +75,7 @@
           "properties": {
             "path": {
               "type": "string",
-              "pattern": "^/"
+              "description": "Host path for storage (defaults to controller.baseDir if empty)"
             },
             "type": {
               "type": "string",
@@ -84,6 +84,10 @@
             "fixPermissions": {
               "type": "boolean",
               "description": "Enable init container to fix hostPath permissions (runs as root)"
+            },
+            "initImage": {
+              "type": "string",
+              "description": "Init container image for fixing permissions (default: busybox:1.36)"
             }
           }
         },
