@@ -32,14 +32,6 @@ rules:
       - get
       - patch
       - update
-  # Events for recording reconciliation events
-  - apiGroups:
-      - ""
-    resources:
-      - events
-    verbs:
-      - create
-      - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -56,7 +48,7 @@ subjects:
     name: {{ include "isoboot.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 ---
-# Leader election Role (namespaced)
+# Leader election Role (namespaced) - includes leases, configmaps, and events
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -65,6 +57,7 @@ metadata:
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
 rules:
+  # Leader election via leases (preferred)
   - apiGroups:
       - coordination.k8s.io
     resources:
@@ -77,6 +70,27 @@ rules:
       - patch
       - update
       - watch
+  # Leader election via configmaps (fallback)
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # Events for leader election and reconciliation
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

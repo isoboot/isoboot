@@ -80,6 +80,10 @@
             "type": {
               "type": "string",
               "enum": ["Directory", "DirectoryOrCreate", ""]
+            },
+            "fixPermissions": {
+              "type": "boolean",
+              "description": "Enable init container to fix hostPath permissions (runs as root)"
             }
           }
         },
@@ -111,7 +115,16 @@
         },
         "name": {
           "type": "string",
-          "description": "Service account name"
+          "description": "Service account name (required when create is false)"
+        }
+      },
+      "if": {
+        "properties": { "create": { "const": false } }
+      },
+      "then": {
+        "required": ["name"],
+        "properties": {
+          "name": { "minLength": 1 }
         }
       }
     },

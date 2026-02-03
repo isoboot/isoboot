@@ -34,7 +34,7 @@ storage:
   hostPath:
     path: /var/lib/isoboot
     type: DirectoryOrCreate
-    # Enable init container to fix hostPath permissions (requires privileged access)
+    # Enable init container to fix hostPath permissions (runs as root, may be blocked by Pod Security 'restricted')
     fixPermissions: false
   # PVC configuration (used when type: pvc)
   pvc:

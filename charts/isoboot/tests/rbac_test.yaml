@@ -65,20 +65,6 @@ tests:
             verbs:
               - update
 
-  - it: should grant events permissions for recording
-    documentIndex: 0
-    asserts:
-      - contains:
-          path: rules
-          content:
-            apiGroups:
-              - ""
-            resources:
-              - events
-            verbs:
-              - create
-              - patch
-
   # Positive Tests - ClusterRoleBinding
   - it: should create ClusterRoleBinding with correct name
     documentIndex: 1
@@ -146,6 +132,39 @@ tests:
               - patch
               - update
               - watch
+
+  - it: should grant configmaps permissions for leader election fallback
+    documentIndex: 2
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+            resources:
+              - configmaps
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  - it: should grant events permissions in namespaced Role
+    documentIndex: 2
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+            resources:
+              - events
+            verbs:
+              - create
+              - patch
 
   # Positive Tests - Leader Election RoleBinding
   - it: should create leader election RoleBinding
