@@ -21,6 +21,11 @@ import (
 )
 
 // URLSource defines URLs for a downloadable resource and its checksum file
+// +kubebuilder:validation:XValidation:rule="self.binary != ''",message="binary URL is required"
+// +kubebuilder:validation:XValidation:rule="self.shasum != ''",message="shasum URL is required"
+// +kubebuilder:validation:XValidation:rule="self.binary.startsWith('https://')",message="binary URL must use https"
+// +kubebuilder:validation:XValidation:rule="self.shasum.startsWith('https://')",message="shasum URL must use https"
+// +kubebuilder:validation:XValidation:rule="self.binary.split('://')[1].split('/')[0] == self.shasum.split('://')[1].split('/')[0]",message="binary and shasum URLs must be on the same server"
 type URLSource struct {
 	// Binary is the URL to download the file from
 	Binary string `json:"binary"`
@@ -55,6 +60,8 @@ type FirmwareSource struct {
 }
 
 // ISOSource defines an ISO image with paths to kernel/initrd inside
+// +kubebuilder:validation:XValidation:rule="self.path.kernel != ''",message="iso requires path.kernel to be specified"
+// +kubebuilder:validation:XValidation:rule="self.path.initrd != ''",message="iso requires path.initrd to be specified"
 type ISOSource struct {
 	// URL contains the download URLs for the ISO
 	URL URLSource `json:"url"`
