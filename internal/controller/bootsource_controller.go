@@ -188,6 +188,8 @@ func (r *BootSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	case isobootv1alpha1.BootSourcePhaseFailed, isobootv1alpha1.BootSourcePhaseCorrupted:
 		if len(messages) > 0 {
 			bs.Status.Message = messages[0]
+		} else {
+			bs.Status.Message = "Unknown error"
 		}
 	default:
 		bs.Status.Message = fmt.Sprintf("Resources in %s phase", overallPhase)
