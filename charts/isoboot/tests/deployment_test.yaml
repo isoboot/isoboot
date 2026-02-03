@@ -103,11 +103,11 @@ tests:
           path: spec.template.spec.volumes[0].hostPath.path
           value: /custom/boot/path
 
-  - it: should use DirectoryOrCreate type by default
+  - it: should use Directory type by default
     asserts:
       - equal:
           path: spec.template.spec.volumes[0].hostPath.type
-          value: DirectoryOrCreate
+          value: Directory
 
   - it: should mount volume at baseDir
     asserts:

@@ -32,8 +32,12 @@ storage:
   hostPath:
     # Host path for storage (defaults to controller.baseDir if empty)
     path: ""
-    # Type of hostPath volume
-    type: DirectoryOrCreate
+    # Type of hostPath volume.
+    # Default: Directory (fails if path doesn't exist, requires pre-creation with correct ownership)
+    # IMPORTANT: The directory must be writable by UID/GID 65532. Pre-create it with:
+    #   sudo mkdir -p /var/lib/isoboot && sudo chown 65532:65532 /var/lib/isoboot
+    # Or use DirectoryOrCreate with an initContainer (see #176).
+    type: Directory
 
 serviceAccount:
   # Specifies whether a service account should be created

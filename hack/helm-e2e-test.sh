@@ -62,6 +62,15 @@ trap cleanup EXIT
 log_info "Creating test namespace: ${NAMESPACE}"
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 
+# Pre-create hostPath directory on Kind nodes with correct ownership
+# Required because storage.hostPath.type defaults to "Directory" (fails fast if not pre-created)
+# and the controller runs as non-root UID 65532.
+log_info "Pre-creating hostPath directory on Kind nodes..."
+for node in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+    docker exec "${node}" mkdir -p /var/lib/isoboot
+    docker exec "${node}" chown 65532:65532 /var/lib/isoboot
+done
+
 echo ""
 echo "=========================================="
 echo "       Helm E2E Integration Tests"

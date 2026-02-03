@@ -313,8 +313,9 @@ esac; \
 version_num=$$(echo "$(2)" | sed 's/^v//'); \
 echo "Downloading helm-unittest $(2) for linux/$$arch"; \
 tmpdir=$$(mktemp -d); \
+trap 'rm -rf "$$tmpdir"' EXIT; \
 tarball="helm-unittest-linux-$$arch-$$version_num.tgz"; \
-curl -sSL "https://github.com/helm-unittest/helm-unittest/releases/download/$(2)/$$tarball" -o "$$tmpdir/$$tarball"; \
+curl -fsSL "https://github.com/helm-unittest/helm-unittest/releases/download/$(2)/$$tarball" -o "$$tmpdir/$$tarball"; \
 case "$$arch" in \
   amd64)  expected="49f62d85ed69c4bbb1091dc2a69f45f3f7cfbb346c03a4696b3afdf809cc2642" ;; \
   arm64)  expected="25c62b36e2a17a2edc881069cf87047e348edd3e1b990accb7a034fabcf36f12" ;; \
