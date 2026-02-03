@@ -111,7 +111,7 @@ type BootSourceStatus struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Message",type=string,JSONPath=`.status.message`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-// +kubebuilder:resource:shortName=bs
+// +kubebuilder:resource
 
 // BootSource is the Schema for the bootsources API.
 type BootSource struct {

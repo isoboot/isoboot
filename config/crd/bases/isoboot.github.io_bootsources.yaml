@@ -11,8 +11,6 @@ spec:
     kind: BootSource
     listKind: BootSourceList
     plural: bootsources
-    shortNames:
-    - bs
     singular: bootsource
   scope: Namespaced
   versions:
