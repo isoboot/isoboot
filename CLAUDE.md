@@ -75,11 +75,11 @@ PR, `@copilot review` comments, or the GraphQL `requestReviews` mutation).
 ### Monitoring for Copilot Reviews
 
 After pushing changes and re-requesting Copilot review, Claude must run a background
-monitor that checks for new reviews every **5 minutes**. The monitor should:
+monitor that:
 
-1. Poll for new Copilot reviews on the PR
+1. Polls for new Copilot reviews every **30 seconds**
 2. If Copilot responds with an error (`"Copilot encountered an error and was unable to
-   review this pull request"`), re-request the review immediately (up to 3 retries)
-3. If Copilot posts a review with comments, report any unresolved threads
-4. Continue monitoring until either Copilot reviews with no actionable comments or the
-   maximum number of checks is reached
+   review this pull request"`), re-requests the review immediately and resets the timer
+3. If Copilot posts a review with comments, reports any unresolved threads
+4. If Copilot does not respond within **15 minutes**, posts a PR comment:
+   `"From Claude: Copilot did not respond within 15 minutes of the review request."`
