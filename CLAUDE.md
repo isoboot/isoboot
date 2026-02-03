@@ -125,3 +125,13 @@ inspect any failures using `gh run view <RUN_ID> --log-failed`. Common CI jobs:
 - **E2E Tests** (`test-e2e.yml`): Runs `make test-e2e` with a Kind cluster.
 
 If CI fails, Claude must fix the issues, commit, push, and re-request Copilot review.
+
+### PR Summary
+
+After each push to a PR branch, Claude must update the PR description (`gh pr edit
+--body`) to reflect the current state of the PR. The summary must include:
+
+- What changed (packages added/modified, key functions)
+- A full test table listing every test with its type (Positive/Negative) and what it validates
+- Test plan with current pass counts
+- Links to any follow-up issues created during review
