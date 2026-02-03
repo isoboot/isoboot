@@ -26,11 +26,23 @@ gRPC services for boot media delivery.
 ```bash
 make build   # go build ./...
 make test    # go test ./...
+make lint    # golangci-lint run
 make clean   # rm -f bin/*
 ```
 
 These targets will expand as kubebuilder scaffolding is added (e.g., `make manifests`,
 `make generate`, `make docker-build`).
+
+## Pre-PR Checklist
+
+Before creating a pull request, **always** run:
+
+```bash
+make build && make test && make lint
+```
+
+All three must pass. The CI will reject PRs that fail lint, so catching issues locally
+saves time.
 
 ## Testing Convention
 

@@ -2,10 +2,16 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -14,6 +20,26 @@ import (
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
+
+// mockFetcher is a test double for ResourceFetcher.
+type mockFetcher struct {
+	fetchContentFunc func(ctx context.Context, url string) ([]byte, error)
+	downloadFunc     func(ctx context.Context, url, destPath string) error
+}
+
+func (m *mockFetcher) FetchContent(ctx context.Context, url string) ([]byte, error) {
+	if m.fetchContentFunc != nil {
+		return m.fetchContentFunc(ctx, url)
+	}
+	return nil, errors.New("FetchContent not implemented")
+}
+
+func (m *mockFetcher) Download(ctx context.Context, url, destPath string) error {
+	if m.downloadFunc != nil {
+		return m.downloadFunc(ctx, url, destPath)
+	}
+	return errors.New("Download not implemented")
+}
 
 const (
 	debianNetboot    = "https://ftp.debian.org/debian/dists/trixie/main/installer-amd64/current/images"
@@ -163,7 +189,7 @@ var _ = Describe("BootSource Controller", func() {
 		It("should reject empty spec", func() {
 			err := createBootSource(ctx, "invalid-empty", isobootv1alpha1.BootSourceSpec{})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject kernel only (no initrd)", func() {
@@ -171,7 +197,7 @@ var _ = Describe("BootSource Controller", func() {
 				Kernel: validKernel(),
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject initrd only (no kernel)", func() {
@@ -179,7 +205,7 @@ var _ = Describe("BootSource Controller", func() {
 				Initrd: validInitrd(),
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject iso + kernel (no mixing)", func() {
@@ -188,7 +214,7 @@ var _ = Describe("BootSource Controller", func() {
 				Kernel: validKernel(),
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject iso + initrd (no mixing)", func() {
@@ -197,7 +223,7 @@ var _ = Describe("BootSource Controller", func() {
 				Initrd: validInitrd(),
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject iso + kernel + initrd (no mixing)", func() {
@@ -207,7 +233,7 @@ var _ = Describe("BootSource Controller", func() {
 				Initrd: validInitrd(),
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject iso with kernelPath but no initrdPath", func() {
@@ -246,7 +272,7 @@ var _ = Describe("BootSource Controller", func() {
 				Initrd: validInitrd(),
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject initrd with both shasumURL and shasum", func() {
@@ -259,7 +285,7 @@ var _ = Describe("BootSource Controller", func() {
 				},
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject iso with both shasumURL and shasum", func() {
@@ -275,7 +301,7 @@ var _ = Describe("BootSource Controller", func() {
 				},
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject firmware with both shasumURL and shasum", func() {
@@ -289,7 +315,7 @@ var _ = Describe("BootSource Controller", func() {
 				},
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 
 		It("should reject kernel without any checksum", func() {
@@ -300,7 +326,7 @@ var _ = Describe("BootSource Controller", func() {
 				Initrd: validInitrd(),
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(errors.IsInvalid(err)).To(BeTrue())
+			Expect(k8serrors.IsInvalid(err)).To(BeTrue())
 		})
 	})
 
@@ -330,6 +356,225 @@ var _ = Describe("BootSource Controller", func() {
 				NamespacedName: types.NamespacedName{Name: resourceName, Namespace: "default"},
 			})
 			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	// ── Helper function tests ─────────────────────────────────────────────
+
+	Context("Helper functions", func() {
+		var reconciler *BootSourceReconciler
+		var tempDir string
+		var fetcher *mockFetcher
+		ctx := context.Background()
+
+		BeforeEach(func() {
+			tempDir = GinkgoT().TempDir()
+			fetcher = &mockFetcher{}
+			reconciler = &BootSourceReconciler{
+				Client:  k8sClient,
+				Scheme:  k8sClient.Scheme(),
+				BaseDir: tempDir,
+				Fetcher: fetcher,
+			}
+		})
+
+		Describe("resolveExpectedHash", func() {
+			It("returns inline shasum directly", func() {
+				dr := &isobootv1alpha1.DownloadableResource{
+					URL:    "https://example.com/file.bin",
+					Shasum: ptr.To(exampleSHA256Sum),
+				}
+				hash, err := reconciler.resolveExpectedHash(ctx, dr)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(hash).To(Equal(exampleSHA256Sum))
+			})
+
+			It("fetches and parses shasumURL", func() {
+				fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
+					if url == "https://example.com/SHA256SUMS" {
+						return fmt.Appendf(nil, "%s  file.bin\n", exampleSHA256Sum), nil
+					}
+					return nil, errors.New("not found")
+				}
+
+				dr := &isobootv1alpha1.DownloadableResource{
+					URL:       "https://example.com/file.bin",
+					ShasumURL: ptr.To("https://example.com/SHA256SUMS"),
+				}
+				hash, err := reconciler.resolveExpectedHash(ctx, dr)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(hash).To(Equal(exampleSHA256Sum))
+			})
+
+			It("returns error for invalid shasumURL", func() {
+				fetcher.fetchContentFunc = func(_ context.Context, _ string) ([]byte, error) {
+					return nil, errors.New("HTTP 404")
+				}
+
+				dr := &isobootv1alpha1.DownloadableResource{
+					URL:       "https://example.com/file.bin",
+					ShasumURL: ptr.To("https://example.com/SHA256SUMS"),
+				}
+				_, err := reconciler.resolveExpectedHash(ctx, dr)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("fetching shasum file"))
+			})
+
+			It("returns error when no checksum source specified", func() {
+				dr := &isobootv1alpha1.DownloadableResource{
+					URL: "https://example.com/file.bin",
+				}
+				_, err := reconciler.resolveExpectedHash(ctx, dr)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("no checksum source specified"))
+			})
+		})
+
+		Describe("downloadResource", func() {
+			It("downloads file successfully", func() {
+				content := []byte("test file content")
+				fetcher.downloadFunc = func(_ context.Context, _ string, destPath string) error {
+					return os.WriteFile(destPath, content, 0o644)
+				}
+
+				destPath := filepath.Join(tempDir, "downloaded.bin")
+				err := reconciler.downloadResource(ctx, "https://example.com/file.bin", destPath)
+				Expect(err).NotTo(HaveOccurred())
+
+				data, err := os.ReadFile(destPath)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(data).To(Equal(content))
+			})
+
+			It("returns error for HTTP 404", func() {
+				fetcher.downloadFunc = func(_ context.Context, url string, _ string) error {
+					return fmt.Errorf("downloading %s: HTTP 404", url)
+				}
+
+				destPath := filepath.Join(tempDir, "notfound.bin")
+				err := reconciler.downloadResource(ctx, "https://example.com/notfound.bin", destPath)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("404"))
+			})
+		})
+
+		Describe("verifyResource", func() {
+			It("passes when hash matches", func() {
+				content := []byte("test content for hashing")
+				hash := sha256.Sum256(content)
+				expectedHash := hex.EncodeToString(hash[:])
+
+				filePath := filepath.Join(tempDir, "hashtest.bin")
+				Expect(os.WriteFile(filePath, content, 0o644)).To(Succeed())
+
+				err := reconciler.verifyResource(filePath, expectedHash)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("fails when hash does not match", func() {
+				content := []byte("test content for hashing")
+				wrongHash := exampleSHA256Sum // SHA-256 of empty file, used here as an incorrect hash
+
+				filePath := filepath.Join(tempDir, "hashtest-fail.bin")
+				Expect(os.WriteFile(filePath, content, 0o644)).To(Succeed())
+
+				err := reconciler.verifyResource(filePath, wrongHash)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("hash mismatch"))
+			})
+		})
+
+		Describe("ensureDirectory", func() {
+			It("creates nested directories", func() {
+				dir, err := reconciler.ensureDirectory("my-namespace", "my-bootsource")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(dir).To(Equal(filepath.Join(tempDir, "my-namespace", "my-bootsource")))
+
+				info, err := os.Stat(dir)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(info.IsDir()).To(BeTrue())
+			})
+
+			It("is idempotent", func() {
+				dir1, err := reconciler.ensureDirectory("ns", "name")
+				Expect(err).NotTo(HaveOccurred())
+
+				dir2, err := reconciler.ensureDirectory("ns", "name")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(dir1).To(Equal(dir2))
+			})
+
+			It("returns error when BaseDir is empty", func() {
+				reconciler.BaseDir = ""
+				_, err := reconciler.ensureDirectory("ns", "name")
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("BaseDir is not configured"))
+			})
+		})
+
+		Describe("worstPhase", func() {
+			It("returns Pending for empty input", func() {
+				Expect(worstPhase(nil)).To(Equal(isobootv1alpha1.BootSourcePhasePending))
+				Expect(worstPhase([]isobootv1alpha1.BootSourcePhase{})).To(Equal(isobootv1alpha1.BootSourcePhasePending))
+			})
+
+			It("returns the single phase for single-element input", func() {
+				Expect(worstPhase([]isobootv1alpha1.BootSourcePhase{
+					isobootv1alpha1.BootSourcePhaseReady,
+				})).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			})
+
+			It("returns Failed as worst over all other phases", func() {
+				phases := []isobootv1alpha1.BootSourcePhase{
+					isobootv1alpha1.BootSourcePhaseReady,
+					isobootv1alpha1.BootSourcePhasePending,
+					isobootv1alpha1.BootSourcePhaseVerifying,
+					isobootv1alpha1.BootSourcePhaseBuilding,
+					isobootv1alpha1.BootSourcePhaseExtracting,
+					isobootv1alpha1.BootSourcePhaseDownloading,
+					isobootv1alpha1.BootSourcePhaseCorrupted,
+					isobootv1alpha1.BootSourcePhaseFailed,
+				}
+				Expect(worstPhase(phases)).To(Equal(isobootv1alpha1.BootSourcePhaseFailed))
+			})
+
+			It("returns Corrupted when no Failed phase present", func() {
+				phases := []isobootv1alpha1.BootSourcePhase{
+					isobootv1alpha1.BootSourcePhaseReady,
+					isobootv1alpha1.BootSourcePhaseCorrupted,
+					isobootv1alpha1.BootSourcePhaseDownloading,
+				}
+				Expect(worstPhase(phases)).To(Equal(isobootv1alpha1.BootSourcePhaseCorrupted))
+			})
+
+			It("returns Downloading over Extracting/Building/Verifying/Pending/Ready", func() {
+				phases := []isobootv1alpha1.BootSourcePhase{
+					isobootv1alpha1.BootSourcePhaseReady,
+					isobootv1alpha1.BootSourcePhasePending,
+					isobootv1alpha1.BootSourcePhaseVerifying,
+					isobootv1alpha1.BootSourcePhaseBuilding,
+					isobootv1alpha1.BootSourcePhaseExtracting,
+					isobootv1alpha1.BootSourcePhaseDownloading,
+				}
+				Expect(worstPhase(phases)).To(Equal(isobootv1alpha1.BootSourcePhaseDownloading))
+			})
+
+			It("returns Ready when all phases are Ready", func() {
+				phases := []isobootv1alpha1.BootSourcePhase{
+					isobootv1alpha1.BootSourcePhaseReady,
+					isobootv1alpha1.BootSourcePhaseReady,
+					isobootv1alpha1.BootSourcePhaseReady,
+				}
+				Expect(worstPhase(phases)).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			})
+
+			It("returns Failed for unknown phase", func() {
+				phases := []isobootv1alpha1.BootSourcePhase{
+					isobootv1alpha1.BootSourcePhaseReady,
+					isobootv1alpha1.BootSourcePhase("UnknownPhase"),
+				}
+				Expect(worstPhase(phases)).To(Equal(isobootv1alpha1.BootSourcePhaseFailed))
+			})
 		})
 	})
 })
