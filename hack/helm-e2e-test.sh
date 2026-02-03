@@ -244,22 +244,22 @@ INSTALL_EXIT_NEG2=$?
 set -e
 if [[ "${INSTALL_EXIT_NEG2}" -ne 0 ]]; then
     log_fail "Helm install for invalid image test (Test 11) failed unexpectedly: ${INSTALL_OUTPUT_NEG2}"
-fi
-
-# Poll for pod to be created and enter image pull error state (up to 60s)
-POD_STATUS=""
-for i in $(seq 1 12); do
-    POD_STATUS=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}-neg2" -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || echo "")
-    if [[ "${POD_STATUS}" == "ImagePullBackOff" ]] || [[ "${POD_STATUS}" == "ErrImagePull" ]]; then
-        break
-    fi
-    sleep 5
-done
-
-if [[ "${POD_STATUS}" == "ImagePullBackOff" ]] || [[ "${POD_STATUS}" == "ErrImagePull" ]]; then
-    log_pass "Pod fails to start with invalid image (${POD_STATUS})"
 else
-    log_fail "Pod fails to start with invalid image (got: ${POD_STATUS}, expected: ImagePullBackOff or ErrImagePull)"
+    # Poll for pod to be created and enter image pull error state (up to 60s)
+    POD_STATUS=""
+    for i in $(seq 1 12); do
+        POD_STATUS=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}-neg2" -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || echo "")
+        if [[ "${POD_STATUS}" == "ImagePullBackOff" ]] || [[ "${POD_STATUS}" == "ErrImagePull" ]]; then
+            break
+        fi
+        sleep 5
+    done
+
+    if [[ "${POD_STATUS}" == "ImagePullBackOff" ]] || [[ "${POD_STATUS}" == "ErrImagePull" ]]; then
+        log_pass "Pod fails to start with invalid image (${POD_STATUS})"
+    else
+        log_fail "Pod fails to start with invalid image (got: ${POD_STATUS}, expected: ImagePullBackOff or ErrImagePull)"
+    fi
 fi
 helm uninstall "${RELEASE_NAME}-neg2" -n "${NAMESPACE}" 2>/dev/null || true
 
@@ -272,25 +272,26 @@ INSTALL_EXIT_NEG3=$?
 set -e
 if [[ "${INSTALL_EXIT_NEG3}" -ne 0 ]]; then
     log_fail "Helm install for liveness probe test (Test 12) failed unexpectedly: ${INSTALL_OUTPUT_NEG3}"
-fi
-# Wait for pod to be created
-POD_NAME=""
-for i in $(seq 1 30); do
-    POD_NAME=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}-neg3" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-    if [[ -n "${POD_NAME}" ]]; then
-        break
-    fi
-    sleep 2
-done
-if [[ -n "${POD_NAME}" ]]; then
-    FAILURE_THRESHOLD=$(kubectl get pod "${POD_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.containers[0].livenessProbe.failureThreshold}' 2>/dev/null || echo "")
-    if [[ "${FAILURE_THRESHOLD}" == "3" ]]; then
-        log_pass "Pod liveness probe configured with failureThreshold=3 for restart"
-    else
-        log_fail "Pod liveness probe configured (got failureThreshold: ${FAILURE_THRESHOLD}, expected: 3)"
-    fi
 else
-    log_fail "Pod liveness probe is configured for restart (pod not found)"
+    # Wait for pod to be created
+    POD_NAME=""
+    for i in $(seq 1 30); do
+        POD_NAME=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}-neg3" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [[ -n "${POD_NAME}" ]]; then
+            break
+        fi
+        sleep 2
+    done
+    if [[ -n "${POD_NAME}" ]]; then
+        FAILURE_THRESHOLD=$(kubectl get pod "${POD_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.containers[0].livenessProbe.failureThreshold}' 2>/dev/null || echo "")
+        if [[ "${FAILURE_THRESHOLD}" == "3" ]]; then
+            log_pass "Pod liveness probe configured with failureThreshold=3 for restart"
+        else
+            log_fail "Pod liveness probe configured (got failureThreshold: ${FAILURE_THRESHOLD}, expected: 3)"
+        fi
+    else
+        log_fail "Pod liveness probe is configured for restart (pod not found)"
+    fi
 fi
 helm uninstall "${RELEASE_NAME}-neg3" -n "${NAMESPACE}" 2>/dev/null || true
 
