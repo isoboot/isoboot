@@ -110,3 +110,15 @@ Validate hostPath path is absolute
 {{- fail "storage.hostPath.path must be an absolute path (start with /)" }}
 {{- end }}
 {{- end }}
+
+{{/*
+Validate controller.baseDir is absolute and non-empty
+*/}}
+{{- define "isoboot.validateControllerBaseDir" -}}
+{{- if not .Values.controller.baseDir }}
+{{- fail "controller.baseDir is required and cannot be empty" }}
+{{- end }}
+{{- if not (hasPrefix "/" .Values.controller.baseDir) }}
+{{- fail "controller.baseDir must be an absolute path (start with /)" }}
+{{- end }}
+{{- end }}

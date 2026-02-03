@@ -293,3 +293,17 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: "storage.hostPath.path must be an absolute path (start with /)"
+
+  - it: should fail with empty controller.baseDir
+    set:
+      controller.baseDir: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "controller.baseDir is required and cannot be empty"
+
+  - it: should fail with relative controller.baseDir
+    set:
+      controller.baseDir: relative/path
+    asserts:
+      - failedTemplate:
+          errorMessage: "controller.baseDir must be an absolute path (start with /)"

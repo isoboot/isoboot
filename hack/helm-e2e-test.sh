@@ -32,6 +32,14 @@ command -v docker >/dev/null 2>&1 || {
     echo -e "${RED}docker is required but not found. This script uses 'docker exec' to configure Kind nodes.${NC}"
     exit 1
 }
+command -v kubectl >/dev/null 2>&1 || {
+    echo -e "${RED}kubectl is required but not found.${NC}"
+    exit 1
+}
+command -v helm >/dev/null 2>&1 || {
+    echo -e "${RED}helm is required but not found.${NC}"
+    exit 1
+}
 
 # Switch to Kind cluster context
 kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || {

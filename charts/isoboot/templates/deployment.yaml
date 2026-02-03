@@ -2,6 +2,7 @@
 {{- include "isoboot.validateReplicaCount" . -}}
 {{- include "isoboot.validateHostPathType" . -}}
 {{- include "isoboot.validateHostPathPath" . -}}
+{{- include "isoboot.validateControllerBaseDir" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
