@@ -81,8 +81,8 @@ monitor that:
 2. If Copilot responds with an error (`"Copilot encountered an error and was unable to
    review this pull request"`), re-requests the review immediately and resets the timer
 3. If Copilot posts a review with comments, reports any unresolved threads
-4. If Copilot does not respond within **15 minutes**, posts a PR comment:
-   `"From Claude: Copilot did not respond within 15 minutes of the review request."`
+4. If Copilot does not respond within **25 minutes**, posts a PR comment:
+   `"From Claude: Copilot did not respond within 25 minutes of the review request."`
 
 **Important pitfalls when polling reviews:**
 
@@ -92,3 +92,16 @@ monitor that:
 - Always use `?per_page=100` when fetching reviews — the GitHub API defaults to 30
   results per page, so `.[-1]` may not return the actual latest review on PRs with
   many review rounds.
+
+### CI Checks
+
+After pushing changes, Claude must check CI status with `gh pr checks <PR#>` and
+inspect any failures using `gh run view <RUN_ID> --log-failed`. Common CI jobs:
+
+- **Lint** (`lint.yml`): Runs `golangci-lint`. Fix all reported issues (errcheck,
+  goconst, modernize, prealloc, etc.) before pushing again.
+- **Tests** (`test.yml`): Runs `make test`. Ensure all packages compile and all tests
+  pass. Non-ginkgo test packages must not receive `-ginkgo.v` flags.
+- **E2E Tests** (`test-e2e.yml`): Runs `make test-e2e` with a Kind cluster.
+
+If CI fails, Claude must fix the issues, commit, push, and re-request Copilot review.

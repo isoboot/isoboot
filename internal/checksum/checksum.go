@@ -19,7 +19,11 @@ var hexPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 
 // DetectAlgorithm returns the crypto.Hash for the given hex-encoded hash string.
 // 64 hex characters = SHA-256, 128 hex characters = SHA-512.
+// The input must be valid lowercase hexadecimal.
 func DetectAlgorithm(h string) (crypto.Hash, error) {
+	if !hexPattern.MatchString(h) {
+		return 0, fmt.Errorf("hash contains invalid characters (expected lowercase hex)")
+	}
 	switch len(h) {
 	case 64:
 		return crypto.SHA256, nil
@@ -44,7 +48,7 @@ func VerifyFile(filePath, expectedHash string) error {
 	if err != nil {
 		return fmt.Errorf("opening file: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-only file
 
 	var h hash.Hash
 	switch algo {
@@ -52,6 +56,8 @@ func VerifyFile(filePath, expectedHash string) error {
 		h = sha256.New()
 	case crypto.SHA512:
 		h = sha512.New()
+	default:
+		return fmt.Errorf("unsupported hash algorithm: %v", algo)
 	}
 
 	if _, err := io.Copy(h, f); err != nil {
@@ -85,10 +91,10 @@ func ParseShasumFile(content, fileURL, shasumURL string) (string, error) {
 		filename string
 	}
 
-	var entries []match
+	entries := make([]match, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" {
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
@@ -140,22 +146,27 @@ func ParseShasumFile(content, fileURL, shasumURL string) (string, error) {
 //   - hash-first:     <hash>  <filename>
 //   - filename-first: <filename>  <hash>
 func parseLine(line string) (string, string, error) {
-	// Split on whitespace (shasum files use two spaces or a space+asterisk).
 	fields := strings.Fields(line)
 	if len(fields) < 2 {
 		return "", "", fmt.Errorf("not enough fields")
 	}
 
-	// Try the first field as hash.
+	// Try hash-first format: <hash>  <filename>
+	// Use the raw line to extract the filename so spaces are preserved.
 	first := strings.ToLower(fields[0])
-	// The filename may contain the mode indicator (* for binary).
-	second := strings.TrimLeft(fields[1], "*")
-
 	if isHash(first) {
-		return first, second, nil
+		// Find everything after the hash token, strip separator whitespace
+		// and optional binary-mode indicator (*).
+		rest := line[len(fields[0]):]
+		rest = strings.TrimLeft(rest, " \t")
+		rest = strings.TrimPrefix(rest, "*")
+		if rest == "" {
+			return "", "", fmt.Errorf("missing filename")
+		}
+		return first, rest, nil
 	}
 
-	// Try the last field as hash (filename-first format).
+	// Try filename-first format: <filename>  <hash>
 	last := strings.ToLower(fields[len(fields)-1])
 	filename := strings.Join(fields[:len(fields)-1], " ")
 	if isHash(last) {
@@ -186,8 +197,8 @@ func relativePath(fileURL, shasumURL string) (string, error) {
 	shasumDir := path.Dir(sURL.Path)
 
 	// Compute relative path.
-	if strings.HasPrefix(fURL.Path, shasumDir+"/") {
-		return strings.TrimPrefix(fURL.Path, shasumDir+"/"), nil
+	if rel, ok := strings.CutPrefix(fURL.Path, shasumDir+"/"); ok {
+		return rel, nil
 	}
 
 	// If they don't share a prefix, just return the file's basename as fallback.

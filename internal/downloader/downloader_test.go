@@ -11,8 +11,10 @@ import (
 
 func TestDownload_HappyPath(t *testing.T) {
 	expected := "file content for download test"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(expected))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte(expected)); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -33,8 +35,34 @@ func TestDownload_HappyPath(t *testing.T) {
 	}
 }
 
+func TestDownload_CreatesDirectory(t *testing.T) {
+	expected := "data"
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte(expected)); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	dir := t.TempDir()
+	destPath := filepath.Join(dir, "sub", "dir", "file")
+
+	err := Download(context.Background(), ts.URL, destPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("reading downloaded file: %v", err)
+	}
+	if string(data) != expected {
+		t.Errorf("expected %q, got %q", expected, string(data))
+	}
+}
+
 func TestDownload_404(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
@@ -54,11 +82,13 @@ func TestDownload_404(t *testing.T) {
 
 func TestDownload_AtomicNoPartialFiles(t *testing.T) {
 	// Server sends some data then closes the connection abruptly.
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Set content-length higher than what we actually send to simulate truncation.
 		w.Header().Set("Content-Length", "1000000")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("partial data"))
+		if _, err := w.Write([]byte("partial data")); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 		// The handler returns, closing the connection before content-length is satisfied.
 	}))
 	defer ts.Close()
@@ -80,8 +110,10 @@ func TestDownload_AtomicNoPartialFiles(t *testing.T) {
 
 func TestFetchContent_HappyPath(t *testing.T) {
 	expected := "shasum file content"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(expected))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte(expected)); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -95,7 +127,7 @@ func TestFetchContent_HappyPath(t *testing.T) {
 }
 
 func TestFetchContent_404(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
@@ -107,8 +139,10 @@ func TestFetchContent_404(t *testing.T) {
 }
 
 func TestDownload_ContextCanceled(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("data"))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte("data")); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
@@ -119,6 +153,27 @@ func TestDownload_ContextCanceled(t *testing.T) {
 	cancel() // cancel immediately
 
 	err := Download(ctx, ts.URL, destPath)
+	if err == nil {
+		t.Fatal("expected error for canceled context")
+	}
+
+	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
+		t.Error("destPath should not exist after canceled download")
+	}
+}
+
+func TestFetchContent_ContextCanceled(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte("data")); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := FetchContent(ctx, ts.URL)
 	if err == nil {
 		t.Fatal("expected error for canceled context")
 	}
