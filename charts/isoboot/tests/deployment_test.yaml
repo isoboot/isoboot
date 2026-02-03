@@ -266,3 +266,10 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: "replicaCount > 1 requires controller.leaderElection.enabled=true to avoid concurrent reconciliation conflicts"
+
+  - it: should fail with invalid hostPath type
+    set:
+      storage.hostPath.type: InvalidType
+    asserts:
+      - failedTemplate:
+          errorMessage: "storage.hostPath.type must be one of: Directory, DirectoryOrCreate, File, FileOrCreate, Socket, CharDevice, BlockDevice (or empty)"

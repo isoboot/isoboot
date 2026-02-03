@@ -91,3 +91,13 @@ Running multiple replicas without leader election causes concurrent reconciliati
 {{- fail "replicaCount > 1 requires controller.leaderElection.enabled=true to avoid concurrent reconciliation conflicts" }}
 {{- end }}
 {{- end }}
+
+{{/*
+Validate hostPath type
+*/}}
+{{- define "isoboot.validateHostPathType" -}}
+{{- $validTypes := list "" "Directory" "DirectoryOrCreate" "File" "FileOrCreate" "Socket" "CharDevice" "BlockDevice" }}
+{{- if not (has .Values.storage.hostPath.type $validTypes) }}
+{{- fail "storage.hostPath.type must be one of: Directory, DirectoryOrCreate, File, FileOrCreate, Socket, CharDevice, BlockDevice (or empty)" }}
+{{- end }}
+{{- end }}

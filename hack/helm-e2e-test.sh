@@ -245,9 +245,18 @@ fi
 helm uninstall "${RELEASE_NAME}-neg2" -n "${NAMESPACE}" 2>/dev/null || true
 
 # Test 12: Pod liveness probe is configured for restart
+# Note: Not using --wait since controller image may not exist; just check rendered probe config
 log_info "Test 12: Pod liveness probe is configured for restart"
-helm install "${RELEASE_NAME}-neg3" "${CHART_PATH}" -n "${NAMESPACE}" --wait --timeout 120s 2>/dev/null || true
-POD_NAME=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}-neg3" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+helm install "${RELEASE_NAME}-neg3" "${CHART_PATH}" -n "${NAMESPACE}" 2>/dev/null || true
+# Wait for pod to be created
+POD_NAME=""
+for i in $(seq 1 30); do
+    POD_NAME=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}-neg3" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [[ -n "${POD_NAME}" ]]; then
+        break
+    fi
+    sleep 2
+done
 if [[ -n "${POD_NAME}" ]]; then
     FAILURE_THRESHOLD=$(kubectl get pod "${POD_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.containers[0].livenessProbe.failureThreshold}' 2>/dev/null || echo "")
     if [[ "${FAILURE_THRESHOLD}" == "3" ]]; then

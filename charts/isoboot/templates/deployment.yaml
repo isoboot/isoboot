@@ -1,5 +1,6 @@
 {{- include "isoboot.validatePullPolicy" . -}}
 {{- include "isoboot.validateReplicaCount" . -}}
+{{- include "isoboot.validateHostPathType" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -209,6 +209,13 @@ inspect any failures using `gh run view <RUN_ID> --log-failed`. Common CI jobs:
 
 If CI fails, Claude must fix the issues, commit, push, and re-request Copilot review.
 
+### Batching Fixes
+
+When both CI fails and Copilot feedback is pending, Claude should **wait for Copilot's
+review** before pushing fixes. This allows batching CI fixes and Copilot feedback
+addressing into a single commit, reducing review cycles and keeping the commit history
+clean. Only push once both are ready to address.
+
 ### PR Summary
 
 After each push to a PR branch, Claude must update the PR description (`gh pr edit
