@@ -473,7 +473,7 @@ var _ = Describe("BootSource Controller", func() {
 
 			It("fails when hash does not match", func() {
 				content := []byte("test content for hashing")
-				wrongHash := exampleSHA256Sum // This is the hash of an empty file
+				wrongHash := exampleSHA256Sum // SHA-256 of empty file, used here as an incorrect hash
 
 				filePath := filepath.Join(tempDir, "hashtest-fail.bin")
 				Expect(os.WriteFile(filePath, content, 0o644)).To(Succeed())
@@ -502,6 +502,13 @@ var _ = Describe("BootSource Controller", func() {
 				dir2, err := reconciler.ensureDirectory("ns", "name")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(dir1).To(Equal(dir2))
+			})
+
+			It("returns error when BaseDir is empty", func() {
+				reconciler.BaseDir = ""
+				_, err := reconciler.ensureDirectory("ns", "name")
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("BaseDir is not configured"))
 			})
 		})
 
@@ -559,6 +566,14 @@ var _ = Describe("BootSource Controller", func() {
 					isobootv1alpha1.BootSourcePhaseReady,
 				}
 				Expect(worstPhase(phases)).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			})
+
+			It("returns Failed for unknown phase", func() {
+				phases := []isobootv1alpha1.BootSourcePhase{
+					isobootv1alpha1.BootSourcePhaseReady,
+					isobootv1alpha1.BootSourcePhase("UnknownPhase"),
+				}
+				Expect(worstPhase(phases)).To(Equal(isobootv1alpha1.BootSourcePhaseFailed))
 			})
 		})
 	})

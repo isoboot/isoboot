@@ -82,7 +82,7 @@ func (r *BootSourceReconciler) fetcher() ResourceFetcher {
 	if r.Fetcher != nil {
 		return r.Fetcher
 	}
-	return &HTTPResourceFetcher{}
+	return &HTTPResourceFetcher{Client: http.DefaultClient}
 }
 
 // resolveExpectedHash returns the expected hash for a DownloadableResource.
@@ -125,8 +125,11 @@ func (r *BootSourceReconciler) verifyResource(path, expectedHash string) error {
 }
 
 // ensureDirectory creates the directory structure for storing resources
-// for a given BootSource, returning the path.
+// for a given BootSource, returning the path. Returns an error if BaseDir is not set.
 func (r *BootSourceReconciler) ensureDirectory(namespace, name string) (string, error) {
+	if r.BaseDir == "" {
+		return "", fmt.Errorf("BaseDir is not configured")
+	}
 	dir := filepath.Join(r.BaseDir, namespace, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("creating directory %s: %w", dir, err)
@@ -148,17 +151,24 @@ var phasePriority = map[isobootv1alpha1.BootSourcePhase]int{
 
 // worstPhase returns the phase with the highest priority (worst) from the input list.
 // Priority order (worst to best): Failed > Corrupted > Downloading > Extracting > Building > Verifying > Pending > Ready.
-// Returns Pending for empty input.
+// Returns Pending for empty input. Unknown phases are treated as Failed.
 func worstPhase(phases []isobootv1alpha1.BootSourcePhase) isobootv1alpha1.BootSourcePhase {
 	if len(phases) == 0 {
 		return isobootv1alpha1.BootSourcePhasePending
 	}
 
 	worst := phases[0]
-	worstPrio := phasePriority[worst]
+	worstPrio, known := phasePriority[worst]
+	if !known {
+		return isobootv1alpha1.BootSourcePhaseFailed
+	}
 
 	for _, p := range phases[1:] {
-		if prio := phasePriority[p]; prio > worstPrio {
+		prio, known := phasePriority[p]
+		if !known {
+			return isobootv1alpha1.BootSourcePhaseFailed
+		}
+		if prio > worstPrio {
 			worst = p
 			worstPrio = prio
 		}
