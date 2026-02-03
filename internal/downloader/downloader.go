@@ -4,26 +4,51 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
+
+// NewDefaultClient returns an *http.Client with timeouts suitable for
+// downloading boot media over the network. It sets a 30-second dial
+// timeout, a 10-second TLS handshake timeout, and a 30-second response
+// header timeout. No overall client timeout is set so that large file
+// downloads are not interrupted; callers should use context deadlines for
+// per-request time limits.
+func NewDefaultClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: 30 * time.Second}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+		},
+	}
+}
 
 // Download fetches the URL content and writes it atomically to destPath.
 // It first writes to a temporary file in the same directory, then renames
 // it to the final path, ensuring no partial files are left on failure.
 //
+// If client is nil, a default client with sensible timeouts is used
+// (see NewDefaultClient).
+//
 // Security: destPath is used as provided and is not validated or sanitized.
 // Callers must ensure that destPath is a trusted, safe path and does not
 // allow path traversal (e.g., "../../../...") or otherwise escape any
 // intended directory boundaries.
-func Download(ctx context.Context, url, destPath string) error {
+func Download(ctx context.Context, client *http.Client, url, destPath string) error {
+	if client == nil {
+		client = NewDefaultClient()
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("downloading %s: %w", url, err)
 	}
@@ -80,13 +105,20 @@ const maxFetchSize = 10 << 20
 // FetchContent fetches a URL and returns its body as bytes.
 // Intended for small files like shasum files. Responses larger than 10 MB
 // are rejected.
-func FetchContent(ctx context.Context, url string) ([]byte, error) {
+//
+// If client is nil, a default client with sensible timeouts is used
+// (see NewDefaultClient).
+func FetchContent(ctx context.Context, client *http.Client, url string) ([]byte, error) {
+	if client == nil {
+		client = NewDefaultClient()
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", url, err)
 	}
