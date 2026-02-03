@@ -83,3 +83,8 @@ monitor that:
 3. If Copilot posts a review with comments, reports any unresolved threads
 4. If Copilot does not respond within **15 minutes**, posts a PR comment:
    `"From Claude: Copilot did not respond within 15 minutes of the review request."`
+
+**Important**: When parsing review data from `gh api`, use separate `--jq` queries for
+each field (e.g., `.[-1].submitted_at`, `.[-1].user.login`, `.[-1].body`). Do **not**
+combine fields into a delimited string with `cut -d'|'` — Copilot review bodies contain
+`|` characters from markdown tables which corrupt the parsing.
