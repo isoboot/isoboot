@@ -56,10 +56,12 @@ spec:
                   with initrd.
                 properties:
                   shasum:
-                    description: shasum is the expected SHA256 checksum of the resource.
+                    description: shasum is the expected checksum (SHA256 or SHA512)
+                      of the resource.
                     type: string
                   shasumURL:
-                    description: shasumURL is the URL to a SHA256SUMS file for verification.
+                    description: shasumURL is the URL to a checksum file (e.g., SHA256SUMS
+                      or SHA512SUMS) for verification.
                     type: string
                   url:
                     description: url is the download URL for the resource.
@@ -76,10 +78,12 @@ spec:
                 description: initrd is a direct initrd download source.
                 properties:
                   shasum:
-                    description: shasum is the expected SHA256 checksum of the resource.
+                    description: shasum is the expected checksum (SHA256 or SHA512)
+                      of the resource.
                     type: string
                   shasumURL:
-                    description: shasumURL is the URL to a SHA256SUMS file for verification.
+                    description: shasumURL is the URL to a checksum file (e.g., SHA256SUMS
+                      or SHA512SUMS) for verification.
                     type: string
                   url:
                     description: url is the download URL for the resource.
@@ -106,10 +110,12 @@ spec:
                     minLength: 1
                     type: string
                   shasum:
-                    description: shasum is the expected SHA256 checksum of the resource.
+                    description: shasum is the expected checksum (SHA256 or SHA512)
+                      of the resource.
                     type: string
                   shasumURL:
-                    description: shasumURL is the URL to a SHA256SUMS file for verification.
+                    description: shasumURL is the URL to a checksum file (e.g., SHA256SUMS
+                      or SHA512SUMS) for verification.
                     type: string
                   url:
                     description: url is the download URL for the resource.
@@ -128,10 +134,12 @@ spec:
                 description: kernel is a direct kernel download source.
                 properties:
                   shasum:
-                    description: shasum is the expected SHA256 checksum of the resource.
+                    description: shasum is the expected checksum (SHA256 or SHA512)
+                      of the resource.
                     type: string
                   shasumURL:
-                    description: shasumURL is the URL to a SHA256SUMS file for verification.
+                    description: shasumURL is the URL to a checksum file (e.g., SHA256SUMS
+                      or SHA512SUMS) for verification.
                     type: string
                   url:
                     description: url is the download URL for the resource.
@@ -169,7 +177,7 @@ spec:
                       description: path is the local file path.
                       type: string
                     shasum:
-                      description: shasum is the verified SHA256 checksum.
+                      description: shasum is the verified checksum of the resource.
                       type: string
                     size:
                       description: size is the file size in bytes.
