@@ -177,24 +177,28 @@ func (r *BootSourceReconciler) reconcileAllResources(
 		}
 	}
 
-	// Build initrdWithFirmware if both initrd and firmware are ready
-	initrdStatus := bs.Status.Resources["initrd"]
-	fwStatus := bs.Status.Resources["firmware"]
-	if initrdStatus.Path != "" && fwStatus.Path != "" {
-		existingStatus := bs.Status.Resources["initrdWithFirmware"]
-		buildPhase, buildStatus, buildErr := r.reconcileInitrdWithFirmware(
-			ctx,
-			initrdStatus.Path,
-			fwStatus.Path,
-			&existingStatus,
-			destDir,
-		)
-		if buildErr != nil {
-			messages = append(messages, fmt.Sprintf("initrdWithFirmware: %v", buildErr))
-		}
-		phases = append(phases, buildPhase)
-		if buildStatus != nil {
-			bs.Status.Resources["initrdWithFirmware"] = *buildStatus
+	// Build initrdWithFirmware if firmware is specified and both initrd and firmware are ready
+	if bs.Spec.Firmware != nil {
+		initrdStatus := bs.Status.Resources["initrd"]
+		fwStatus := bs.Status.Resources["firmware"]
+		if initrdStatus.Path != "" && fwStatus.Path != "" {
+			existingStatus := bs.Status.Resources["initrdWithFirmware"]
+			buildPhase, buildStatus, buildErr := r.reconcileInitrdWithFirmware(
+				ctx,
+				initrdStatus.Path,
+				initrdStatus.Shasum,
+				fwStatus.Path,
+				fwStatus.Shasum,
+				&existingStatus,
+				destDir,
+			)
+			if buildErr != nil {
+				messages = append(messages, fmt.Sprintf("initrdWithFirmware: %v", buildErr))
+			}
+			phases = append(phases, buildPhase)
+			if buildStatus != nil {
+				bs.Status.Resources["initrdWithFirmware"] = *buildStatus
+			}
 		}
 	}
 
@@ -225,6 +229,7 @@ func (r *BootSourceReconciler) reconcileISOMode(
 		kernelStatus, initrdStatus, extractErr := r.extractFromISO(
 			ctx,
 			isoStatus.Path,
+			isoStatus.Shasum,
 			bs.Spec.ISO.KernelPath,
 			bs.Spec.ISO.InitrdPath,
 			destDir,
@@ -503,28 +508,36 @@ func worstPhase(phases []isobootv1alpha1.BootSourcePhase) isobootv1alpha1.BootSo
 }
 
 // extractFromISO extracts kernel and initrd from an ISO image.
-// If the extracted files already exist with valid content, this is a no-op (idempotent).
+// Re-extracts if the ISO hash changes or if extracted files are missing/corrupted.
 func (r *BootSourceReconciler) extractFromISO(
 	ctx context.Context,
-	isoPath, kernelPath, initrdPath, destDir string,
+	isoPath, isoShasum, kernelPath, initrdPath, destDir string,
 ) (kernelStatus, initrdStatus *isobootv1alpha1.ResourceStatus, err error) {
 	log := logf.FromContext(ctx)
 
 	kernelDest := filepath.Join(destDir, "kernel")
 	initrdDest := filepath.Join(destDir, "initrd")
+	markerFile := filepath.Join(destDir, ".iso-extracted")
 
-	// Check if both files already exist (idempotency)
-	kernelExists := false
-	initrdExists := false
-	if info, statErr := os.Stat(kernelDest); statErr == nil && info.Size() > 0 {
-		kernelExists = true
-	}
-	if info, statErr := os.Stat(initrdDest); statErr == nil && info.Size() > 0 {
-		initrdExists = true
+	// Check if extraction is needed by comparing ISO hash with marker
+	needExtract := true
+	if markerData, err := os.ReadFile(markerFile); err == nil {
+		if string(markerData) == isoShasum {
+			// ISO hasn't changed, check if extracted files exist
+			kernelOK := false
+			initrdOK := false
+			if info, statErr := os.Stat(kernelDest); statErr == nil && info.Size() > 0 {
+				kernelOK = true
+			}
+			if info, statErr := os.Stat(initrdDest); statErr == nil && info.Size() > 0 {
+				initrdOK = true
+			}
+			needExtract = !kernelOK || !initrdOK
+		}
 	}
 
 	// Extract if needed
-	if !kernelExists || !initrdExists {
+	if needExtract {
 		log.Info("Extracting files from ISO", "kernelPath", kernelPath, "initrdPath", initrdPath)
 
 		// Extract to temp directory then move to canonical names
@@ -538,19 +551,24 @@ func (r *BootSourceReconciler) extractFromISO(
 			return nil, nil, fmt.Errorf("extracting from ISO: %w", err)
 		}
 
-		// Move extracted files to canonical names
-		extractedKernel := filepath.Join(extractDir, filepath.FromSlash(kernelPath))
-		extractedInitrd := filepath.Join(extractDir, filepath.FromSlash(initrdPath))
+		// Normalize paths: trim leading "/" to get relative paths within extractDir
+		kernelRel := strings.TrimPrefix(kernelPath, "/")
+		initrdRel := strings.TrimPrefix(initrdPath, "/")
 
-		if !kernelExists {
-			if err := os.Rename(extractedKernel, kernelDest); err != nil {
-				return nil, nil, fmt.Errorf("moving kernel to destination: %w", err)
-			}
+		// Move extracted files to canonical names
+		extractedKernel := filepath.Join(extractDir, filepath.FromSlash(kernelRel))
+		extractedInitrd := filepath.Join(extractDir, filepath.FromSlash(initrdRel))
+
+		if err := os.Rename(extractedKernel, kernelDest); err != nil {
+			return nil, nil, fmt.Errorf("moving kernel to destination: %w", err)
 		}
-		if !initrdExists {
-			if err := os.Rename(extractedInitrd, initrdDest); err != nil {
-				return nil, nil, fmt.Errorf("moving initrd to destination: %w", err)
-			}
+		if err := os.Rename(extractedInitrd, initrdDest); err != nil {
+			return nil, nil, fmt.Errorf("moving initrd to destination: %w", err)
+		}
+
+		// Write marker file with ISO hash
+		if err := os.WriteFile(markerFile, []byte(isoShasum), 0o644); err != nil {
+			return nil, nil, fmt.Errorf("writing extraction marker: %w", err)
 		}
 	}
 
@@ -564,8 +582,15 @@ func (r *BootSourceReconciler) extractFromISO(
 		return nil, nil, fmt.Errorf("computing initrd hash: %w", err)
 	}
 
-	kernelInfo, _ := os.Stat(kernelDest)
-	initrdInfo, _ := os.Stat(initrdDest)
+	// Get file sizes (handle potential errors)
+	kernelInfo, err := os.Stat(kernelDest)
+	if err != nil {
+		return nil, nil, fmt.Errorf("stat kernel: %w", err)
+	}
+	initrdInfo, err := os.Stat(initrdDest)
+	if err != nil {
+		return nil, nil, fmt.Errorf("stat initrd: %w", err)
+	}
 
 	kernelStatus = &isobootv1alpha1.ResourceStatus{
 		Shasum: kernelHash,
@@ -649,27 +674,34 @@ func (r *BootSourceReconciler) buildInitrdWithFirmware(
 }
 
 // reconcileInitrdWithFirmware ensures initrdWithFirmware is built and valid.
+// It tracks source hashes to detect when inputs change and rebuilds accordingly.
 // Returns Building phase during construction, Ready when done.
 func (r *BootSourceReconciler) reconcileInitrdWithFirmware(
 	ctx context.Context,
-	initrdPath, firmwarePath string,
+	initrdPath, initrdShasum string,
+	firmwarePath, firmwareShasum string,
 	existingStatus *isobootv1alpha1.ResourceStatus,
 	destDir string,
 ) (isobootv1alpha1.BootSourcePhase, *isobootv1alpha1.ResourceStatus, error) {
 	log := logf.FromContext(ctx)
 	destPath := filepath.Join(destDir, "initrdWithFirmware")
 
-	// Check if existing file is valid
-	if existingStatus != nil && existingStatus.Path != "" {
+	// Expected source hash is the combination of initrd and firmware hashes
+	expectedSourceHash := initrdShasum + "+" + firmwareShasum
+
+	// Check if existing file is valid and built from current sources
+	if existingStatus != nil && existingStatus.Path != "" && existingStatus.URL == expectedSourceHash {
 		if info, err := os.Stat(existingStatus.Path); err == nil && info.Size() > 0 {
 			// Verify hash matches
 			actualHash, err := checksum.ComputeFileHash(existingStatus.Path)
 			if err == nil && actualHash == existingStatus.Shasum {
-				// Existing file is valid
+				// Existing file is valid and from current sources
 				return isobootv1alpha1.BootSourcePhaseReady, existingStatus, nil
 			}
 			log.Info("Existing initrdWithFirmware is corrupted, rebuilding")
 		}
+	} else if existingStatus != nil && existingStatus.URL != "" && existingStatus.URL != expectedSourceHash {
+		log.Info("Source inputs changed, rebuilding initrdWithFirmware")
 	}
 
 	// Build initrdWithFirmware
@@ -678,6 +710,9 @@ func (r *BootSourceReconciler) reconcileInitrdWithFirmware(
 	if err != nil {
 		return isobootv1alpha1.BootSourcePhaseFailed, nil, err
 	}
+
+	// Store source hash in URL field to track what inputs were used
+	status.URL = expectedSourceHash
 
 	return isobootv1alpha1.BootSourcePhaseReady, status, nil
 }

@@ -156,26 +156,34 @@ func createMinimalISO(kernelPath, initrdPath string) []byte {
 	dotDotEntry[33] = 0x01
 	offset += 34
 
-	// linux file entry
+	// linux file entry (without ";1" version suffix - isoextract strips it anyway)
 	kernelName := strings.TrimPrefix(kernelPath, "/")
-	kernelEntry := rootDirData[offset : offset+33+len(kernelName)+1]
-	kernelEntry[0] = byte(33 + len(kernelName) + (len(kernelName)+1)%2) // Record length (padded to even)
-	writeInt32Both(kernelEntry[2:10], 18)                               // Location at sector 18
+	kernelRecLen := 33 + len(kernelName)
+	if kernelRecLen%2 == 1 {
+		kernelRecLen++ // Pad to even length
+	}
+	kernelEntry := rootDirData[offset : offset+kernelRecLen]
+	kernelEntry[0] = byte(kernelRecLen)
+	writeInt32Both(kernelEntry[2:10], 18) // Location at sector 18
 	writeInt32Both(kernelEntry[10:18], uint32(len(kernelContent)))
 	kernelEntry[25] = 0x00                  // File flags: regular file
 	kernelEntry[32] = byte(len(kernelName)) // File ID length
-	copy(kernelEntry[33:], kernelName+";1")
-	offset += int(kernelEntry[0])
+	copy(kernelEntry[33:33+len(kernelName)], kernelName)
+	offset += kernelRecLen
 
-	// initrd.gz file entry
+	// initrd.gz file entry (without ";1" version suffix)
 	initrdName := strings.TrimPrefix(initrdPath, "/")
-	initrdEntry := rootDirData[offset : offset+33+len(initrdName)+3] // +3 for ";1" and padding
-	initrdEntry[0] = byte(33 + len(initrdName) + 2 + (len(initrdName))%2)
+	initrdRecLen := 33 + len(initrdName)
+	if initrdRecLen%2 == 1 {
+		initrdRecLen++ // Pad to even length
+	}
+	initrdEntry := rootDirData[offset : offset+initrdRecLen]
+	initrdEntry[0] = byte(initrdRecLen)
 	writeInt32Both(initrdEntry[2:10], uint32(18+kernelSectors))
 	writeInt32Both(initrdEntry[10:18], uint32(len(initrdContent)))
 	initrdEntry[25] = 0x00
-	initrdEntry[32] = byte(len(initrdName) + 2)
-	copy(initrdEntry[33:], initrdName+";1")
+	initrdEntry[32] = byte(len(initrdName))
+	copy(initrdEntry[33:33+len(initrdName)], initrdName)
 
 	// Write file data
 	copy(isoData[18*sectorSize:], kernelContent)
