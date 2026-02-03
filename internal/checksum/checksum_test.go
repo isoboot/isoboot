@@ -136,6 +136,62 @@ var _ = Describe("ParseShasumFile", func() {
 		_, err := ParseShasumFile(content, fileURL, testShasumURL)
 		Expect(err).To(HaveOccurred())
 	})
+
+	Context("URL validation", func() {
+		const validContent = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  myfile.iso"
+
+		It("should reject http scheme in file URL", func() {
+			_, err := ParseShasumFile(validContent, "http://example.com/myfile.iso", testShasumURL)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("only https is allowed"))
+		})
+
+		It("should reject http scheme in shasum URL", func() {
+			_, err := ParseShasumFile(validContent, testFileURL, "http://example.com/SHA256SUMS")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("only https is allowed"))
+		})
+
+		It("should reject ftp scheme", func() {
+			_, err := ParseShasumFile(validContent, "ftp://example.com/myfile.iso", testShasumURL)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("only https is allowed"))
+		})
+
+		It("should reject file scheme", func() {
+			_, err := ParseShasumFile(validContent, "file:///tmp/myfile.iso", "file:///tmp/SHA256SUMS")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("only https is allowed"))
+		})
+
+		It("should reject empty scheme", func() {
+			_, err := ParseShasumFile(validContent, "//example.com/myfile.iso", testShasumURL)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("only https is allowed"))
+		})
+
+		It("should reject mismatched hosts", func() {
+			_, err := ParseShasumFile(validContent, "https://evil.com/myfile.iso", testShasumURL)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("host mismatch"))
+		})
+
+		It("should reject mismatched hosts with subdomain difference", func() {
+			_, err := ParseShasumFile(validContent,
+				"https://cdn.example.com/myfile.iso",
+				"https://mirror.example.com/SHA256SUMS")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("host mismatch"))
+		})
+
+		It("should reject mismatched ports on same hostname", func() {
+			_, err := ParseShasumFile(validContent,
+				"https://example.com:8443/myfile.iso",
+				"https://example.com:9443/SHA256SUMS")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("host mismatch"))
+		})
+	})
 })
 
 var _ = Describe("VerifyFile", func() {

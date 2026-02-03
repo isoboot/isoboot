@@ -182,7 +182,7 @@ func isHash(s string) bool {
 }
 
 // relativePath computes the relative path from the shasumURL's parent directory
-// to the fileURL.
+// to the fileURL. Both URLs must use the https scheme and share the same host.
 func relativePath(fileURL, shasumURL string) (string, error) {
 	fURL, err := url.Parse(fileURL)
 	if err != nil {
@@ -191,6 +191,19 @@ func relativePath(fileURL, shasumURL string) (string, error) {
 	sURL, err := url.Parse(shasumURL)
 	if err != nil {
 		return "", fmt.Errorf("parsing shasum URL: %w", err)
+	}
+
+	// Only https is allowed.
+	if fURL.Scheme != "https" {
+		return "", fmt.Errorf("unsupported scheme %q in file URL: only https is allowed", fURL.Scheme)
+	}
+	if sURL.Scheme != "https" {
+		return "", fmt.Errorf("unsupported scheme %q in shasum URL: only https is allowed", sURL.Scheme)
+	}
+
+	// Both URLs must reference the same host.
+	if fURL.Host != sURL.Host {
+		return "", fmt.Errorf("host mismatch: file URL host %q does not match shasum URL host %q", fURL.Host, sURL.Host)
 	}
 
 	// Get the directory of the shasum file.
