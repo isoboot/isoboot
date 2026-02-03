@@ -35,7 +35,9 @@ spec:
           args:
             - --base-dir={{ .Values.controller.baseDir }}
             - --health-probe-bind-address=:8081
+            {{- if .Values.controller.leaderElection.enabled }}
             - --leader-elect
+            {{- end }}
           ports:
             - name: health
               containerPort: 8081

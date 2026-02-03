@@ -177,10 +177,11 @@ fi
 
 # Test 10: Install fails without serviceaccount name when create=false
 log_info "Test 10: Install fails without serviceaccount name when create=false"
-if helm install "${RELEASE_NAME}-neg1" "${CHART_PATH}" -n "${NAMESPACE}" \
+INSTALL_OUTPUT=$(helm install "${RELEASE_NAME}-neg1" "${CHART_PATH}" -n "${NAMESPACE}" \
     --set serviceAccount.create=false \
     --set serviceAccount.name="" \
-    --wait --timeout 30s 2>&1 | grep -q "serviceAccount.name is required"; then
+    --wait --timeout 30s 2>&1 || true)
+if echo "${INSTALL_OUTPUT}" | grep -q "serviceAccount.name is required"; then
     log_pass "Install fails without serviceaccount name when create=false"
     helm uninstall "${RELEASE_NAME}-neg1" -n "${NAMESPACE}" 2>/dev/null || true
 else

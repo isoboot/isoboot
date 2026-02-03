@@ -193,17 +193,23 @@ helm-test-e2e: ## Run Helm chart integration tests with Kind.
 		echo "Kind is not installed. Please install Kind manually."; \
 		exit 1; \
 	}
-	@case "$$($(KIND) get clusters 2>/dev/null)" in \
+	@CREATED_CLUSTER=false; \
+	case "$$($(KIND) get clusters 2>/dev/null)" in \
 		*"$(HELM_E2E_CLUSTER)"*) \
-			echo "Kind cluster '$(HELM_E2E_CLUSTER)' already exists." ;; \
+			echo "Kind cluster '$(HELM_E2E_CLUSTER)' already exists. Will NOT delete after tests." ;; \
 		*) \
 			echo "Creating Kind cluster '$(HELM_E2E_CLUSTER)'..."; \
-			$(KIND) create cluster --name $(HELM_E2E_CLUSTER) ;; \
-	esac
-	@echo "Running Helm E2E tests..."
-	@./hack/helm-e2e-test.sh $(HELM_E2E_CLUSTER)
-	@echo "Cleaning up Kind cluster..."
-	@$(KIND) delete cluster --name $(HELM_E2E_CLUSTER)
+			$(KIND) create cluster --name $(HELM_E2E_CLUSTER); \
+			CREATED_CLUSTER=true ;; \
+	esac; \
+	echo "Running Helm E2E tests..."; \
+	./hack/helm-e2e-test.sh $(HELM_E2E_CLUSTER); \
+	TEST_EXIT=$$?; \
+	if [ "$$CREATED_CLUSTER" = "true" ]; then \
+		echo "Cleaning up Kind cluster..."; \
+		$(KIND) delete cluster --name $(HELM_E2E_CLUSTER); \
+	fi; \
+	exit $$TEST_EXIT
 
 ##@ Dependencies
 

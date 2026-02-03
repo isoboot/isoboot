@@ -13,6 +13,11 @@ replicaCount: 1
 controller:
   # Base directory for storing downloaded boot resources
   baseDir: /var/lib/isoboot
+  # Leader election configuration
+  # NOTE: Leader election requires RBAC permissions on Leases/ConfigMaps/Events.
+  # Since RBAC is deferred to #176, this defaults to disabled.
+  leaderElection:
+    enabled: false
   resources:
     limits:
       memory: 512Mi

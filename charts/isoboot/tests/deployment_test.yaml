@@ -29,7 +29,15 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --base-dir=/var/lib/isoboot
 
-  - it: should enable leader election
+  - it: should disable leader election by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --leader-elect
+
+  - it: should enable leader election when configured
+    set:
+      controller.leaderElection.enabled: true
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
