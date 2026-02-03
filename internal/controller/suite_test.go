@@ -35,7 +35,9 @@ var (
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecs(t, "Controller Suite")
+	suiteConfig, reporterConfig := GinkgoConfiguration()
+	reporterConfig.Verbose = true
+	RunSpecs(t, "Controller Suite", suiteConfig, reporterConfig)
 }
 
 var _ = BeforeSuite(func() {
