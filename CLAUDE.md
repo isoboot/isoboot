@@ -68,6 +68,18 @@ standalone library packages (with `httptest`, temp files, etc.).
 - Commit messages should be concise and descriptive (imperative mood)
 - Branch naming: `feat/`, `fix/`, `docs/`, `refactor/`, `pr/` prefixes
 
+### Branch Workflow
+
+Before starting any new work, **always** sync with main:
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b <new-branch-name>
+```
+
+This ensures branches start from the latest main and avoids merge conflicts.
+
 ## AI-to-AI Conversation Loop
 
 This project uses an automated review workflow where Claude Code and GitHub Copilot

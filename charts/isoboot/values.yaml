@@ -1,0 +1,71 @@
+# Default values for isoboot.
+
+image:
+  repository: ghcr.io/isoboot/isoboot
+  # Overrides the image tag whose default is the chart appVersion
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Number of controller replicas.
+# NOTE: The controller does not currently support HA; leave this at 1.
+replicaCount: 1
+
+controller:
+  # Base directory for storing downloaded boot resources
+  baseDir: /var/lib/isoboot
+  resources:
+    limits:
+      memory: 512Mi
+      cpu: 500m
+    requests:
+      memory: 256Mi
+      cpu: 250m
+
+# Storage configuration for boot files (hostPath only in this release)
+# NOTE: For persistent storage options (PVC), see issue #176.
+storage:
+  hostPath:
+    # Host path for storage (defaults to controller.baseDir if empty)
+    path: ""
+    # Type of hostPath volume
+    type: DirectoryOrCreate
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  # fsGroup ensures mounted volumes are writable by the non-root user
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+
+# Node selector for pod scheduling
+nodeSelector: {}
+
+# Tolerations for pod scheduling
+tolerations: []
+
+# Affinity rules for pod scheduling
+affinity: {}
