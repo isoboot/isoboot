@@ -39,7 +39,7 @@ make deploy IMG=<some-registry>/isoboot:tag
 privileges or be logged in as admin.
 
 **Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+You can apply the samples (examples) from the config/samples:
 
 ```sh
 kubectl apply -k config/samples/
