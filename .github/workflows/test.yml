@@ -24,6 +24,4 @@ jobs:
           key: tools-${{ runner.os }}-${{ hashFiles('go.sum') }}
 
       - name: Running Tests
-        run: |
-          go mod tidy
-          make test
+        run: make test
