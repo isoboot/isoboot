@@ -86,6 +86,6 @@ spec:
             claimName: {{ default (printf "%s-data" (include "isoboot.fullname" .)) .Values.storage.pvc.existingClaim }}
           {{- else }}
           hostPath:
-            path: {{ .Values.storage.hostPath.path }}
+            path: {{ default .Values.controller.baseDir .Values.storage.hostPath.path }}
             type: {{ .Values.storage.hostPath.type }}
           {{- end }}

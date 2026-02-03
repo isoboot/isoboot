@@ -275,7 +275,7 @@ define gomodver
 $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
 endef
 
-# download-helm-unittest downloads helm-unittest binary from GitHub releases
+# download-helm-unittest downloads helm-unittest binary from GitHub releases with checksum verification
 # $1 - target path with name of binary
 # $2 - version of helm-unittest (e.g., v0.7.0)
 define download-helm-unittest
@@ -293,9 +293,22 @@ esac; \
 version_num=$$(echo "$(2)" | sed 's/^v//'); \
 echo "Downloading helm-unittest $(2) for $$os/$$arch"; \
 tmpdir=$$(mktemp -d); \
-curl -sSL "https://github.com/helm-unittest/helm-unittest/releases/download/$(2)/helm-unittest-$$os-$$arch-$$version_num.tgz" | tar xz -C "$$tmpdir"; \
+tarball="helm-unittest-$$os-$$arch-$$version_num.tgz"; \
+curl -sSL "https://github.com/helm-unittest/helm-unittest/releases/download/$(2)/$$tarball" -o "$$tmpdir/$$tarball"; \
+curl -sSL "https://github.com/helm-unittest/helm-unittest/releases/download/$(2)/helm-unittest-checksum.sha" -o "$$tmpdir/checksum.sha"; \
+expected=$$(grep "$$tarball" "$$tmpdir/checksum.sha" | awk '{print $$1}'); \
+actual=$$(sha256sum "$$tmpdir/$$tarball" | awk '{print $$1}'); \
+if [ "$$expected" != "$$actual" ]; then \
+  echo "Checksum verification failed for $$tarball"; \
+  echo "Expected: $$expected"; \
+  echo "Actual: $$actual"; \
+  rm -rf "$$tmpdir"; \
+  exit 1; \
+fi; \
+echo "Checksum verified"; \
+tar xz -C "$$tmpdir" -f "$$tmpdir/$$tarball"; \
 mv "$$tmpdir/untt" "$(1)-$(2)"; \
 rm -rf "$$tmpdir"; \
 }; \
-ln -sf "$$(realpath "$(1)-$(2)")" "$(1)"
+ln -sf "$(1)-$(2)" "$(1)"
 endef

@@ -2,9 +2,9 @@ suite: schema validation tests
 templates:
   - templates/deployment.yaml
 tests:
-  # These tests verify that the schema catches invalid values
+  # These tests verify rendering behavior for values covered by the schema
   # Note: helm-unittest doesn't directly test JSON schema validation,
-  # but we can verify that certain value combinations work/don't work
+  # so this suite focuses on positive cases where valid values render as expected
 
   # Positive Tests - Valid configurations
   - it: should accept valid pullPolicy Always
