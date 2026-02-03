@@ -44,12 +44,6 @@ func VerifyFile(filePath, expectedHash string) error {
 		return err
 	}
 
-	f, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("opening file: %w", err)
-	}
-	defer f.Close() //nolint:errcheck // read-only file
-
 	var h hash.Hash
 	switch algo {
 	case crypto.SHA256:
@@ -60,16 +54,32 @@ func VerifyFile(filePath, expectedHash string) error {
 		return fmt.Errorf("unsupported hash algorithm: %v", algo)
 	}
 
-	if _, err := io.Copy(h, f); err != nil {
-		return fmt.Errorf("reading file: %w", err)
+	actual, err := computeHash(filePath, h)
+	if err != nil {
+		return err
 	}
 
-	actual := hex.EncodeToString(h.Sum(nil))
 	if actual != expectedHash {
 		return fmt.Errorf("hash mismatch: expected %s, got %s", expectedHash, actual)
 	}
 
 	return nil
+}
+
+// computeHash opens the file at filePath, copies its content through the provided
+// hash.Hash, and returns the hex-encoded result.
+func computeHash(filePath string, h hash.Hash) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("opening file: %w", err)
+	}
+	defer f.Close() //nolint:errcheck // read-only file
+
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("reading file: %w", err)
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // ParseShasumFile parses a shasum file's content and returns the hash for the
@@ -221,4 +231,9 @@ func relativePath(fileURL, shasumURL string) (string, error) {
 // stripDotSlash removes a leading "./" from a path.
 func stripDotSlash(p string) string {
 	return strings.TrimPrefix(p, "./")
+}
+
+// ComputeFileHash reads the file at path and returns its SHA-256 hash as a hex string.
+func ComputeFileHash(filePath string) (string, error) {
+	return computeHash(filePath, sha256.New())
 }

@@ -247,3 +247,38 @@ var _ = Describe("VerifyFile", func() {
 		Expect(err).To(HaveOccurred())
 	})
 })
+
+var _ = Describe("ComputeFileHash", func() {
+	var tempDir string
+
+	BeforeEach(func() {
+		tempDir = GinkgoT().TempDir()
+	})
+
+	It("should compute SHA-256 hash of file content", func() {
+		content := []byte("test content for hashing")
+		filePath := filepath.Join(tempDir, "test.bin")
+		Expect(os.WriteFile(filePath, content, 0o644)).To(Succeed())
+
+		hash, err := ComputeFileHash(filePath)
+		Expect(err).NotTo(HaveOccurred())
+		// SHA-256 of "test content for hashing"
+		Expect(hash).To(Equal("e25dd806d495b413931f4eea50b677a7a5c02d00460924661283f211a37f7e7f"))
+	})
+
+	It("should return error for missing file", func() {
+		_, err := ComputeFileHash("/nonexistent/path/file.bin")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("opening file"))
+	})
+
+	It("should compute correct SHA-256 hash for empty file", func() {
+		filePath := filepath.Join(tempDir, "empty.bin")
+		Expect(os.WriteFile(filePath, []byte{}, 0o644)).To(Succeed())
+
+		hash, err := ComputeFileHash(filePath)
+		Expect(err).NotTo(HaveOccurred())
+		// SHA-256 of empty input
+		Expect(hash).To(Equal("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+	})
+})
