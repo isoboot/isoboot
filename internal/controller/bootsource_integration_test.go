@@ -498,7 +498,6 @@ var _ = Describe("BootSource Integration", func() {
 			_, _ = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
 			_, _ = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
 
-			bs.Spec.Kernel.Shasum = ptr.To("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 			Expect(k8sClient.Get(ctx, key, bs)).To(Succeed())
 			bs.Spec.Kernel.Shasum = ptr.To("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 			Expect(k8sClient.Update(ctx, bs)).To(Succeed())
