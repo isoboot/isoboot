@@ -272,7 +272,7 @@ var _ = Describe("ComputeFileHash", func() {
 		Expect(err.Error()).To(ContainSubstring("opening file"))
 	})
 
-	It("should return empty hash for empty file", func() {
+	It("should compute correct SHA-256 hash for empty file", func() {
 		filePath := filepath.Join(tempDir, "empty.bin")
 		Expect(os.WriteFile(filePath, []byte{}, 0o644)).To(Succeed())
 

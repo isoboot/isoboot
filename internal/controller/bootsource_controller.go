@@ -154,15 +154,21 @@ func (r *BootSourceReconciler) reconcileAllResources(
 	var phases []isobootv1alpha1.BootSourcePhase
 	var messages []string
 
+	// Track current reconcile results for derived artifacts
+	var currentInitrdStatus *isobootv1alpha1.ResourceStatus
+	var currentFirmwareStatus *isobootv1alpha1.ResourceStatus
+
 	// Reconcile based on mode (ISO vs direct)
 	if bs.Spec.ISO != nil {
-		isoPhases, isoMsgs := r.reconcileISOMode(ctx, bs, destDir)
+		isoPhases, isoMsgs, initrdStatus := r.reconcileISOMode(ctx, bs, destDir)
 		phases = append(phases, isoPhases...)
 		messages = append(messages, isoMsgs...)
+		currentInitrdStatus = initrdStatus
 	} else {
-		directPhases, directMsgs := r.reconcileDirectMode(ctx, bs, destDir)
+		directPhases, directMsgs, initrdStatus := r.reconcileDirectMode(ctx, bs, destDir)
 		phases = append(phases, directPhases...)
 		messages = append(messages, directMsgs...)
+		currentInitrdStatus = initrdStatus
 	}
 
 	// Reconcile firmware (optional, applies to both modes)
@@ -174,31 +180,28 @@ func (r *BootSourceReconciler) reconcileAllResources(
 		phases = append(phases, phase)
 		if status != nil {
 			bs.Status.Resources["firmware"] = *status
+			currentFirmwareStatus = status
 		}
 	}
 
-	// Build initrdWithFirmware if firmware is specified and both initrd and firmware are ready
-	if bs.Spec.Firmware != nil {
-		initrdStatus := bs.Status.Resources["initrd"]
-		fwStatus := bs.Status.Resources["firmware"]
-		if initrdStatus.Path != "" && fwStatus.Path != "" {
-			existingStatus := bs.Status.Resources["initrdWithFirmware"]
-			buildPhase, buildStatus, buildErr := r.reconcileInitrdWithFirmware(
-				ctx,
-				initrdStatus.Path,
-				initrdStatus.Shasum,
-				fwStatus.Path,
-				fwStatus.Shasum,
-				&existingStatus,
-				destDir,
-			)
-			if buildErr != nil {
-				messages = append(messages, fmt.Sprintf("initrdWithFirmware: %v", buildErr))
-			}
-			phases = append(phases, buildPhase)
-			if buildStatus != nil {
-				bs.Status.Resources["initrdWithFirmware"] = *buildStatus
-			}
+	// Build initrdWithFirmware only if firmware is specified AND both current reconciles succeeded
+	if bs.Spec.Firmware != nil && currentInitrdStatus != nil && currentFirmwareStatus != nil {
+		existingStatus := bs.Status.Resources["initrdWithFirmware"]
+		buildPhase, buildStatus, buildErr := r.reconcileInitrdWithFirmware(
+			ctx,
+			currentInitrdStatus.Path,
+			currentInitrdStatus.Shasum,
+			currentFirmwareStatus.Path,
+			currentFirmwareStatus.Shasum,
+			&existingStatus,
+			destDir,
+		)
+		if buildErr != nil {
+			messages = append(messages, fmt.Sprintf("initrdWithFirmware: %v", buildErr))
+		}
+		phases = append(phases, buildPhase)
+		if buildStatus != nil {
+			bs.Status.Resources["initrdWithFirmware"] = *buildStatus
 		}
 	}
 
@@ -206,13 +209,15 @@ func (r *BootSourceReconciler) reconcileAllResources(
 }
 
 // reconcileISOMode handles ISO mode reconciliation.
+// Returns phases, messages, and the initrd status (for use by derived artifacts).
 func (r *BootSourceReconciler) reconcileISOMode(
 	ctx context.Context,
 	bs *isobootv1alpha1.BootSource,
 	destDir string,
-) ([]isobootv1alpha1.BootSourcePhase, []string) {
+) ([]isobootv1alpha1.BootSourcePhase, []string, *isobootv1alpha1.ResourceStatus) {
 	var phases []isobootv1alpha1.BootSourcePhase
 	var messages []string
+	var resultInitrdStatus *isobootv1alpha1.ResourceStatus
 
 	// Download and verify ISO
 	isoPhase, isoStatus, isoErr := r.reconcileResource(ctx, &bs.Spec.ISO.DownloadableResource, "iso", destDir)
@@ -243,21 +248,24 @@ func (r *BootSourceReconciler) reconcileISOMode(
 			}
 			if initrdStatus != nil {
 				bs.Status.Resources["initrd"] = *initrdStatus
+				resultInitrdStatus = initrdStatus
 			}
 		}
 	}
 
-	return phases, messages
+	return phases, messages, resultInitrdStatus
 }
 
 // reconcileDirectMode handles direct mode (kernel+initrd) reconciliation.
+// Returns phases, messages, and the initrd status (for use by derived artifacts).
 func (r *BootSourceReconciler) reconcileDirectMode(
 	ctx context.Context,
 	bs *isobootv1alpha1.BootSource,
 	destDir string,
-) ([]isobootv1alpha1.BootSourcePhase, []string) {
+) ([]isobootv1alpha1.BootSourcePhase, []string, *isobootv1alpha1.ResourceStatus) {
 	var phases []isobootv1alpha1.BootSourcePhase
 	var messages []string
+	var resultInitrdStatus *isobootv1alpha1.ResourceStatus
 
 	if bs.Spec.Kernel != nil {
 		phase, status, err := r.reconcileResource(ctx, bs.Spec.Kernel, "kernel", destDir)
@@ -278,10 +286,11 @@ func (r *BootSourceReconciler) reconcileDirectMode(
 		phases = append(phases, phase)
 		if status != nil {
 			bs.Status.Resources["initrd"] = *status
+			resultInitrdStatus = status
 		}
 	}
 
-	return phases, messages
+	return phases, messages, resultInitrdStatus
 }
 
 // buildStatusMessage creates a human-readable status message for the given phase and messages.
@@ -519,11 +528,13 @@ func (r *BootSourceReconciler) extractFromISO(
 	initrdDest := filepath.Join(destDir, "initrd")
 	markerFile := filepath.Join(destDir, ".iso-extracted")
 
-	// Check if extraction is needed by comparing ISO hash with marker
+	// Check if extraction is needed by comparing ISO hash and paths with marker
+	// Marker format: "isoShasum:kernelPath:initrdPath"
+	expectedMarker := isoShasum + ":" + kernelPath + ":" + initrdPath
 	needExtract := true
 	if markerData, err := os.ReadFile(markerFile); err == nil {
-		if string(markerData) == isoShasum {
-			// ISO hasn't changed, check if extracted files exist
+		if string(markerData) == expectedMarker {
+			// ISO and paths haven't changed, check if extracted files exist
 			kernelOK := false
 			initrdOK := false
 			if info, statErr := os.Stat(kernelDest); statErr == nil && info.Size() > 0 {
@@ -566,8 +577,8 @@ func (r *BootSourceReconciler) extractFromISO(
 			return nil, nil, fmt.Errorf("moving initrd to destination: %w", err)
 		}
 
-		// Write marker file with ISO hash
-		if err := os.WriteFile(markerFile, []byte(isoShasum), 0o644); err != nil {
+		// Write marker file with ISO hash and paths
+		if err := os.WriteFile(markerFile, []byte(expectedMarker), 0o644); err != nil {
 			return nil, nil, fmt.Errorf("writing extraction marker: %w", err)
 		}
 	}
@@ -674,8 +685,8 @@ func (r *BootSourceReconciler) buildInitrdWithFirmware(
 }
 
 // reconcileInitrdWithFirmware ensures initrdWithFirmware is built and valid.
-// It tracks source hashes to detect when inputs change and rebuilds accordingly.
-// Returns Building phase during construction, Ready when done.
+// It tracks source hashes via a marker file to detect when inputs change.
+// Returns Ready when successfully reconciled, or Failed on error.
 func (r *BootSourceReconciler) reconcileInitrdWithFirmware(
 	ctx context.Context,
 	initrdPath, initrdShasum string,
@@ -685,23 +696,32 @@ func (r *BootSourceReconciler) reconcileInitrdWithFirmware(
 ) (isobootv1alpha1.BootSourcePhase, *isobootv1alpha1.ResourceStatus, error) {
 	log := logf.FromContext(ctx)
 	destPath := filepath.Join(destDir, "initrdWithFirmware")
+	markerFile := filepath.Join(destDir, ".initrdWithFirmware-sources")
 
-	// Expected source hash is the combination of initrd and firmware hashes
-	expectedSourceHash := initrdShasum + "+" + firmwareShasum
+	// Expected source marker is the combination of initrd and firmware hashes
+	expectedMarker := initrdShasum + "+" + firmwareShasum
 
 	// Check if existing file is valid and built from current sources
-	if existingStatus != nil && existingStatus.Path != "" && existingStatus.URL == expectedSourceHash {
-		if info, err := os.Stat(existingStatus.Path); err == nil && info.Size() > 0 {
-			// Verify hash matches
-			actualHash, err := checksum.ComputeFileHash(existingStatus.Path)
-			if err == nil && actualHash == existingStatus.Shasum {
-				// Existing file is valid and from current sources
-				return isobootv1alpha1.BootSourcePhaseReady, existingStatus, nil
+	needBuild := true
+	if existingStatus != nil && existingStatus.Path != "" {
+		// Check marker file for source hashes
+		if markerData, err := os.ReadFile(markerFile); err == nil && string(markerData) == expectedMarker {
+			if info, err := os.Stat(existingStatus.Path); err == nil && info.Size() > 0 {
+				// Verify hash matches
+				actualHash, err := checksum.ComputeFileHash(existingStatus.Path)
+				if err == nil && actualHash == existingStatus.Shasum {
+					// Existing file is valid and from current sources
+					return isobootv1alpha1.BootSourcePhaseReady, existingStatus, nil
+				}
+				log.Info("Existing initrdWithFirmware is corrupted, rebuilding")
 			}
-			log.Info("Existing initrdWithFirmware is corrupted, rebuilding")
+		} else {
+			log.Info("Source inputs changed, rebuilding initrdWithFirmware")
 		}
-	} else if existingStatus != nil && existingStatus.URL != "" && existingStatus.URL != expectedSourceHash {
-		log.Info("Source inputs changed, rebuilding initrdWithFirmware")
+	}
+
+	if !needBuild {
+		return isobootv1alpha1.BootSourcePhaseReady, existingStatus, nil
 	}
 
 	// Build initrdWithFirmware
@@ -711,8 +731,10 @@ func (r *BootSourceReconciler) reconcileInitrdWithFirmware(
 		return isobootv1alpha1.BootSourcePhaseFailed, nil, err
 	}
 
-	// Store source hash in URL field to track what inputs were used
-	status.URL = expectedSourceHash
+	// Write marker file with source hashes
+	if err := os.WriteFile(markerFile, []byte(expectedMarker), 0o644); err != nil {
+		return isobootv1alpha1.BootSourcePhaseFailed, nil, fmt.Errorf("writing source marker: %w", err)
+	}
 
 	return isobootv1alpha1.BootSourcePhaseReady, status, nil
 }

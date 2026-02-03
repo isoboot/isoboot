@@ -68,12 +68,12 @@ const (
 )
 
 // createTestISO creates a minimal ISO 9660 image with /linux and /initrd.gz files.
-func createTestISO(tempDir string) []byte {
-	return createTestISOWithPaths(tempDir, "/linux", "/initrd.gz")
+func createTestISO() []byte {
+	return createMinimalISO("/linux", "/initrd.gz")
 }
 
 // createTestISOWithPaths creates a minimal ISO 9660 image with the specified paths.
-func createTestISOWithPaths(_ string, kernelPath, initrdPath string) []byte {
+func createTestISOWithPaths(kernelPath, initrdPath string) []byte {
 	return createMinimalISO(kernelPath, initrdPath)
 }
 
@@ -539,7 +539,7 @@ var _ = Describe("BootSource Controller", func() {
 		})
 
 		It("should reach Ready phase for ISO mode with extraction", func() {
-			isoContent := createTestISO(GinkgoT().TempDir())
+			isoContent := createTestISO()
 			isoHash := sha256sum(isoContent)
 
 			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
@@ -594,7 +594,7 @@ var _ = Describe("BootSource Controller", func() {
 
 		It("should set Failed phase when ISO extraction fails", func() {
 			// Create an ISO that doesn't contain the expected paths
-			isoContent := createTestISOWithPaths(GinkgoT().TempDir(), "/different/path", "/another/path")
+			isoContent := createTestISOWithPaths("/different/path", "/another/path")
 			isoHash := sha256sum(isoContent)
 
 			fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
@@ -642,7 +642,7 @@ var _ = Describe("BootSource Controller", func() {
 		})
 
 		It("should build initrdWithFirmware for ISO mode with firmware", func() {
-			isoContent := createTestISO(GinkgoT().TempDir())
+			isoContent := createTestISO()
 			isoHash := sha256sum(isoContent)
 			firmwareContent := []byte("firmware cpio content")
 			firmwareHash := sha512sum(firmwareContent)
