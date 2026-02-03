@@ -563,9 +563,10 @@ var _ = Describe("BootSource Integration", func() {
 			checksumContentFn(func(m *mockHTTPServer) string {
 				return fmt.Sprintf("%s  ./kernel\n%s  ./initrd\n", m.KernelSHA256, m.InitrdSHA256)
 			}), true),
-		Entry("bare filename (no prefix)", "int-shasum-bare", "/SHASUMS-bare",
+		Entry("CRLF line endings (Windows-style)", "int-shasum-crlf", "/SHASUMS-crlf",
 			checksumContentFn(func(m *mockHTTPServer) string {
-				return fmt.Sprintf("%s  kernel\n%s  initrd\n", m.KernelSHA256, m.InitrdSHA256)
+				// Uses CRLF line endings to ensure checksum parsing works with Windows-style files
+				return fmt.Sprintf("%s  kernel\r\n%s  initrd\r\n", m.KernelSHA256, m.InitrdSHA256)
 			}), true),
 		// Note: "longest suffix fallback" is tested in checksum unit tests;
 		// it requires multi-component file URLs which the mock server doesn't use.
