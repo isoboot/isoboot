@@ -39,12 +39,21 @@ func (d directoryRecord) isDir() bool {
 //
 // All requested paths are attempted; if any are missing, a single error listing
 // every missing path is returned (extraction of found files still occurs).
+//
+// Security: callers must ensure that filePaths do not contain path traversal
+// sequences (for example, "../" components) that would escape destDir. Extract
+// rejects any resolved destination that falls outside destDir.
 func Extract(isoPath string, filePaths []string, destDir string) error {
 	f, err := os.Open(isoPath)
 	if err != nil {
 		return fmt.Errorf("opening ISO: %w", err)
 	}
 	defer func() { _ = f.Close() }()
+
+	absDestDir, err := filepath.Abs(destDir)
+	if err != nil {
+		return fmt.Errorf("resolving destDir: %w", err)
+	}
 
 	root, err := readPVD(f)
 	if err != nil {
@@ -59,7 +68,10 @@ func Extract(isoPath string, filePaths []string, destDir string) error {
 			missing = append(missing, p)
 			continue
 		}
-		dest := filepath.Join(destDir, filepath.FromSlash(p))
+		dest := filepath.Join(absDestDir, filepath.FromSlash(p))
+		if !strings.HasPrefix(dest, absDestDir+string(filepath.Separator)) {
+			return fmt.Errorf("path %q escapes destination directory", p)
+		}
 		if err := extractFile(f, *rec, dest); err != nil {
 			return fmt.Errorf("extracting %s: %w", p, err)
 		}
@@ -95,9 +107,12 @@ func readPVD(r io.ReaderAt) (directoryRecord, error) {
 // parseDirectoryRecord parses a single directory record from the given byte
 // slice. The slice must start at the record's length byte.
 func parseDirectoryRecord(data []byte) (directoryRecord, error) {
+	if len(data) < 33 {
+		return directoryRecord{}, fmt.Errorf("data too short for directory record: %d bytes", len(data))
+	}
 	recLen := int(data[0])
-	if recLen < 33 {
-		return directoryRecord{}, fmt.Errorf("directory record too short: %d bytes", recLen)
+	if recLen < 33 || recLen > len(data) {
+		return directoryRecord{}, fmt.Errorf("directory record length invalid: %d bytes (available: %d)", recLen, len(data))
 	}
 
 	rec := directoryRecord{
@@ -206,6 +221,9 @@ func readDirectory(r io.ReaderAt, lba, size uint32) ([]directoryRecord, error) {
 // at the given slash-separated path. A case-insensitive fallback is used for
 // each path component.
 func walkPath(r io.ReaderAt, root directoryRecord, path string) (*directoryRecord, error) {
+	if path == "" {
+		return &root, nil
+	}
 	parts := strings.Split(path, "/")
 	current := root
 
@@ -230,9 +248,8 @@ func walkPath(r io.ReaderAt, root directoryRecord, path string) (*directoryRecor
 
 		// Case-insensitive fallback.
 		if !found {
-			upper := strings.ToUpper(part)
 			for _, e := range entries {
-				if strings.EqualFold(e.name(), upper) {
+				if strings.EqualFold(e.name(), part) {
 					current = e
 					found = true
 					break
