@@ -170,4 +170,35 @@ var _ = Describe("Extract", func() {
 			}
 		})
 	})
+
+	Context("directory extraction rejection", func() {
+		It("returns an error when attempting to extract a directory", func() {
+			srcDir := filepath.Join(tmpDir, "src")
+			subDir := filepath.Join(srcDir, "subdir")
+			Expect(os.MkdirAll(subDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(subDir, "file.txt"), []byte("content"), 0o644)).To(Succeed())
+
+			buildISO(srcDir, isoPath)
+
+			// Attempt to extract the directory itself as a file.
+			err := Extract(isoPath, []string{"subdir"}, destDir)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot extract directory"))
+		})
+	})
+
+	Context("path traversal rejection", func() {
+		It("rejects paths that escape the destination directory", func() {
+			srcDir := filepath.Join(tmpDir, "src")
+			Expect(os.MkdirAll(srcDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("content"), 0o644)).To(Succeed())
+
+			buildISO(srcDir, isoPath)
+
+			// Path with traversal attempt is rejected before ISO lookup.
+			err := Extract(isoPath, []string{"../escape.txt"}, destDir)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("escapes destination directory"))
+		})
+	})
 })

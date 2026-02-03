@@ -40,9 +40,8 @@ func (d directoryRecord) isDir() bool {
 // All requested paths are attempted; if any are missing, a single error listing
 // every missing path is returned (extraction of found files still occurs).
 //
-// Security: callers must ensure that filePaths do not contain path traversal
-// sequences (for example, "../" components) that would escape destDir. Extract
-// rejects any resolved destination that falls outside destDir.
+// Security: Extract validates and rejects paths that would escape destDir
+// through path traversal sequences (for example, "../" components).
 func Extract(isoPath string, filePaths []string, destDir string) error {
 	f, err := os.Open(isoPath)
 	if err != nil {
@@ -63,15 +62,15 @@ func Extract(isoPath string, filePaths []string, destDir string) error {
 	var missing []string
 	for _, p := range filePaths {
 		p = strings.TrimPrefix(p, "/")
-		rec, err := walkPath(f, root, p)
-		if err != nil {
-			missing = append(missing, p)
-			continue
-		}
 		dest := filepath.Join(absDestDir, filepath.FromSlash(p))
 		rel, err := filepath.Rel(absDestDir, dest)
 		if err != nil || strings.HasPrefix(rel, "..") {
 			return fmt.Errorf("path %q escapes destination directory", p)
+		}
+		rec, err := walkPath(f, root, p)
+		if err != nil {
+			missing = append(missing, p)
+			continue
 		}
 		if err := extractFile(f, *rec, dest); err != nil {
 			return fmt.Errorf("extracting %s: %w", p, err)
@@ -267,7 +266,8 @@ func walkPath(r io.ReaderAt, root directoryRecord, path string) (*directoryRecor
 }
 
 // extractFile copies the file data described by rec into destPath, creating
-// parent directories as needed.
+// parent directories as needed. Uses atomic write (temp file + rename) to avoid
+// leaving partial files on error.
 func extractFile(r io.ReaderAt, rec directoryRecord, destPath string) error {
 	if rec.isDir() {
 		return fmt.Errorf("cannot extract directory %q as file", destPath)
@@ -276,15 +276,33 @@ func extractFile(r io.ReaderAt, rec directoryRecord, destPath string) error {
 		return err
 	}
 
-	out, err := os.Create(destPath)
+	tmpFile, err := os.CreateTemp(filepath.Dir(destPath), filepath.Base(destPath)+".tmp-*")
 	if err != nil {
 		return err
 	}
+	tmpPath := tmpFile.Name()
+
+	success := false
+	defer func() {
+		if !success {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
 	sr := io.NewSectionReader(r, int64(rec.extentLBA)*sectorSize, int64(rec.dataLength))
-	if _, err := io.Copy(out, sr); err != nil {
-		_ = out.Close()
+	if _, err := io.Copy(tmpFile, sr); err != nil {
 		return err
 	}
 
-	return out.Close()
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		return err
+	}
+
+	success = true
+	return nil
 }
