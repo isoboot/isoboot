@@ -32,10 +32,26 @@ make clean   # rm -f bin/*
 These targets will expand as kubebuilder scaffolding is added (e.g., `make manifests`,
 `make generate`, `make docker-build`).
 
+## Testing Convention
+
+All tests use **Ginkgo + Gomega**, consistent with controller-runtime and kubebuilder
+conventions. This applies to both controller integration tests (with envtest) and
+standalone library packages (with `httptest`, temp files, etc.).
+
+- Each package has a `suite_test.go` with `RunSpecs` as the entry point
+- Set `reporterConfig.Verbose = true` in `RunSpecs` so individual spec names appear
+  in CI output (do **not** pass `-ginkgo.v` via CLI — it breaks non-ginkgo binaries
+  if any exist)
+- Use `Describe`/`Context`/`It` blocks for readable spec names
+- Use `Eventually`/`Consistently` for async assertions in controller tests
+- Use `BeforeEach`/`AfterEach` for per-test setup/teardown
+
 ## Git Conventions
 
 - **No force pushes** to `main`
 - **Pull requests required** for all changes to `main`
+- **All PRs must target `main`** — do not create PRs that merge into non-main branches
+  (no stacked PRs, no intermediate base branches like `pr/01-scaffold-v2`)
 - **Squash merge** is the preferred merge strategy
 - Commit messages should be concise and descriptive (imperative mood)
 - Branch naming: `feat/`, `fix/`, `docs/`, `refactor/`, `pr/` prefixes
@@ -81,8 +97,8 @@ monitor that:
 2. If Copilot responds with an error (`"Copilot encountered an error and was unable to
    review this pull request"`), re-requests the review immediately and resets the timer
 3. If Copilot posts a review with comments, reports any unresolved threads
-4. If Copilot does not respond within **15 minutes**, posts a PR comment:
-   `"From Claude: Copilot did not respond within 15 minutes of the review request."`
+4. If Copilot does not respond within **25 minutes**, posts a PR comment:
+   `"From Claude: Copilot did not respond within 25 minutes of the review request."`
 
 **Important pitfalls when polling reviews:**
 
@@ -92,3 +108,32 @@ monitor that:
 - Always use `?per_page=100` when fetching reviews — the GitHub API defaults to 30
   results per page, so `.[-1]` may not return the actual latest review on PRs with
   many review rounds.
+- When a new Copilot review is detected, **always fetch the review's comments using
+  its review ID** (`/reviews/<ID>/comments`). Do **not** use date-based filtering on
+  `/pulls/<PR>/comments` — timestamps can be unreliable and cause comment counts to
+  show as zero even when comments exist. After fetching, Claude must immediately
+  process any comments (agree/disagree/out-of-scope) before waiting for the next
+  review cycle.
+
+### CI Checks
+
+After pushing changes, Claude must check CI status with `gh pr checks <PR#>` and
+inspect any failures using `gh run view <RUN_ID> --log-failed`. Common CI jobs:
+
+- **Lint** (`lint.yml`): Runs `golangci-lint`. Fix all reported issues (errcheck,
+  goconst, modernize, prealloc, etc.) before pushing again.
+- **Tests** (`test.yml`): Runs `make test`. Ensure all packages compile and all tests
+  pass.
+- **E2E Tests** (`test-e2e.yml`): Runs `make test-e2e` with a Kind cluster.
+
+If CI fails, Claude must fix the issues, commit, push, and re-request Copilot review.
+
+### PR Summary
+
+After each push to a PR branch, Claude must update the PR description (`gh pr edit
+--body`) to reflect the current state of the PR. The summary must include:
+
+- What changed (packages added/modified, key functions)
+- A full test table listing every test with its type (Positive/Negative) and what it validates
+- Test plan with current pass counts
+- Links to any follow-up issues created during review
