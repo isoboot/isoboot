@@ -76,6 +76,35 @@ collaborate on pull requests:
 All Claude replies in PR threads are prefixed with `"From Claude:"` on their own line
 to clearly distinguish AI-to-AI conversation from human comments.
 
+### Resolving Review Threads
+
+After replying to a review comment, Claude must resolve the thread using the GraphQL
+`resolveReviewThread` mutation. First query the thread IDs:
+
+```
+gh api graphql -f query='query {
+  repository(owner: "isoboot", name: "isoboot") {
+    pullRequest(number: <PR#>) {
+      reviewThreads(first: 50) {
+        nodes { id isResolved comments(first: 1) { nodes { body } } }
+      }
+    }
+  }
+}'
+```
+
+Then resolve each unresolved thread:
+
+```
+gh api graphql -f query='mutation {
+  resolveReviewThread(input: {threadId: "<THREAD_NODE_ID>"}) {
+    thread { isResolved }
+  }
+}'
+```
+
+Do **not** use `minimizeComment` — that hides comments instead of resolving the thread.
+
 ### Re-requesting Copilot Review
 
 After pushing changes that address review feedback, Claude must **always** explicitly
