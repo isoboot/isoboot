@@ -72,8 +72,14 @@ gh pr edit <PR#> --add-reviewer 'copilot-pull-request-reviewer[bot]'
 The `[bot]` suffix is required. Do **not** use any other method (closing/reopening the
 PR, `@copilot review` comments, or the GraphQL `requestReviews` mutation).
 
-### Handling Copilot Review Errors
+### Monitoring for Copilot Reviews
 
-If Copilot responds with `"Copilot encountered an error and was unable to review this
-pull request"`, Claude must immediately re-request the review using the same command
-above. Retry up to 3 times with a short delay between attempts.
+After pushing changes and re-requesting Copilot review, Claude must run a background
+monitor that checks for new reviews every **5 minutes**. The monitor should:
+
+1. Poll for new Copilot reviews on the PR
+2. If Copilot responds with an error (`"Copilot encountered an error and was unable to
+   review this pull request"`), re-request the review immediately (up to 3 retries)
+3. If Copilot posts a review with comments, report any unresolved threads
+4. Continue monitoring until either Copilot reviews with no actionable comments or the
+   maximum number of checks is reached
