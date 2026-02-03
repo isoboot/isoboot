@@ -2,10 +2,13 @@ package downloader
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -81,15 +84,25 @@ func TestDownload_404(t *testing.T) {
 }
 
 func TestDownload_AtomicNoPartialFiles(t *testing.T) {
-	// Server sends some data then closes the connection abruptly.
+	// Use Hijacker to forcibly close the TCP connection mid-response,
+	// guaranteeing the HTTP client sees an error.
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Set content-length higher than what we actually send to simulate truncation.
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("server does not support hijacking")
+		}
 		w.Header().Set("Content-Length", "1000000")
 		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte("partial data")); err != nil {
-			t.Errorf("writing response: %v", err)
+		// Flush the headers so the client starts reading.
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
 		}
-		// The handler returns, closing the connection before content-length is satisfied.
+		// Hijack and close the raw connection immediately.
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack failed: %v", err)
+		}
+		conn.Close() //nolint:errcheck // intentional abrupt close for test
 	}))
 	defer ts.Close()
 
@@ -97,15 +110,13 @@ func TestDownload_AtomicNoPartialFiles(t *testing.T) {
 	destPath := filepath.Join(dir, "should-not-exist")
 
 	err := Download(context.Background(), ts.URL, destPath)
-	// The error may or may not happen depending on how the HTTP client handles
-	// the premature close. But if there IS an error, destPath must not exist.
-	if err != nil {
-		if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
-			t.Error("destPath should not exist after failed download")
-		}
+	if err == nil {
+		t.Fatal("expected error for truncated download")
 	}
-	// If no error (e.g., the HTTP client didn't detect the truncation), the file
-	// should still be atomic (fully written via rename).
+
+	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
+		t.Error("destPath should not exist after failed download")
+	}
 }
 
 func TestFetchContent_HappyPath(t *testing.T) {
@@ -162,6 +173,24 @@ func TestDownload_ContextCanceled(t *testing.T) {
 	}
 }
 
+func TestFetchContent_ExceedsSizeLimit(t *testing.T) {
+	// Respond with more than maxFetchSize bytes.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte(strings.Repeat("x", maxFetchSize+1))); err != nil {
+			// Write may fail if client disconnects early; that's fine.
+			if !isConnectionReset(err) {
+				t.Errorf("writing response: %v", err)
+			}
+		}
+	}))
+	defer ts.Close()
+
+	_, err := FetchContent(context.Background(), ts.URL)
+	if err == nil {
+		t.Fatal("expected error for oversized response")
+	}
+}
+
 func TestFetchContent_ContextCanceled(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if _, err := w.Write([]byte("data")); err != nil {
@@ -177,4 +206,13 @@ func TestFetchContent_ContextCanceled(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for canceled context")
 	}
+}
+
+func isConnectionReset(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return opErr.Err.Error() == "write: broken pipe" ||
+			strings.Contains(opErr.Err.Error(), "connection reset")
+	}
+	return false
 }

@@ -73,8 +73,13 @@ func Download(ctx context.Context, url, destPath string) error {
 	return nil
 }
 
+// maxFetchSize is the maximum response size FetchContent will read (10 MB).
+// This prevents memory exhaustion from unexpectedly large responses.
+const maxFetchSize = 10 << 20
+
 // FetchContent fetches a URL and returns its body as bytes.
-// Intended for small files like shasum files.
+// Intended for small files like shasum files. Responses larger than 10 MB
+// are rejected.
 func FetchContent(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -91,9 +96,13 @@ func FetchContent(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("fetching %s: HTTP %d", url, resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	limited := io.LimitReader(resp.Body, maxFetchSize+1)
+	body, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("reading response body: %w", err)
+	}
+	if len(body) > maxFetchSize {
+		return nil, fmt.Errorf("fetching %s: response exceeds %d byte limit", url, maxFetchSize)
 	}
 
 	return body, nil

@@ -15,14 +15,14 @@ import (
 	"strings"
 )
 
-var hexPattern = regexp.MustCompile(`^[0-9a-f]+$`)
+var hexPattern = regexp.MustCompile(`(?i)^[0-9a-f]+$`)
 
 // DetectAlgorithm returns the crypto.Hash for the given hex-encoded hash string.
 // 64 hex characters = SHA-256, 128 hex characters = SHA-512.
-// The input must be valid lowercase hexadecimal.
+// The input must be valid hexadecimal (upper or lowercase).
 func DetectAlgorithm(h string) (crypto.Hash, error) {
 	if !hexPattern.MatchString(h) {
-		return 0, fmt.Errorf("hash contains invalid characters (expected lowercase hex)")
+		return 0, fmt.Errorf("hash contains invalid characters (expected hex)")
 	}
 	switch len(h) {
 	case 64:
