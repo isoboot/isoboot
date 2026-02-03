@@ -41,7 +41,8 @@ command -v helm >/dev/null 2>&1 || {
     exit 1
 }
 
-# Switch to Kind cluster context
+# Save original kubectl context and switch to Kind cluster
+ORIGINAL_CONTEXT=$(kubectl config current-context 2>/dev/null || echo "")
 kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || {
     echo -e "${RED}Failed to switch to Kind cluster context: kind-${CLUSTER_NAME}${NC}"
     exit 1
@@ -67,6 +68,10 @@ cleanup() {
     log_info "Cleaning up test resources..."
     helm uninstall "${RELEASE_NAME}" -n "${NAMESPACE}" 2>/dev/null || true
     kubectl delete namespace "${NAMESPACE}" --ignore-not-found=true --wait=false 2>/dev/null || true
+    # Restore original kubectl context
+    if [[ -n "${ORIGINAL_CONTEXT}" ]]; then
+        kubectl config use-context "${ORIGINAL_CONTEXT}" >/dev/null 2>&1 || true
+    fi
 }
 
 # Ensure cleanup on exit
@@ -99,7 +104,7 @@ echo ""
 # Note: Using --wait=false because controller image may not exist yet.
 # This tests chart structure, not controller functionality.
 log_info "Test 1: Chart installs successfully"
-if helm install "${RELEASE_NAME}" "${CHART_PATH}" -n "${NAMESPACE}" --timeout 120s 2>&1; then
+if helm install "${RELEASE_NAME}" "${CHART_PATH}" -n "${NAMESPACE}" --wait=false --timeout 120s 2>&1; then
     log_pass "Chart installs successfully"
 else
     log_fail "Chart installs successfully"
