@@ -15,8 +15,12 @@ controller:
   # Base directory for storing downloaded boot resources
   baseDir: /var/lib/isoboot
   # Leader election configuration
-  # NOTE: Leader election requires RBAC permissions on Leases/ConfigMaps/Events.
-  # Since RBAC is deferred to #176, this defaults to disabled.
+  # NOTE: This chart does NOT install any RBAC resources.
+  # Leader election requires RBAC permissions on Leases/ConfigMaps/Events,
+  # typically provided by the manifests under config/rbac/* or equivalent.
+  # Do not enable leaderElection unless the required RBAC has been installed
+  # out-of-band; otherwise, the controller will fail to start.
+  # RBAC management is deferred to issue #176.
   leaderElection:
     enabled: false
   resources:
