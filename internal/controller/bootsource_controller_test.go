@@ -1407,6 +1407,9 @@ var _ = Describe("BootSource Controller", func() {
 				"test-fw-nil-watcher",
 				"test-fw-multiple-resources",
 				"test-fw-initrd-firmware-watched",
+				"test-fw-file-deleted",
+				"test-fw-file-corrupted",
+				"test-fw-watch-error",
 			} {
 				deleteBootSource(ctx, name)
 			}
@@ -1717,6 +1720,198 @@ var _ = Describe("BootSource Controller", func() {
 			key := types.NamespacedName{Name: "test-fw-initrd-firmware-watched", Namespace: "default"}
 			// Idempotent watch should succeed
 			Expect(watcher.Watch(combinedPath, key)).To(Succeed())
+		})
+
+		// ── Negative tests ────────────────────────────────────────────────────
+
+		It("should re-download file when watched file is deleted", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			kernelHash := sha256sum(kernelContent)
+			initrdHash := sha256sum(initrdContent)
+			downloadCount := 0
+
+			fetcher.fetchContentFunc = func(_ context.Context, _ string) ([]byte, error) {
+				return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, initrdHash), nil
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				downloadCount++
+				if url == debianKernel {
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				}
+				if url == debianInitrd {
+					return os.WriteFile(destPath, initrdContent, 0o644)
+				}
+				return fmt.Errorf("unexpected URL: %s", url)
+			}
+
+			Expect(createBootSource(ctx, "test-fw-file-deleted", isobootv1alpha1.BootSourceSpec{
+				Kernel: validKernel(),
+				Initrd: validInitrd(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-fw-file-deleted", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile downloads resources
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-fw-file-deleted", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify Ready and record download count
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-fw-file-deleted", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			initialDownloads := downloadCount
+
+			// Delete the kernel file (simulating file deletion that watcher would detect)
+			kernelPath := filepath.Join(tempDir, "default", "test-fw-file-deleted", "kernel")
+			Expect(os.Remove(kernelPath)).To(Succeed())
+
+			// Reconcile again - should re-download the missing file
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-fw-file-deleted", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify file was re-downloaded
+			Expect(downloadCount).To(BeNumerically(">", initialDownloads))
+			Expect(kernelPath).To(BeAnExistingFile())
+
+			// Verify still Ready
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-fw-file-deleted", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+		})
+
+		It("should detect corruption and re-download when watched file is modified", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			kernelHash := sha256sum(kernelContent)
+			initrdHash := sha256sum(initrdContent)
+			downloadCount := 0
+
+			fetcher.fetchContentFunc = func(_ context.Context, _ string) ([]byte, error) {
+				return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, initrdHash), nil
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				downloadCount++
+				if url == debianKernel {
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				}
+				if url == debianInitrd {
+					return os.WriteFile(destPath, initrdContent, 0o644)
+				}
+				return fmt.Errorf("unexpected URL: %s", url)
+			}
+
+			Expect(createBootSource(ctx, "test-fw-file-corrupted", isobootv1alpha1.BootSourceSpec{
+				Kernel: validKernel(),
+				Initrd: validInitrd(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-fw-file-corrupted", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile downloads resources
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-fw-file-corrupted", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify Ready
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-fw-file-corrupted", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+			initialDownloads := downloadCount
+
+			// Corrupt the kernel file (simulating modification that watcher would detect)
+			kernelPath := filepath.Join(tempDir, "default", "test-fw-file-corrupted", "kernel")
+			Expect(os.WriteFile(kernelPath, []byte("corrupted content"), 0o644)).To(Succeed())
+
+			// Reconcile again - should detect hash mismatch and re-download
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-fw-file-corrupted", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify file was re-downloaded
+			Expect(downloadCount).To(BeNumerically(">", initialDownloads))
+
+			// Verify content is correct again
+			content, err := os.ReadFile(kernelPath)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(content).To(Equal(kernelContent))
+
+			// Verify back to Ready
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-fw-file-corrupted", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+		})
+
+		It("should not fail reconcile when watch call fails for non-existent path", func() {
+			kernelContent := []byte("kernel binary content")
+			initrdContent := []byte("initrd binary content")
+			kernelHash := sha256sum(kernelContent)
+			initrdHash := sha256sum(initrdContent)
+
+			fetcher.fetchContentFunc = func(_ context.Context, _ string) ([]byte, error) {
+				return fmt.Appendf(nil, "%s  linux\n%s  initrd.gz\n", kernelHash, initrdHash), nil
+			}
+			fetcher.downloadFunc = func(_ context.Context, url, destPath string) error {
+				if url == debianKernel {
+					return os.WriteFile(destPath, kernelContent, 0o644)
+				}
+				if url == debianInitrd {
+					return os.WriteFile(destPath, initrdContent, 0o644)
+				}
+				return fmt.Errorf("unexpected URL: %s", url)
+			}
+
+			Expect(createBootSource(ctx, "test-fw-watch-error", isobootv1alpha1.BootSourceSpec{
+				Kernel: validKernel(),
+				Initrd: validInitrd(),
+			})).To(Succeed())
+
+			// First reconcile adds finalizer
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-fw-watch-error", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile downloads resources
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-fw-watch-error", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify Ready
+			var bs isobootv1alpha1.BootSource
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-fw-watch-error", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
+
+			// Delete the files so watch will fail on next reconcile
+			kernelPath := filepath.Join(tempDir, "default", "test-fw-watch-error", "kernel")
+			initrdPath := filepath.Join(tempDir, "default", "test-fw-watch-error", "initrd")
+			Expect(os.Remove(kernelPath)).To(Succeed())
+			Expect(os.Remove(initrdPath)).To(Succeed())
+
+			// Reconcile - watch will fail for paths but reconcile should still succeed
+			// (it will re-download the files, then try to watch them)
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-fw-watch-error", Namespace: "default"},
+			})
+			// Reconcile should not return an error even if watch fails
+			Expect(err).NotTo(HaveOccurred())
+
+			// Should still reach Ready after re-downloading
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-fw-watch-error", Namespace: "default"}, &bs)).To(Succeed())
+			Expect(bs.Status.Phase).To(Equal(isobootv1alpha1.BootSourcePhaseReady))
 		})
 	})
 })
