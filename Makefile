@@ -203,8 +203,8 @@ helm-test-e2e: ## Run Helm chart integration tests with Kind.
 			CREATED_CLUSTER=true ;; \
 	esac; \
 	echo "Running Helm E2E tests..."; \
-	./hack/helm-e2e-test.sh $(HELM_E2E_CLUSTER); \
-	TEST_EXIT=$$?; \
+	TEST_EXIT=0; \
+	./hack/helm-e2e-test.sh $(HELM_E2E_CLUSTER) || TEST_EXIT=$$?; \
 	if [ "$$CREATED_CLUSTER" = "true" ]; then \
 		echo "Cleaning up Kind cluster..."; \
 		$(KIND) delete cluster --name $(HELM_E2E_CLUSTER); \
