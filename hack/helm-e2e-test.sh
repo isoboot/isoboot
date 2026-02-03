@@ -160,12 +160,14 @@ fi
 # Test 9: Chart uninstalls cleanly
 log_info "Test 9: Chart uninstalls cleanly"
 if helm uninstall "${RELEASE_NAME}" -n "${NAMESPACE}" 2>&1; then
-    # Verify resources are removed
-    sleep 2
-    if ! kubectl get deployment "${RELEASE_NAME}-isoboot" -n "${NAMESPACE}" >/dev/null 2>&1; then
+    # Wait for deployment to be deleted (async deletion can take time)
+    if kubectl wait --for=delete deployment/"${RELEASE_NAME}-isoboot" -n "${NAMESPACE}" --timeout=60s 2>/dev/null; then
+        log_pass "Chart uninstalls cleanly"
+    elif ! kubectl get deployment "${RELEASE_NAME}-isoboot" -n "${NAMESPACE}" >/dev/null 2>&1; then
+        # Deployment already gone
         log_pass "Chart uninstalls cleanly"
     else
-        log_fail "Chart uninstalls cleanly (deployment still exists)"
+        log_fail "Chart uninstalls cleanly (deployment still exists after 60s)"
     fi
 else
     log_fail "Chart uninstalls cleanly"
@@ -196,9 +198,16 @@ helm install "${RELEASE_NAME}-neg2" "${CHART_PATH}" -n "${NAMESPACE}" \
     --set image.tag=v999.999.999 \
     --timeout 30s 2>/dev/null || true
 
-# Wait for pod to be created and check status
-sleep 10
-POD_STATUS=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}-neg2" -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || echo "")
+# Poll for pod to be created and enter image pull error state (up to 60s)
+POD_STATUS=""
+for i in $(seq 1 12); do
+    POD_STATUS=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}-neg2" -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || echo "")
+    if [[ "${POD_STATUS}" == "ImagePullBackOff" ]] || [[ "${POD_STATUS}" == "ErrImagePull" ]]; then
+        break
+    fi
+    sleep 5
+done
+
 if [[ "${POD_STATUS}" == "ImagePullBackOff" ]] || [[ "${POD_STATUS}" == "ErrImagePull" ]]; then
     log_pass "Pod fails to start with invalid image (${POD_STATUS})"
 else
