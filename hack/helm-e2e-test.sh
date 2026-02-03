@@ -39,14 +39,14 @@ log_info() {
 
 log_pass() {
     echo -e "${GREEN}[PASS]${NC} $1"
-    ((TESTS_PASSED++))
-    ((TOTAL_TESTS++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 }
 
 log_fail() {
     echo -e "${RED}[FAIL]${NC} $1"
-    ((TESTS_FAILED++))
-    ((TOTAL_TESTS++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 }
 
 cleanup() {

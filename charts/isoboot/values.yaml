@@ -50,7 +50,9 @@ podAnnotations: {}
 # Pod security context
 podSecurityContext:
   runAsNonRoot: true
-  # fsGroup ensures mounted volumes are writable by the non-root user
+  # fsGroup sets the group ownership for mounted volumes (effective for PVC/emptyDir).
+  # NOTE: For hostPath volumes, fsGroup does NOT change permissions - the host directory
+  # must already be writable by UID/GID 65532 (pre-create with chown, or use PVC in #176).
   fsGroup: 65532
   seccompProfile:
     type: RuntimeDefault
