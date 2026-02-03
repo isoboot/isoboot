@@ -392,7 +392,7 @@ var _ = Describe("BootSource Controller", func() {
 			It("fetches and parses shasumURL", func() {
 				fetcher.fetchContentFunc = func(_ context.Context, url string) ([]byte, error) {
 					if url == "https://example.com/SHA256SUMS" {
-						return []byte(fmt.Sprintf("%s  file.bin\n", exampleSHA256Sum)), nil
+						return fmt.Appendf(nil, "%s  file.bin\n", exampleSHA256Sum), nil
 					}
 					return nil, errors.New("not found")
 				}
