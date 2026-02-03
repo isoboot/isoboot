@@ -23,5 +23,8 @@ jobs:
           path: bin
           key: tools-${{ runner.os }}-${{ hashFiles('go.sum') }}
 
+      - name: Install genisoimage
+        run: sudo apt-get update && sudo apt-get install -y genisoimage
+
       - name: Running Tests
         run: make test
