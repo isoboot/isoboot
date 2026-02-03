@@ -69,7 +69,8 @@ func Extract(isoPath string, filePaths []string, destDir string) error {
 			continue
 		}
 		dest := filepath.Join(absDestDir, filepath.FromSlash(p))
-		if !strings.HasPrefix(dest, absDestDir+string(filepath.Separator)) {
+		rel, err := filepath.Rel(absDestDir, dest)
+		if err != nil || strings.HasPrefix(rel, "..") {
 			return fmt.Errorf("path %q escapes destination directory", p)
 		}
 		if err := extractFile(f, *rec, dest); err != nil {
@@ -268,6 +269,9 @@ func walkPath(r io.ReaderAt, root directoryRecord, path string) (*directoryRecor
 // extractFile copies the file data described by rec into destPath, creating
 // parent directories as needed.
 func extractFile(r io.ReaderAt, rec directoryRecord, destPath string) error {
+	if rec.isDir() {
+		return fmt.Errorf("cannot extract directory %q as file", destPath)
+	}
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return err
 	}
