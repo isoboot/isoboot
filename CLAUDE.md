@@ -62,8 +62,33 @@ to clearly distinguish AI-to-AI conversation from human comments.
 
 ### Re-requesting Copilot Review
 
-After pushing changes that address review feedback, Claude must explicitly re-request
-Copilot review rather than relying solely on `review_on_push`. This is done by
-attempting `gh pr edit --add-reviewer copilot-pull-request-reviewer` (falling back to
-the GraphQL `requestReviews` mutation with bot ID `BOT_kgDOCnlnWA` if needed). If
-neither method works, adding a PR comment `@copilot review` can prompt re-review.
+After pushing changes that address review feedback, Claude must **always** explicitly
+re-request Copilot review using:
+
+```
+gh pr edit <PR#> --add-reviewer 'copilot-pull-request-reviewer[bot]'
+```
+
+The `[bot]` suffix is required. Do **not** use any other method (closing/reopening the
+PR, `@copilot review` comments, or the GraphQL `requestReviews` mutation).
+
+### Monitoring for Copilot Reviews
+
+After pushing changes and re-requesting Copilot review, Claude must run a background
+monitor that:
+
+1. Polls for new Copilot reviews every **30 seconds**
+2. If Copilot responds with an error (`"Copilot encountered an error and was unable to
+   review this pull request"`), re-requests the review immediately and resets the timer
+3. If Copilot posts a review with comments, reports any unresolved threads
+4. If Copilot does not respond within **15 minutes**, posts a PR comment:
+   `"From Claude: Copilot did not respond within 15 minutes of the review request."`
+
+**Important pitfalls when polling reviews:**
+
+- Use separate `--jq` queries per field (`.[-1].submitted_at`, `.[-1].user.login`,
+  `.[-1].body`). Do **not** combine into a delimited string with `cut -d'|'` — Copilot
+  review bodies contain `|` from markdown tables which corrupts parsing.
+- Always use `?per_page=100` when fetching reviews — the GitHub API defaults to 30
+  results per page, so `.[-1]` may not return the actual latest review on PRs with
+  many review rounds.
