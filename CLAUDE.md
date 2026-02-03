@@ -138,7 +138,9 @@ monitor that:
 2. If Copilot responds with an error (`"Copilot encountered an error and was unable to
    review this pull request"`), re-requests the review immediately and resets the timer
 3. If Copilot posts a review with comments, reports any unresolved threads
-4. If Copilot does not respond within **25 minutes**, posts a PR comment:
+4. **After addressing comments and pushing fixes**, the monitor must continue watching
+   for the next Copilot review (triggered by the new push), not exit on success
+5. If Copilot does not respond within **25 minutes**, posts a PR comment:
    `"From Claude: Copilot did not respond within 25 minutes of the review request."`
 
 **Important pitfalls when polling reviews:**
