@@ -18,12 +18,11 @@ const (
 
 // Run executes the provided command within this context
 func Run(cmd *exec.Cmd) (string, error) {
-	dir, _ := GetProjectDir()
-	cmd.Dir = dir
-
-	if err := os.Chdir(cmd.Dir); err != nil {
-		_, _ = fmt.Fprintf(GinkgoWriter, "chdir dir: %q\n", err)
+	dir, err := GetProjectDir()
+	if err != nil {
+		return "", fmt.Errorf("getting project dir: %w", err)
 	}
+	cmd.Dir = dir
 
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
 	command := strings.Join(cmd.Args, " ")
