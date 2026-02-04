@@ -35,11 +35,11 @@ linters:
     rules:
       - linters:
           - lll
-        path: api/*
+        path: api/.*
       - linters:
           - dupl
           - lll
-        path: internal/*
+        path: internal/.*
     paths:
       - third_party$
       - builtin$
@@ -54,3 +54,4 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+      - api/.*_types\.go$
