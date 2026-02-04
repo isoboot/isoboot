@@ -14,7 +14,14 @@ spec:
     singular: bootsource
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: BootSource is the Schema for the bootsources API
@@ -258,6 +265,18 @@ spec:
                   - type
                   type: object
                 type: array
+              phase:
+                description: Phase represents the current phase of the BootSource
+                enum:
+                - Pending
+                - Downloading
+                - Verifying
+                - Extracting
+                - Building
+                - Ready
+                - Failed
+                - Corrupted
+                type: string
             type: object
         type: object
     served: true

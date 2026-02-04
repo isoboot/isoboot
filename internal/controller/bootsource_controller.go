@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,9 +48,32 @@ type BootSourceReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.1/pkg/reconcile
 func (r *BootSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	// Fetch the BootSource instance
+	bootSource := &isobootv1alpha1.BootSource{}
+	if err := r.Get(ctx, req.NamespacedName, bootSource); err != nil {
+		if errors.IsNotFound(err) {
+			// Object not found, return. Created objects are automatically garbage collected.
+			log.Info("BootSource resource not found. Ignoring since object must be deleted")
+			return ctrl.Result{}, nil
+		}
+		log.Error(err, "Failed to get BootSource")
+		return ctrl.Result{}, err
+	}
+
+	// Set initial phase to Pending if not set
+	if bootSource.Status.Phase == "" {
+		bootSource.Status.Phase = isobootv1alpha1.PhasePending
+		if err := r.Status().Update(ctx, bootSource); err != nil {
+			log.Error(err, "Failed to update BootSource status to Pending")
+			return ctrl.Result{}, err
+		}
+		log.Info("Set BootSource phase to Pending", "name", bootSource.Name)
+		return ctrl.Result{}, nil
+	}
+
+	// TODO: Handle other phases (Downloading, Verifying, etc.)
 
 	return ctrl.Result{}, nil
 }

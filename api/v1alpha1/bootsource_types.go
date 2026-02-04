@@ -87,8 +87,34 @@ type BootSourceSpec struct {
 	ISO *ISOSource `json:"iso,omitempty"`
 }
 
+// BootSourcePhase represents the current phase of a BootSource
+// +kubebuilder:validation:Enum=Pending;Downloading;Verifying;Extracting;Building;Ready;Failed;Corrupted
+type BootSourcePhase string
+
+const (
+	// PhasePending indicates the BootSource is waiting to be processed
+	PhasePending BootSourcePhase = "Pending"
+	// PhaseDownloading indicates the BootSource is downloading files
+	PhaseDownloading BootSourcePhase = "Downloading"
+	// PhaseVerifying indicates the BootSource is verifying checksums
+	PhaseVerifying BootSourcePhase = "Verifying"
+	// PhaseExtracting indicates the BootSource is extracting files from ISO
+	PhaseExtracting BootSourcePhase = "Extracting"
+	// PhaseBuilding indicates the BootSource is building artifacts
+	PhaseBuilding BootSourcePhase = "Building"
+	// PhaseReady indicates the BootSource is ready for use
+	PhaseReady BootSourcePhase = "Ready"
+	// PhaseFailed indicates the BootSource processing failed
+	PhaseFailed BootSourcePhase = "Failed"
+	// PhaseCorrupted indicates the BootSource checksum verification failed
+	PhaseCorrupted BootSourcePhase = "Corrupted"
+)
+
 // BootSourceStatus defines the observed state of BootSource
 type BootSourceStatus struct {
+	// Phase represents the current phase of the BootSource
+	// +optional
+	Phase BootSourcePhase `json:"phase,omitempty"`
 	// Conditions represent the latest available observations of an object's state
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -96,6 +122,8 @@ type BootSourceStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // BootSource is the Schema for the bootsources API
 type BootSource struct {
