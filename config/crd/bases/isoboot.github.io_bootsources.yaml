@@ -58,15 +58,15 @@ spec:
                     type: object
                     x-kubernetes-validations:
                     - message: binary URL is required
-                      rule: self.binary != ''
+                      rule: size(self.binary) > 0
                     - message: shasum URL is required
-                      rule: self.shasum != ''
+                      rule: size(self.shasum) > 0
                     - message: binary URL must use https
-                      rule: self.binary == '' || self.binary.startsWith('https://')
+                      rule: size(self.binary) == 0 || self.binary.startsWith('https://')
                     - message: shasum URL must use https
-                      rule: self.shasum == '' || self.shasum.startsWith('https://')
+                      rule: size(self.shasum) == 0 || self.shasum.startsWith('https://')
                     - message: binary and shasum URLs must be on the same server
-                      rule: self.binary == '' || self.shasum == '' || !self.binary.startsWith('https://')
+                      rule: size(self.binary) == 0 || size(self.shasum) == 0 || !self.binary.startsWith('https://')
                         || !self.shasum.startsWith('https://') || self.binary.split('://')[1].split('/')[0]
                         == self.shasum.split('://')[1].split('/')[0]
                 required:
@@ -91,15 +91,15 @@ spec:
                     type: object
                     x-kubernetes-validations:
                     - message: binary URL is required
-                      rule: self.binary != ''
+                      rule: size(self.binary) > 0
                     - message: shasum URL is required
-                      rule: self.shasum != ''
+                      rule: size(self.shasum) > 0
                     - message: binary URL must use https
-                      rule: self.binary == '' || self.binary.startsWith('https://')
+                      rule: size(self.binary) == 0 || self.binary.startsWith('https://')
                     - message: shasum URL must use https
-                      rule: self.shasum == '' || self.shasum.startsWith('https://')
+                      rule: size(self.shasum) == 0 || self.shasum.startsWith('https://')
                     - message: binary and shasum URLs must be on the same server
-                      rule: self.binary == '' || self.shasum == '' || !self.binary.startsWith('https://')
+                      rule: size(self.binary) == 0 || size(self.shasum) == 0 || !self.binary.startsWith('https://')
                         || !self.shasum.startsWith('https://') || self.binary.split('://')[1].split('/')[0]
                         == self.shasum.split('://')[1].split('/')[0]
                 required:
@@ -138,15 +138,15 @@ spec:
                     type: object
                     x-kubernetes-validations:
                     - message: binary URL is required
-                      rule: self.binary != ''
+                      rule: size(self.binary) > 0
                     - message: shasum URL is required
-                      rule: self.shasum != ''
+                      rule: size(self.shasum) > 0
                     - message: binary URL must use https
-                      rule: self.binary == '' || self.binary.startsWith('https://')
+                      rule: size(self.binary) == 0 || self.binary.startsWith('https://')
                     - message: shasum URL must use https
-                      rule: self.shasum == '' || self.shasum.startsWith('https://')
+                      rule: size(self.shasum) == 0 || self.shasum.startsWith('https://')
                     - message: binary and shasum URLs must be on the same server
-                      rule: self.binary == '' || self.shasum == '' || !self.binary.startsWith('https://')
+                      rule: size(self.binary) == 0 || size(self.shasum) == 0 || !self.binary.startsWith('https://')
                         || !self.shasum.startsWith('https://') || self.binary.split('://')[1].split('/')[0]
                         == self.shasum.split('://')[1].split('/')[0]
                 required:
@@ -155,9 +155,9 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: iso requires path.kernel to be specified
-                  rule: self.path.kernel != ''
+                  rule: size(self.path.kernel) > 0
                 - message: iso requires path.initrd to be specified
-                  rule: self.path.initrd != ''
+                  rule: size(self.path.initrd) > 0
               kernel:
                 description: Kernel specifies the kernel binary source
                 properties:
@@ -177,15 +177,15 @@ spec:
                     type: object
                     x-kubernetes-validations:
                     - message: binary URL is required
-                      rule: self.binary != ''
+                      rule: size(self.binary) > 0
                     - message: shasum URL is required
-                      rule: self.shasum != ''
+                      rule: size(self.shasum) > 0
                     - message: binary URL must use https
-                      rule: self.binary == '' || self.binary.startsWith('https://')
+                      rule: size(self.binary) == 0 || self.binary.startsWith('https://')
                     - message: shasum URL must use https
-                      rule: self.shasum == '' || self.shasum.startsWith('https://')
+                      rule: size(self.shasum) == 0 || self.shasum.startsWith('https://')
                     - message: binary and shasum URLs must be on the same server
-                      rule: self.binary == '' || self.shasum == '' || !self.binary.startsWith('https://')
+                      rule: size(self.binary) == 0 || size(self.shasum) == 0 || !self.binary.startsWith('https://')
                         || !self.shasum.startsWith('https://') || self.binary.split('://')[1].split('/')[0]
                         == self.shasum.split('://')[1].split('/')[0]
                 required:
