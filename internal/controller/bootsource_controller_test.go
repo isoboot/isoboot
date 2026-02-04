@@ -34,7 +34,9 @@ import (
 // newFakeReconciler creates a reconciler with a fake client for unit testing
 func newFakeReconciler(objs ...client.Object) *BootSourceReconciler {
 	scheme := runtime.NewScheme()
-	_ = isobootv1alpha1.AddToScheme(scheme)
+	if err := isobootv1alpha1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -119,7 +121,6 @@ var _ = Describe("BootSource Controller", func() {
 		var (
 			ctx                context.Context
 			typeNamespacedName types.NamespacedName
-			bootSource         *isobootv1alpha1.BootSource
 		)
 
 		BeforeEach(func() {
@@ -129,10 +130,13 @@ var _ = Describe("BootSource Controller", func() {
 				Namespace: testNamespace,
 			}
 
-			bootSource = newTestBootSource(testName, testNamespace)
 			err := k8sClient.Get(ctx, typeNamespacedName, &isobootv1alpha1.BootSource{})
-			if errors.IsNotFound(err) {
-				Expect(k8sClient.Create(ctx, bootSource)).To(Succeed())
+			if err != nil {
+				if errors.IsNotFound(err) {
+					Expect(k8sClient.Create(ctx, newTestBootSource(testName, testNamespace))).To(Succeed())
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+				}
 			}
 		})
 
