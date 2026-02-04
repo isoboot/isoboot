@@ -179,8 +179,9 @@ func main() {
 	}
 
 	if err := (&controller.BootSourceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		JobBuilder: &controller.DefaultJobBuilder{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BootSource")
 		os.Exit(1)
