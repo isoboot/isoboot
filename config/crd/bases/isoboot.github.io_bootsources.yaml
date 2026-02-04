@@ -265,6 +265,14 @@ spec:
                   - type
                   type: object
                 type: array
+              downloadJobName:
+                description: DownloadJobName is the name of the Job created to download
+                  files
+                type: string
+              message:
+                description: Message provides additional information about the current
+                  phase
+                type: string
               phase:
                 description: Phase represents the current phase of the BootSource
                 enum:
