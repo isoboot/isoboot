@@ -15,6 +15,8 @@ multipass shell isoboot
 
 ```bash
 sudo snap install microk8s --classic
+sudo usermod -aG microk8s $USER
+newgrp microk8s
 
 # Wait for microk8s to be ready
 microk8s status --wait-ready
