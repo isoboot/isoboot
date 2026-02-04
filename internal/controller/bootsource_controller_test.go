@@ -122,9 +122,9 @@ func reconcileRequest(name, namespace string) reconcile.Request {
 
 // getBootSource fetches a BootSource from the reconciler's client
 func getBootSource(ctx context.Context, r *BootSourceReconciler, name, namespace string) (*isobootv1alpha1.BootSource, error) {
-	bs := &isobootv1alpha1.BootSource{}
-	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, bs)
-	return bs, err
+	bootSource := &isobootv1alpha1.BootSource{}
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, bootSource)
+	return bootSource, err
 }
 
 var _ = Describe("BootSource Controller", func() {
@@ -172,6 +172,29 @@ var _ = Describe("BootSource Controller", func() {
 			reconciler := newFakeReconciler()
 			_, err := reconciler.Reconcile(ctx, reconcileRequest("nonexistent", testNamespace))
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should handle multiple BootSources independently", func() {
+			first := newTestBootSource("bootsource-one", "namespace-one")
+			second := newTestBootSource("bootsource-two", "namespace-two")
+			reconciler := newFakeReconciler(first, second)
+
+			// Reconcile first
+			_, err := reconciler.Reconcile(ctx, reconcileRequest("bootsource-one", "namespace-one"))
+			Expect(err).NotTo(HaveOccurred())
+
+			// Reconcile second
+			_, err = reconciler.Reconcile(ctx, reconcileRequest("bootsource-two", "namespace-two"))
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify both have Pending phase
+			updated1, err := getBootSource(ctx, reconciler, "bootsource-one", "namespace-one")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated1.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
+
+			updated2, err := getBootSource(ctx, reconciler, "bootsource-two", "namespace-two")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated2.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
 		})
 
 		It("should work with ISO-based BootSource", func() {
@@ -227,10 +250,10 @@ var _ = Describe("BootSource Controller", func() {
 
 	Context("Downloading phase", func() {
 		newDownloadingBootSource := func() *isobootv1alpha1.BootSource {
-			bs := newTestBootSource(testName, testNamespace)
-			bs.Status.Phase = isobootv1alpha1.PhaseDownloading
-			bs.Status.DownloadJobName = testName + "-download"
-			return bs
+			bootSource := newTestBootSource(testName, testNamespace)
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource.Status.DownloadJobName = testName + "-download"
+			return bootSource
 		}
 
 		newJob := func(succeeded, failed, active int32) *batchv1.Job {
@@ -305,10 +328,10 @@ var _ = Describe("BootSource Controller", func() {
 		})
 
 		It("should return to Pending if DownloadJobName is empty", func() {
-			bs := newTestBootSource(testName, testNamespace)
-			bs.Status.Phase = isobootv1alpha1.PhaseDownloading
-			bs.Status.DownloadJobName = ""
-			reconciler := newFakeReconciler(bs)
+			bootSource := newTestBootSource(testName, testNamespace)
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource.Status.DownloadJobName = ""
+			reconciler := newFakeReconciler(bootSource)
 
 			_, err := reconciler.Reconcile(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
@@ -346,18 +369,18 @@ var _ = Describe("BootSource Controller", func() {
 			Entry("Job creation fails",
 				errorClient{createErr: fmt.Errorf("quota exceeded")},
 				func() *isobootv1alpha1.BootSource {
-					bs := newTestBootSource(testName, testNamespace)
-					bs.Status.Phase = isobootv1alpha1.PhasePending
-					return bs
+					bootSource := newTestBootSource(testName, testNamespace)
+					bootSource.Status.Phase = isobootv1alpha1.PhasePending
+					return bootSource
 				}(),
 				"quota exceeded",
 			),
 			Entry("status update fails in handlePending",
 				errorClient{statusUpdateErr: fmt.Errorf("status update failed")},
 				func() *isobootv1alpha1.BootSource {
-					bs := newTestBootSource(testName, testNamespace)
-					bs.Status.Phase = isobootv1alpha1.PhasePending
-					return bs
+					bootSource := newTestBootSource(testName, testNamespace)
+					bootSource.Status.Phase = isobootv1alpha1.PhasePending
+					return bootSource
 				}(),
 				"status update failed",
 			),
