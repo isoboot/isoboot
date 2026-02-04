@@ -22,76 +22,143 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
+// newFakeReconciler creates a reconciler with a fake client for unit testing
+func newFakeReconciler(objs ...client.Object) *BootSourceReconciler {
+	scheme := runtime.NewScheme()
+	_ = isobootv1alpha1.AddToScheme(scheme)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objs...).
+		WithStatusSubresource(&isobootv1alpha1.BootSource{}).
+		Build()
+
+	return &BootSourceReconciler{
+		Client: fakeClient,
+		Scheme: scheme,
+	}
+}
+
 var _ = Describe("BootSource Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+	const (
+		testName      = "test-bootsource"
+		testNamespace = "default"
+	)
 
-		ctx := context.Background()
+	Context("Unit tests with fake client", func() {
+		It("should set phase to Pending for new resources", func() {
+			ctx := context.Background()
+			bootSource := newTestBootSource(testName, testNamespace)
+			reconciler := newFakeReconciler(bootSource)
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
-		}
-		bootsource := &isobootv1alpha1.BootSource{}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &isobootv1alpha1.BootSource{}
+			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
+		})
+
+		It("should not change phase if already set", func() {
+			ctx := context.Background()
+			bootSource := newTestBootSource(testName, testNamespace)
+			bootSource.Status.Phase = isobootv1alpha1.PhaseReady
+			reconciler := newFakeReconciler(bootSource)
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &isobootv1alpha1.BootSource{}
+			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseReady))
+		})
+
+		It("should handle not found resources gracefully", func() {
+			ctx := context.Background()
+			reconciler := newFakeReconciler() // no objects
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "nonexistent", Namespace: testNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should work with ISO-based BootSource", func() {
+			ctx := context.Background()
+			bootSource := newTestBootSourceISO(testName, testNamespace)
+			reconciler := newFakeReconciler(bootSource)
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &isobootv1alpha1.BootSource{}
+			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
+		})
+	})
+
+	Context("Integration tests with envtest", func() {
+		var (
+			ctx                context.Context
+			typeNamespacedName types.NamespacedName
+			bootSource         *isobootv1alpha1.BootSource
+		)
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind BootSource")
-			err := k8sClient.Get(ctx, typeNamespacedName, bootsource)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &isobootv1alpha1.BootSource{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					Spec: isobootv1alpha1.BootSourceSpec{
-						Kernel: &isobootv1alpha1.KernelSource{
-							URL: isobootv1alpha1.URLSource{
-								Binary: "https://example.com/vmlinuz",
-								Shasum: "https://example.com/vmlinuz.sha256",
-							},
-						},
-						Initrd: &isobootv1alpha1.InitrdSource{
-							URL: isobootv1alpha1.URLSource{
-								Binary: "https://example.com/initrd.img",
-								Shasum: "https://example.com/initrd.img.sha256",
-							},
-						},
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			ctx = context.Background()
+			typeNamespacedName = types.NamespacedName{
+				Name:      testName,
+				Namespace: testNamespace,
+			}
+
+			bootSource = newTestBootSource(testName, testNamespace)
+			err := k8sClient.Get(ctx, typeNamespacedName, &isobootv1alpha1.BootSource{})
+			if errors.IsNotFound(err) {
+				Expect(k8sClient.Create(ctx, bootSource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &isobootv1alpha1.BootSource{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Cleanup the specific resource instance BootSource")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			}
 		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &BootSourceReconciler{
+
+		It("should reconcile successfully with real API server", func() {
+			reconciler := &BootSourceReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			updated := &isobootv1alpha1.BootSource{}
+			err = k8sClient.Get(ctx, typeNamespacedName, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
 		})
 	})
 })
