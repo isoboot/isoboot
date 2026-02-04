@@ -130,45 +130,46 @@ func (m *DownloadManager) StartDownload(bootSource *isobootv1alpha1.BootSource) 
 
 // updateStatusWithRetry updates the BootSource status with retry logic
 func (m *DownloadManager) updateStatusWithRetry(ctx context.Context, namespacedName types.NamespacedName, downloadErr error, log logr.Logger) error {
-	const maxRetries = 3
-	backoff := 100 * time.Millisecond
-
-	for attempt := range maxRetries {
-		// Re-fetch the BootSource to get latest version
-		current := &isobootv1alpha1.BootSource{}
-		if err := m.client.Get(ctx, namespacedName, current); err != nil {
-			if errors.IsNotFound(err) {
-				log.Info("BootSource deleted, skipping status update")
-				return nil
-			}
-			log.Error(err, "Failed to get BootSource", "attempt", attempt+1)
-			time.Sleep(backoff)
-			backoff *= 2
-			continue
-		}
-
-		// Update status based on download result
-		if downloadErr != nil {
-			log.Error(downloadErr, "Download failed")
-			current.Status.Phase = isobootv1alpha1.PhaseFailed
-			current.Status.Message = "Download failed: " + downloadErr.Error()
-		} else {
-			log.Info("Download completed")
-			current.Status.Phase = isobootv1alpha1.PhaseVerifying
-			current.Status.Message = "Download completed, verifying"
-		}
-
-		if err := m.client.Status().Update(ctx, current); err != nil {
-			log.Error(err, "Failed to update status", "attempt", attempt+1)
-			time.Sleep(backoff)
-			backoff *= 2
-			continue
-		}
-
-		return nil
+	var phase isobootv1alpha1.BootSourcePhase
+	var message string
+	if downloadErr != nil {
+		log.Error(downloadErr, "Download failed")
+		phase = isobootv1alpha1.PhaseFailed
+		message = "Download failed: " + downloadErr.Error()
+	} else {
+		log.Info("Download completed")
+		phase = isobootv1alpha1.PhaseVerifying
+		message = "Download completed, verifying"
 	}
 
-	return errors.NewServiceUnavailable("failed to update status after retries")
+	return retry(3, 100*time.Millisecond, func() error {
+		current := &isobootv1alpha1.BootSource{}
+		if err := m.client.Get(ctx, namespacedName, current); err != nil {
+			return err
+		}
+		current.Status.Phase = phase
+		current.Status.Message = message
+		return m.client.Status().Update(ctx, current)
+	})
+}
+
+// retry executes fn up to maxAttempts times with exponential backoff
+func retry(maxAttempts int, initialBackoff time.Duration, fn func() error) error {
+	backoff := initialBackoff
+	var lastErr error
+	for range maxAttempts {
+		if err := fn(); err != nil {
+			if errors.IsNotFound(err) {
+				return nil // Resource deleted, not an error
+			}
+			lastErr = err
+			time.Sleep(backoff)
+			backoff *= 2
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }
 
 // CancelDownload cancels an in-progress download
