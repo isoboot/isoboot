@@ -63,7 +63,7 @@ func (b *DefaultJobBuilder) Build(bootSource *isobootv1alpha1.BootSource) *batch
 					Containers: []corev1.Container{
 						{
 							Name:    "download",
-							Image:   "busybox:latest",
+							Image:   "busybox:1.37",
 							Command: []string{"sleep", "10"},
 						},
 					},
