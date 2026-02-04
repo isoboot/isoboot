@@ -45,6 +45,18 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
+.PHONY: helm-sync
+helm-sync: manifests ## Sync CRDs to Helm chart.
+	cp config/crd/bases/*.yaml charts/isoboot/templates/crd.yaml
+
+.PHONY: verify
+verify: helm-sync ## Verify generated files are up to date.
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Error: generated files are out of date. Run 'make helm-sync' and commit the changes."; \
+		git diff; \
+		exit 1; \
+	fi
+
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
