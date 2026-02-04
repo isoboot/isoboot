@@ -228,7 +228,7 @@ var _ = Describe("BootSource Controller", func() {
 			job := &batchv1.Job{}
 			err = reconciler.Get(ctx, types.NamespacedName{Name: updated.Status.DownloadJobName, Namespace: testNamespace}, job)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal("busybox:1.37"))
+			Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal("busybox:1.37-musl"))
 		})
 	})
 
@@ -403,7 +403,7 @@ var _ = Describe("BootSource Controller", func() {
 			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
 			container := job.Spec.Template.Spec.Containers[0]
 			Expect(container.Name).To(Equal("download"))
-			Expect(container.Image).To(Equal("busybox:1.37"))
+			Expect(container.Image).To(Equal("busybox:1.37-musl"))
 			Expect(container.Command).To(Equal([]string{"sleep", "10"}))
 		})
 	})
