@@ -6,4 +6,11 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: bootsource-sample
 spec:
-  # TODO(user): Add fields here
+  kernel:
+    url:
+      binary: "https://example.com/vmlinuz"
+      shasum: "https://example.com/vmlinuz.sha256"
+  initrd:
+    url:
+      binary: "https://example.com/initrd.img"
+      shasum: "https://example.com/initrd.img.sha256"

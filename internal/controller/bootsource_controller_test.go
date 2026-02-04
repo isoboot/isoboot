@@ -51,7 +51,20 @@ var _ = Describe("BootSource Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: isobootv1alpha1.BootSourceSpec{
+						Kernel: &isobootv1alpha1.KernelSource{
+							URL: isobootv1alpha1.URLSource{
+								Binary: "https://example.com/vmlinuz",
+								Shasum: "https://example.com/vmlinuz.sha256",
+							},
+						},
+						Initrd: &isobootv1alpha1.InitrdSource{
+							URL: isobootv1alpha1.URLSource{
+								Binary: "https://example.com/initrd.img",
+								Shasum: "https://example.com/initrd.img.sha256",
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
