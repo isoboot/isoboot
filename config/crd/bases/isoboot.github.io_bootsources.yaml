@@ -265,6 +265,10 @@ spec:
                   - type
                   type: object
                 type: array
+              message:
+                description: Message provides additional information about the current
+                  phase
+                type: string
               phase:
                 description: Phase represents the current phase of the BootSource
                 enum:

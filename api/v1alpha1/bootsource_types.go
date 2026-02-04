@@ -115,6 +115,9 @@ type BootSourceStatus struct {
 	// Phase represents the current phase of the BootSource
 	// +optional
 	Phase BootSourcePhase `json:"phase,omitempty"`
+	// Message provides additional information about the current phase
+	// +optional
+	Message string `json:"message,omitempty"`
 	// Conditions represent the latest available observations of an object's state
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

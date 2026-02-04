@@ -18,9 +18,12 @@ package controller
 
 import (
 	"context"
+	"sync"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -28,10 +31,123 @@ import (
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
+// Downloader performs the actual download operation
+type Downloader interface {
+	Download(ctx context.Context, bootSource *isobootv1alpha1.BootSource) error
+}
+
+// DefaultDownloader is a stub downloader that simulates a download
+type DefaultDownloader struct{}
+
+// Download simulates a download operation
+func (d *DefaultDownloader) Download(ctx context.Context, bootSource *isobootv1alpha1.BootSource) error {
+	// Stub: sleep to simulate download
+	select {
+	case <-time.After(10 * time.Second):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// DownloadManager tracks in-flight downloads
+type DownloadManager struct {
+	mu        sync.Mutex
+	inFlight  map[types.UID]context.CancelFunc
+	client    client.Client
+	downloads Downloader
+}
+
+// NewDownloadManager creates a new DownloadManager
+func NewDownloadManager(c client.Client, downloader Downloader) *DownloadManager {
+	return &DownloadManager{
+		inFlight:  make(map[types.UID]context.CancelFunc),
+		client:    c,
+		downloads: downloader,
+	}
+}
+
+// IsDownloading returns true if a download is in progress for the given BootSource
+func (m *DownloadManager) IsDownloading(uid types.UID) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, exists := m.inFlight[uid]
+	return exists
+}
+
+// StartDownload starts a download goroutine for the given BootSource
+func (m *DownloadManager) StartDownload(bootSource *isobootv1alpha1.BootSource) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Already downloading
+	if _, exists := m.inFlight[bootSource.UID]; exists {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.inFlight[bootSource.UID] = cancel
+
+	// Capture values needed by goroutine
+	uid := bootSource.UID
+	namespacedName := types.NamespacedName{
+		Name:      bootSource.Name,
+		Namespace: bootSource.Namespace,
+	}
+
+	go func() {
+		defer func() {
+			m.mu.Lock()
+			delete(m.inFlight, uid)
+			m.mu.Unlock()
+		}()
+
+		log := logf.Log.WithName("download").WithValues("bootsource", namespacedName)
+		log.Info("Starting download")
+
+		// Perform download
+		err := m.downloads.Download(ctx, bootSource)
+
+		// Re-fetch the BootSource to get latest version
+		current := &isobootv1alpha1.BootSource{}
+		if getErr := m.client.Get(ctx, namespacedName, current); getErr != nil {
+			log.Error(getErr, "Failed to get BootSource after download")
+			return
+		}
+
+		// Update status based on result
+		if err != nil {
+			log.Error(err, "Download failed")
+			current.Status.Phase = isobootv1alpha1.PhaseFailed
+			current.Status.Message = "Download failed: " + err.Error()
+		} else {
+			log.Info("Download completed")
+			current.Status.Phase = isobootv1alpha1.PhaseVerifying
+			current.Status.Message = "Download completed, verifying"
+		}
+
+		if updateErr := m.client.Status().Update(ctx, current); updateErr != nil {
+			log.Error(updateErr, "Failed to update BootSource status after download")
+		}
+	}()
+}
+
+// CancelDownload cancels an in-progress download
+func (m *DownloadManager) CancelDownload(uid types.UID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if cancel, exists := m.inFlight[uid]; exists {
+		cancel()
+		delete(m.inFlight, uid)
+	}
+}
+
 // BootSourceReconciler reconciles a BootSource object
 type BootSourceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme          *runtime.Scheme
+	DownloadManager *DownloadManager
 }
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources,verbs=get;list;watch;create;update;patch;delete
@@ -40,13 +156,6 @@ type BootSourceReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the BootSource object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.1/pkg/reconcile
 func (r *BootSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -73,7 +182,62 @@ func (r *BootSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	// TODO: Handle other phases (Downloading, Verifying, etc.)
+	// Handle phases
+	switch bootSource.Status.Phase {
+	case isobootv1alpha1.PhasePending:
+		return r.handlePending(ctx, bootSource)
+	case isobootv1alpha1.PhaseDownloading:
+		return r.handleDownloading(ctx, bootSource)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// handlePending handles the Pending phase - starts a download if not already in progress
+func (r *BootSourceReconciler) handlePending(ctx context.Context, bootSource *isobootv1alpha1.BootSource) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Check if download is already in progress
+	if r.DownloadManager.IsDownloading(bootSource.UID) {
+		log.Info("Download already in progress")
+		return ctrl.Result{}, nil
+	}
+
+	// Start download
+	r.DownloadManager.StartDownload(bootSource)
+
+	// Update status to Downloading
+	bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
+	bootSource.Status.Message = "Download started"
+	if err := r.Status().Update(ctx, bootSource); err != nil {
+		log.Error(err, "Failed to update BootSource status to Downloading")
+		return ctrl.Result{}, err
+	}
+
+	log.Info("Started download, transitioning to Downloading phase")
+	return ctrl.Result{}, nil
+}
+
+// handleDownloading handles the Downloading phase - checks if download is still in progress
+func (r *BootSourceReconciler) handleDownloading(ctx context.Context, bootSource *isobootv1alpha1.BootSource) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// If download is still in progress, nothing to do
+	if r.DownloadManager.IsDownloading(bootSource.UID) {
+		return ctrl.Result{}, nil
+	}
+
+	// Download not in progress - this means either:
+	// 1. Controller restarted and lost track of the download
+	// 2. Download completed but status update failed
+	// In either case, go back to Pending to retry
+	log.Info("Download not in progress, returning to Pending to retry")
+	bootSource.Status.Phase = isobootv1alpha1.PhasePending
+	bootSource.Status.Message = "Download interrupted, retrying"
+	if err := r.Status().Update(ctx, bootSource); err != nil {
+		log.Error(err, "Failed to update BootSource status to Pending")
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }

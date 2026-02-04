@@ -178,9 +178,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	downloadManager := controller.NewDownloadManager(mgr.GetClient(), &controller.DefaultDownloader{})
 	if err := (&controller.BootSourceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		DownloadManager: downloadManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BootSource")
 		os.Exit(1)
