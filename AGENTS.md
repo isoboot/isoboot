@@ -36,6 +36,10 @@ Multi-group layout organizes APIs by group name (e.g., `batch`, `apps`). Check t
 
 ## Critical Rules
 
+### Git & Pull Requests
+- **No force push** - Repository rules block force pushes. Create new commits instead of amending.
+- **Update PR body after commits** - If a new commit changes the scope or content of the PR, update the PR description to accurately reflect all changes.
+
 ### Never Edit These (Auto-Generated)
 - `config/crd/bases/*.yaml` - from `make manifests`
 - `config/rbac/role.yaml` - from `make manifests`
