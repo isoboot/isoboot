@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -54,14 +55,16 @@ func (d *DefaultDownloader) Download(ctx context.Context, bootSource *isobootv1a
 type DownloadManager struct {
 	mu        sync.Mutex
 	inFlight  map[types.UID]context.CancelFunc
+	parentCtx context.Context
 	client    client.Client
 	downloads Downloader
 }
 
 // NewDownloadManager creates a new DownloadManager
-func NewDownloadManager(c client.Client, downloader Downloader) *DownloadManager {
+func NewDownloadManager(parentCtx context.Context, c client.Client, downloader Downloader) *DownloadManager {
 	return &DownloadManager{
 		inFlight:  make(map[types.UID]context.CancelFunc),
+		parentCtx: parentCtx,
 		client:    c,
 		downloads: downloader,
 	}
@@ -85,15 +88,17 @@ func (m *DownloadManager) StartDownload(bootSource *isobootv1alpha1.BootSource) 
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Derive context from parent (propagates cancellation from controller shutdown)
+	ctx, cancel := context.WithCancel(m.parentCtx)
 	m.inFlight[bootSource.UID] = cancel
 
-	// Capture values needed by goroutine
+	// Deep copy values needed by goroutine to avoid race conditions
 	uid := bootSource.UID
 	namespacedName := types.NamespacedName{
 		Name:      bootSource.Name,
 		Namespace: bootSource.Namespace,
 	}
+	specCopy := bootSource.Spec.DeepCopy()
 
 	go func() {
 		defer func() {
@@ -105,31 +110,65 @@ func (m *DownloadManager) StartDownload(bootSource *isobootv1alpha1.BootSource) 
 		log := logf.Log.WithName("download").WithValues("bootsource", namespacedName)
 		log.Info("Starting download")
 
-		// Perform download
-		err := m.downloads.Download(ctx, bootSource)
+		// Create a temporary BootSource with copied spec for the downloader
+		downloadSource := &isobootv1alpha1.BootSource{
+			Spec: *specCopy,
+		}
+		downloadSource.Name = namespacedName.Name
+		downloadSource.Namespace = namespacedName.Namespace
+		downloadSource.UID = uid
 
+		// Perform download
+		err := m.downloads.Download(ctx, downloadSource)
+
+		// Update status with retry
+		if updateErr := m.updateStatusWithRetry(ctx, namespacedName, err, log); updateErr != nil {
+			log.Error(updateErr, "Failed to update BootSource status after retries")
+		}
+	}()
+}
+
+// updateStatusWithRetry updates the BootSource status with retry logic
+func (m *DownloadManager) updateStatusWithRetry(ctx context.Context, namespacedName types.NamespacedName, downloadErr error, log logr.Logger) error {
+	const maxRetries = 3
+	backoff := 100 * time.Millisecond
+
+	for attempt := range maxRetries {
 		// Re-fetch the BootSource to get latest version
 		current := &isobootv1alpha1.BootSource{}
-		if getErr := m.client.Get(ctx, namespacedName, current); getErr != nil {
-			log.Error(getErr, "Failed to get BootSource after download")
-			return
+		if err := m.client.Get(ctx, namespacedName, current); err != nil {
+			if errors.IsNotFound(err) {
+				log.Info("BootSource deleted, skipping status update")
+				return nil
+			}
+			log.Error(err, "Failed to get BootSource", "attempt", attempt+1)
+			time.Sleep(backoff)
+			backoff *= 2
+			continue
 		}
 
-		// Update status based on result
-		if err != nil {
-			log.Error(err, "Download failed")
+		// Update status based on download result
+		if downloadErr != nil {
+			log.Error(downloadErr, "Download failed")
 			current.Status.Phase = isobootv1alpha1.PhaseFailed
-			current.Status.Message = "Download failed: " + err.Error()
+			current.Status.Message = "Download failed: " + downloadErr.Error()
 		} else {
 			log.Info("Download completed")
 			current.Status.Phase = isobootv1alpha1.PhaseVerifying
 			current.Status.Message = "Download completed, verifying"
 		}
 
-		if updateErr := m.client.Status().Update(ctx, current); updateErr != nil {
-			log.Error(updateErr, "Failed to update BootSource status after download")
+		if err := m.client.Status().Update(ctx, current); err != nil {
+			log.Error(err, "Failed to update status", "attempt", attempt+1)
+			time.Sleep(backoff)
+			backoff *= 2
+			continue
 		}
-	}()
+
+		return nil
+	}
+
+	return errors.NewServiceUnavailable("failed to update status after retries")
 }
 
 // CancelDownload cancels an in-progress download

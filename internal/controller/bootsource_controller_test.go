@@ -112,7 +112,7 @@ func newFakeReconciler(downloader Downloader, objs ...client.Object) *BootSource
 	return &BootSourceReconciler{
 		Client:          fakeClient,
 		Scheme:          scheme,
-		DownloadManager: NewDownloadManager(fakeClient, downloader),
+		DownloadManager: NewDownloadManager(context.Background(), fakeClient, downloader),
 	}
 }
 
@@ -129,7 +129,7 @@ func newErrorReconciler(errCfg errorClient, downloader Downloader, objs ...clien
 	return &BootSourceReconciler{
 		Client:          &errCfg,
 		Scheme:          scheme,
-		DownloadManager: NewDownloadManager(fakeClient, downloader),
+		DownloadManager: NewDownloadManager(context.Background(), fakeClient, downloader),
 	}
 }
 
@@ -411,7 +411,7 @@ var _ = Describe("BootSource Controller", func() {
 				WithStatusSubresource(&isobootv1alpha1.BootSource{}).
 				Build()
 
-			manager := NewDownloadManager(fakeClient, downloader)
+			manager := NewDownloadManager(context.Background(), fakeClient, downloader)
 			bootSource := newTestBootSource(testName, testNamespace)
 			bootSource.UID = "test-uid"
 
@@ -446,7 +446,7 @@ var _ = Describe("BootSource Controller", func() {
 				WithStatusSubresource(&isobootv1alpha1.BootSource{}).
 				Build()
 
-			manager := NewDownloadManager(fakeClient, downloader)
+			manager := NewDownloadManager(context.Background(), fakeClient, downloader)
 			bootSource := newTestBootSource(testName, testNamespace)
 			bootSource.UID = "test-uid"
 
@@ -484,7 +484,7 @@ var _ = Describe("BootSource Controller", func() {
 			reconciler := &BootSourceReconciler{
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
-				DownloadManager: NewDownloadManager(k8sClient, downloader),
+				DownloadManager: NewDownloadManager(ctx, k8sClient, downloader),
 			}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
