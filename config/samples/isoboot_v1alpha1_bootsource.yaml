@@ -1,0 +1,16 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootSource
+metadata:
+  labels:
+    app.kubernetes.io/name: isoboot
+    app.kubernetes.io/managed-by: kustomize
+  name: bootsource-sample
+spec:
+  kernel:
+    url:
+      binary: "https://example.com/vmlinuz"
+      shasum: "https://example.com/vmlinuz.sha256"
+  initrd:
+    url:
+      binary: "https://example.com/initrd.img"
+      shasum: "https://example.com/initrd.img.sha256"
