@@ -47,7 +47,7 @@ metadata:
 spec:
   iso:
     url:
-      binary: "https://releases.ubuntu.com/noble/ubuntu-24.04.2-live-server-amd64.iso"
+      binary: "https://releases.ubuntu.com/noble/ubuntu-24.04.3-live-server-amd64.iso"
       shasum: "https://releases.ubuntu.com/noble/SHA256SUMS"
     path:
       kernel: "/casper/vmlinuz"
