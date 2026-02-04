@@ -23,9 +23,9 @@ import (
 // URLSource defines URLs for a downloadable resource and its checksum file
 // +kubebuilder:validation:XValidation:rule="self.binary != ''",message="binary URL is required"
 // +kubebuilder:validation:XValidation:rule="self.shasum != ''",message="shasum URL is required"
-// +kubebuilder:validation:XValidation:rule="self.binary.startsWith('https://')",message="binary URL must use https"
-// +kubebuilder:validation:XValidation:rule="self.shasum.startsWith('https://')",message="shasum URL must use https"
-// +kubebuilder:validation:XValidation:rule="self.binary.split('://')[1].split('/')[0] == self.shasum.split('://')[1].split('/')[0]",message="binary and shasum URLs must be on the same server"
+// +kubebuilder:validation:XValidation:rule="self.binary == '' || self.binary.startsWith('https://')",message="binary URL must use https"
+// +kubebuilder:validation:XValidation:rule="self.shasum == '' || self.shasum.startsWith('https://')",message="shasum URL must use https"
+// +kubebuilder:validation:XValidation:rule="self.binary == '' || self.shasum == '' || !self.binary.startsWith('https://') || !self.shasum.startsWith('https://') || self.binary.split('://')[1].split('/')[0] == self.shasum.split('://')[1].split('/')[0]",message="binary and shasum URLs must be on the same server"
 type URLSource struct {
 	// Binary is the URL to download the file from
 	Binary string `json:"binary"`
