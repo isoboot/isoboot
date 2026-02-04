@@ -28,15 +28,15 @@ Or use an ISO with embedded kernel/initrd paths:
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootSource
 metadata:
-  name: debian-iso
+  name: ubuntu-24-04
 spec:
   iso:
     url:
-      binary: "https://example.com/debian.iso"
-      shasum: "https://example.com/debian.iso.sha256"
+      binary: "https://releases.ubuntu.com/noble/ubuntu-24.04.2-live-server-amd64.iso"
+      shasum: "https://releases.ubuntu.com/noble/SHA256SUMS"
     path:
-      kernel: "/install/vmlinuz"
-      initrd: "/install/initrd.gz"
+      kernel: "/casper/vmlinuz"
+      initrd: "/casper/initrd"
 ```
 
 ## Quick Install

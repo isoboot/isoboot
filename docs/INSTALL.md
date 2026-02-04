@@ -45,14 +45,13 @@ kind: BootSource
 metadata:
   name: ubuntu-24-04
 spec:
-  kernel:
+  iso:
     url:
-      binary: "https://releases.ubuntu.com/24.04/ubuntu-24.04-netboot-amd64.tar.gz"
-      shasum: "https://releases.ubuntu.com/24.04/SHA256SUMS"
-  initrd:
-    url:
-      binary: "https://releases.ubuntu.com/24.04/ubuntu-24.04-netboot-amd64.tar.gz"
-      shasum: "https://releases.ubuntu.com/24.04/SHA256SUMS"
+      binary: "https://releases.ubuntu.com/noble/ubuntu-24.04.2-live-server-amd64.iso"
+      shasum: "https://releases.ubuntu.com/noble/SHA256SUMS"
+    path:
+      kernel: "/casper/vmlinuz"
+      initrd: "/casper/initrd"
 EOF
 ```
 
