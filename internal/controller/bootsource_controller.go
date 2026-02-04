@@ -42,13 +42,12 @@ type DefaultJobBuilder struct{}
 
 // Build creates a Job spec for downloading files
 func (b *DefaultJobBuilder) Build(bootSource *isobootv1alpha1.BootSource) *batchv1.Job {
-	jobName := fmt.Sprintf("%s-download", bootSource.Name)
 	backoffLimit := int32(0)
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
-			Namespace: bootSource.Namespace,
+			GenerateName: fmt.Sprintf("%s-download-", bootSource.Name),
+			Namespace:    bootSource.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":       "isoboot",
 				"app.kubernetes.io/component":  "download",
@@ -144,15 +143,10 @@ func (r *BootSourceReconciler) handlePending(ctx context.Context, bootSource *is
 	}
 
 	if err := r.Create(ctx, job); err != nil {
-		if errors.IsAlreadyExists(err) {
-			log.Info("Job already exists", "job", job.Name)
-		} else {
-			log.Error(err, "Failed to create download Job")
-			return ctrl.Result{}, err
-		}
-	} else {
-		log.Info("Created download Job", "job", job.Name)
+		log.Error(err, "Failed to create download Job")
+		return ctrl.Result{}, err
 	}
+	log.Info("Created download Job", "job", job.Name)
 
 	// Update status to Downloading
 	bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading

@@ -221,30 +221,14 @@ var _ = Describe("BootSource Controller", func() {
 			updated, err := getBootSource(ctx, reconciler, testName, testNamespace)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseDownloading))
-			Expect(updated.Status.DownloadJobName).To(Equal(testName + "-download"))
+			Expect(updated.Status.DownloadJobName).To(HavePrefix(testName + "-download-"))
 			Expect(updated.Status.Message).To(Equal("Download job created"))
 
-			// Verify Job was created
+			// Verify Job was created using name from status
 			job := &batchv1.Job{}
-			err = reconciler.Get(ctx, types.NamespacedName{Name: testName + "-download", Namespace: testNamespace}, job)
+			err = reconciler.Get(ctx, types.NamespacedName{Name: updated.Status.DownloadJobName, Namespace: testNamespace}, job)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal("busybox:latest"))
-		})
-
-		It("should handle Job already exists", func() {
-			bootSource := newTestBootSource(testName, testNamespace)
-			bootSource.Status.Phase = isobootv1alpha1.PhasePending
-			existingJob := &batchv1.Job{}
-			existingJob.Name = testName + "-download"
-			existingJob.Namespace = testNamespace
-			reconciler := newFakeReconciler(bootSource, existingJob)
-
-			_, err := reconciler.Reconcile(ctx, req)
-			Expect(err).NotTo(HaveOccurred())
-
-			updated, err := getBootSource(ctx, reconciler, testName, testNamespace)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseDownloading))
 		})
 	})
 
@@ -401,7 +385,7 @@ var _ = Describe("BootSource Controller", func() {
 		})
 
 		It("should build Job with correct metadata", func() {
-			Expect(job.Name).To(Equal(testName + "-download"))
+			Expect(job.GenerateName).To(Equal(testName + "-download-"))
 			Expect(job.Namespace).To(Equal(testNamespace))
 			Expect(job.Labels).To(HaveKeyWithValue("app.kubernetes.io/name", "isoboot"))
 			Expect(job.Labels).To(HaveKeyWithValue("app.kubernetes.io/component", "download"))
