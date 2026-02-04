@@ -41,6 +41,12 @@ spec:
 
 ## Quick Install
 
+**Helm:**
+```bash
+helm install isoboot oci://ghcr.io/isoboot/charts/isoboot
+```
+
+**kubectl:**
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/isoboot/isoboot/main/config/crd/bases/isoboot.github.io_bootsources.yaml
 ```

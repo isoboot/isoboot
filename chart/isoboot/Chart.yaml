@@ -1,0 +1,17 @@
+apiVersion: v2
+name: isoboot
+description: Kubernetes operator for managing network boot sources
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - pxe
+  - netboot
+  - kubernetes
+  - operator
+home: https://github.com/isoboot/isoboot
+sources:
+  - https://github.com/isoboot/isoboot
+maintainers:
+  - name: isoboot
+    url: https://github.com/isoboot

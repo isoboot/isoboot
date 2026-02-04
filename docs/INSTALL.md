@@ -1,5 +1,18 @@
 # Installation Guide
 
+## Install via Helm
+
+```bash
+helm install isoboot oci://ghcr.io/isoboot/charts/isoboot
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/isoboot/isoboot.git
+helm install isoboot ./isoboot/chart/isoboot
+```
+
 ## Quick Start (Multipass + MicroK8s)
 
 This guide walks through installing the BootSource CRD on a fresh VM.
@@ -27,6 +40,13 @@ sudo snap alias microk8s.kubectl kubectl
 
 ### 3. Install BootSource CRD
 
+**Option A: Helm**
+```bash
+microk8s enable helm3
+microk8s helm3 install isoboot oci://ghcr.io/isoboot/charts/isoboot
+```
+
+**Option B: kubectl**
 ```bash
 microk8s kubectl apply -f https://raw.githubusercontent.com/isoboot/isoboot/main/config/crd/bases/isoboot.github.io_bootsources.yaml
 ```

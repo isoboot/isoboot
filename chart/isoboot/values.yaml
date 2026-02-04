@@ -1,0 +1,3 @@
+# Default values for isoboot
+# This chart currently only installs the BootSource CRD
+# Controller deployment will be added in a future release

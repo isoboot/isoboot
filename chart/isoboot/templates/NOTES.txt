@@ -1,0 +1,24 @@
+isoboot has been installed.
+
+The BootSource CRD is now available. Create a BootSource:
+
+  cat <<EOF | kubectl apply -f -
+  apiVersion: isoboot.github.io/v1alpha1
+  kind: BootSource
+  metadata:
+    name: ubuntu-24-04
+  spec:
+    iso:
+      url:
+        binary: "https://releases.ubuntu.com/noble/ubuntu-24.04.3-live-server-amd64.iso"
+        shasum: "https://releases.ubuntu.com/noble/SHA256SUMS"
+      path:
+        kernel: "/casper/vmlinuz"
+        initrd: "/casper/initrd"
+  EOF
+
+Verify:
+
+  kubectl get bootsources
+
+For more information, visit: https://github.com/isoboot/isoboot
