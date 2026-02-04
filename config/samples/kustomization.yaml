@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- isoboot_v1alpha1_bootsource.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
