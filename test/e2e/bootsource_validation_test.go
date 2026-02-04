@@ -209,7 +209,11 @@ var _ = Describe("BootSource Validation", func() {
 		{
 			name: "invalid: binary and shasum on different servers",
 			spec: v1alpha1.BootSourceSpec{
-				Kernel: &v1alpha1.KernelSource{URL: urlSource("https://server1.example.com/vmlinuz", "https://server2.example.com/vmlinuz.sha256")},
+				Kernel: &v1alpha1.KernelSource{
+					URL: urlSource(
+						"https://server1.example.com/vmlinuz",
+						"https://server2.example.com/vmlinuz.sha256"),
+				},
 				Initrd: initrdSource(),
 			},
 			valid:    false,
@@ -290,7 +294,6 @@ var _ = Describe("BootSource Validation", func() {
 	}
 
 	for _, tc := range tests {
-		tc := tc // capture range variable
 		It(tc.name, func() {
 			bs := &v1alpha1.BootSource{
 				ObjectMeta: metav1.ObjectMeta{
