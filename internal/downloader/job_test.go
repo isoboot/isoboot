@@ -26,26 +26,35 @@ import (
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
+const (
+	testImage      = "alpine:3.23"
+	testBaseDir    = "/data"
+	testShasumURL  = "https://example.com/SHA256SUMS"
+	testKernelURL  = "https://example.com/vmlinuz"
+	testInitrdURL  = "https://example.com/initrd.img"
+	testNamespace  = "default"
+)
+
 func TestBuild_KernelInitrd(t *testing.T) {
 	bootSource := &isobootv1alpha1.BootSource{
-		ObjectMeta: metav1.ObjectMeta{Name: "myboot", Namespace: "default", UID: "uid"},
+		ObjectMeta: metav1.ObjectMeta{Name: "myboot", Namespace: testNamespace, UID: "uid"},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			Kernel: &isobootv1alpha1.KernelSource{
 				URL: isobootv1alpha1.URLSource{
-					Binary: "https://example.com/vmlinuz",
-					Shasum: "https://example.com/SHA256SUMS",
+					Binary: testKernelURL,
+					Shasum: testShasumURL,
 				},
 			},
 			Initrd: &isobootv1alpha1.InitrdSource{
 				URL: isobootv1alpha1.URLSource{
-					Binary: "https://example.com/initrd.img",
-					Shasum: "https://example.com/SHA256SUMS",
+					Binary: testInitrdURL,
+					Shasum: testShasumURL,
 				},
 			},
 		},
 	}
 
-	job, err := NewJobBuilder("/var/lib/isoboot", "alpine:3.23").Build(bootSource)
+	job, err := NewJobBuilder("/var/lib/isoboot", testImage).Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -63,8 +72,8 @@ func TestBuild_KernelInitrd(t *testing.T) {
 
 	// Always alpine
 	container := job.Spec.Template.Spec.Containers[0]
-	if container.Image != "alpine:3.23" {
-		t.Errorf("image: got %s, want alpine:3.23", container.Image)
+	if container.Image != testImage {
+		t.Errorf("image: got %s, want %s", container.Image, testImage)
 	}
 
 	// No capabilities for non-ISO
@@ -88,14 +97,14 @@ func TestBuild_KernelInitrd(t *testing.T) {
 	// Download section — files go into type/basename subdirectories
 	assertContains(t, script, "Checking kernel")
 	assertContains(t, script, "kernel/vmlinuz")
-	assertContains(t, script, "https://example.com/vmlinuz")
+	assertContains(t, script, testKernelURL)
 	assertContains(t, script, "Checking initrd")
 	assertContains(t, script, "initrd/initrd.img")
-	assertContains(t, script, "https://example.com/initrd.img")
+	assertContains(t, script, testInitrdURL)
 
 	// Verify section
 	assertContains(t, script, "Verifying kernel")
-	assertContains(t, script, "https://example.com/SHA256SUMS")
+	assertContains(t, script, testShasumURL)
 	assertContains(t, script, "sha256sum")
 	assertContains(t, script, `BASENAME="vmlinuz"`)
 	assertContains(t, script, `BASENAME="initrd.img"`)
@@ -111,21 +120,21 @@ func TestBuild_ISO(t *testing.T) {
 			ISO: &isobootv1alpha1.ISOSource{
 				URL: isobootv1alpha1.URLSource{
 					Binary: "https://example.com/boot.iso",
-					Shasum: "https://example.com/SHA256SUMS",
+					Shasum: testShasumURL,
 				},
 				Path: isobootv1alpha1.PathSource{Kernel: "/linux", Initrd: "/initrd.gz"},
 			},
 		},
 	}
 
-	job, err := NewJobBuilder("/data", "alpine:3.23").Build(bootSource)
+	job, err := NewJobBuilder(testBaseDir, testImage).Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
 	container := job.Spec.Template.Spec.Containers[0]
-	if container.Image != "alpine:3.23" {
-		t.Errorf("image: got %s, want alpine:3.23", container.Image)
+	if container.Image != testImage {
+		t.Errorf("image: got %s, want %s", container.Image, testImage)
 	}
 	if container.SecurityContext == nil || container.SecurityContext.Capabilities == nil {
 		t.Fatal("ISO job should have SYS_ADMIN capability")
@@ -163,12 +172,12 @@ func TestBuild_ISO(t *testing.T) {
 
 func TestBuild_ISOWithFirmware(t *testing.T) {
 	bootSource := &isobootv1alpha1.BootSource{
-		ObjectMeta: metav1.ObjectMeta{Name: "debian", Namespace: "default", UID: "uid"},
+		ObjectMeta: metav1.ObjectMeta{Name: "debian", Namespace: testNamespace, UID: "uid"},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			ISO: &isobootv1alpha1.ISOSource{
 				URL: isobootv1alpha1.URLSource{
 					Binary: "https://example.com/mini.iso",
-					Shasum: "https://example.com/SHA256SUMS",
+					Shasum: testShasumURL,
 				},
 				Path: isobootv1alpha1.PathSource{
 					Kernel:   "linux",
@@ -179,7 +188,7 @@ func TestBuild_ISOWithFirmware(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/data", "alpine:3.23").Build(bootSource)
+	job, err := NewJobBuilder(testBaseDir, testImage).Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -199,18 +208,18 @@ func TestBuild_ISOWithFirmware(t *testing.T) {
 
 func TestBuild_NoShasumSkipsVerify(t *testing.T) {
 	bootSource := &isobootv1alpha1.BootSource{
-		ObjectMeta: metav1.ObjectMeta{Name: "noshasum", Namespace: "default", UID: "uid"},
+		ObjectMeta: metav1.ObjectMeta{Name: "noshasum", Namespace: testNamespace, UID: "uid"},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			Kernel: &isobootv1alpha1.KernelSource{
-				URL: isobootv1alpha1.URLSource{Binary: "https://example.com/vmlinuz"},
+				URL: isobootv1alpha1.URLSource{Binary: testKernelURL},
 			},
 			Initrd: &isobootv1alpha1.InitrdSource{
-				URL: isobootv1alpha1.URLSource{Binary: "https://example.com/initrd.img"},
+				URL: isobootv1alpha1.URLSource{Binary: testInitrdURL},
 			},
 		},
 	}
 
-	job, err := NewJobBuilder("/data", "alpine:3.23").Build(bootSource)
+	job, err := NewJobBuilder(testBaseDir, testImage).Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -222,21 +231,21 @@ func TestBuild_NoShasumSkipsVerify(t *testing.T) {
 
 func TestBuild_WithFirmware(t *testing.T) {
 	bootSource := &isobootv1alpha1.BootSource{
-		ObjectMeta: metav1.ObjectMeta{Name: "fw", Namespace: "default", UID: "uid"},
+		ObjectMeta: metav1.ObjectMeta{Name: "fw", Namespace: testNamespace, UID: "uid"},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			Kernel: &isobootv1alpha1.KernelSource{
-				URL: isobootv1alpha1.URLSource{Binary: "https://example.com/vmlinuz", Shasum: "https://example.com/SHA256SUMS"},
+				URL: isobootv1alpha1.URLSource{Binary: testKernelURL, Shasum: testShasumURL},
 			},
 			Initrd: &isobootv1alpha1.InitrdSource{
-				URL: isobootv1alpha1.URLSource{Binary: "https://example.com/initrd.img", Shasum: "https://example.com/SHA256SUMS"},
+				URL: isobootv1alpha1.URLSource{Binary: testInitrdURL, Shasum: testShasumURL},
 			},
 			Firmware: &isobootv1alpha1.FirmwareSource{
-				URL: isobootv1alpha1.URLSource{Binary: "https://example.com/firmware.bin", Shasum: "https://example.com/SHA256SUMS"},
+				URL: isobootv1alpha1.URLSource{Binary: "https://example.com/firmware.bin", Shasum: testShasumURL},
 			},
 		},
 	}
 
-	job, err := NewJobBuilder("/data", "alpine:3.23").Build(bootSource)
+	job, err := NewJobBuilder(testBaseDir, testImage).Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -251,6 +260,16 @@ func TestBuild_WithFirmware(t *testing.T) {
 	assertContains(t, script, "Building initrd with firmware")
 	assertContains(t, script, `cat "$DIR/initrd/initrd.img" "$DIR/firmware/firmware.bin"`)
 	assertContains(t, script, "initrd/with-firmware/initrd.img")
+}
+
+func TestBuild_EmptySpec(t *testing.T) {
+	bootSource := &isobootv1alpha1.BootSource{
+		ObjectMeta: metav1.ObjectMeta{Name: "empty", Namespace: testNamespace, UID: "uid"},
+	}
+	_, err := NewJobBuilder(testBaseDir, testImage).Build(bootSource)
+	if err == nil {
+		t.Fatal("Build should fail with empty spec")
+	}
 }
 
 func assertContains(t *testing.T, s, sub string) {

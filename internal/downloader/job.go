@@ -110,6 +110,10 @@ func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job
 		})
 	}
 
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no downloadable files: spec must include kernel+initrd or iso")
+	}
+
 	data := templateData{Dir: dir, Files: files}
 	if spec.ISO != nil {
 		iso := &isoData{
