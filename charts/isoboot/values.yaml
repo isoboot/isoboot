@@ -1,1 +1,4 @@
 # Default values for isoboot
+
+# Image used by download Jobs
+downloaderImage: alpine:3.23

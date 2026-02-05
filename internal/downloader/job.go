@@ -62,11 +62,12 @@ type templateData struct {
 // JobBuilder builds download Jobs for a BootSource.
 type JobBuilder struct {
 	BaseDir string
+	Image   string
 }
 
 // NewJobBuilder returns a JobBuilder that creates Jobs downloading into baseDir.
-func NewJobBuilder(baseDir string) *JobBuilder {
-	return &JobBuilder{BaseDir: baseDir}
+func NewJobBuilder(baseDir, image string) *JobBuilder {
+	return &JobBuilder{BaseDir: baseDir, Image: image}
 }
 
 // Build creates a Kubernetes Job that downloads, verifies, and (for ISOs)
@@ -146,7 +147,7 @@ func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job
 					Containers: []corev1.Container{
 						{
 							Name:            "download",
-							Image:           "alpine",
+							Image:           b.Image,
 							Command:         []string{"/bin/sh", "-c", buf.String()},
 							SecurityContext: secCtx,
 							VolumeMounts: []corev1.VolumeMount{

@@ -44,7 +44,7 @@ func TestBuild_KernelInitrd(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/var/lib/isoboot").Build(bootSource)
+	job, err := NewJobBuilder("/var/lib/isoboot", "alpine:3.23").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -62,8 +62,8 @@ func TestBuild_KernelInitrd(t *testing.T) {
 
 	// Always alpine
 	container := job.Spec.Template.Spec.Containers[0]
-	if container.Image != "alpine" {
-		t.Errorf("image: got %s, want alpine", container.Image)
+	if container.Image != "alpine:3.23" {
+		t.Errorf("image: got %s, want alpine:3.23", container.Image)
 	}
 
 	// No privileged for non-ISO
@@ -104,14 +104,14 @@ func TestBuild_ISO(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/data").Build(bootSource)
+	job, err := NewJobBuilder("/data", "alpine:3.23").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
 	container := job.Spec.Template.Spec.Containers[0]
-	if container.Image != "alpine" {
-		t.Errorf("image: got %s, want alpine", container.Image)
+	if container.Image != "alpine:3.23" {
+		t.Errorf("image: got %s, want alpine:3.23", container.Image)
 	}
 	if container.SecurityContext == nil || !*container.SecurityContext.Privileged {
 		t.Error("ISO job should be privileged")
@@ -156,7 +156,7 @@ func TestBuild_ISOWithFirmware(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/data").Build(bootSource)
+	job, err := NewJobBuilder("/data", "alpine:3.23").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestBuild_NoShasumSkipsVerify(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/data").Build(bootSource)
+	job, err := NewJobBuilder("/data", "alpine:3.23").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestBuild_WithFirmware(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/data").Build(bootSource)
+	job, err := NewJobBuilder("/data", "alpine:3.23").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
