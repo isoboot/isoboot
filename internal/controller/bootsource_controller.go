@@ -93,7 +93,8 @@ func (r *BootSourceReconciler) reconcilePending(ctx context.Context, bootSource 
 
 	job, err := r.JobBuilder.Build(bootSource)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("building download job: %w", err)
+		log.Error(err, "Failed to build download job")
+		return ctrl.Result{}, r.setPhase(ctx, bootSource, isobootv1alpha1.PhaseFailed)
 	}
 
 	if err := r.Create(ctx, job); err != nil {
