@@ -155,6 +155,24 @@ var _ = Describe("BootSource Controller", func() {
 
 			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseDownloading))
 		})
+
+		It("should transition to Downloading when job already exists", func() {
+			bootSource := newTestBootSource()
+			bootSource.Status.Phase = isobootv1alpha1.PhasePending
+			job := newTestDownloadJob() // job already exists
+			reconciler := newFakeReconciler(bootSource, job)
+
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseDownloading))
+		})
+
+		It("should transition back to Pending when job is deleted externally during Downloading", func() {
+			bootSource := newTestBootSource()
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
+			// No job object = simulates external deletion
+			reconciler := newFakeReconciler(bootSource)
+
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhasePending))
+		})
 	})
 
 	Context("Integration tests with envtest", func() {
