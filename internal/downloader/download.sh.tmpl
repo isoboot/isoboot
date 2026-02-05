@@ -70,7 +70,8 @@ echo "   DONE: initrd/with-firmware/{{.ISO.InitrdBasename}} ($(du -h "$DIR/initr
 
 # ── Summary ─────────────────────────────────────────────────────
 echo ">> File sizes:"
-du -h "$DIR"/*/* 2>/dev/null | while read -r size path; do
+find "$DIR" -type f ! -name "*.shasum" ! -name "*.tmp" | sort | while read -r path; do
+  size=$(du -h "$path" | awk '{print $1}')
   echo "   $size  ${path#$DIR/}"
 done
 
