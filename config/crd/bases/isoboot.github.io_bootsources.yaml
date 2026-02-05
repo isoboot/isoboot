@@ -129,6 +129,11 @@ spec:
                     - initrd
                     - kernel
                     type: object
+                    x-kubernetes-validations:
+                    - message: kernel path contains invalid characters
+                      rule: self.kernel.matches('^[a-zA-Z0-9/._-]+$')
+                    - message: initrd path contains invalid characters
+                      rule: self.initrd.matches('^[a-zA-Z0-9/._-]+$')
                   url:
                     description: URL contains the download URLs for the ISO
                     properties:
