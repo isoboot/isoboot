@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -77,6 +78,9 @@ func (r *BootSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.reconcilePending(ctx, bootSource)
 	case isobootv1alpha1.PhaseDownloading:
 		return r.reconcileDownloading(ctx, bootSource)
+	case isobootv1alpha1.PhaseReady, isobootv1alpha1.PhaseFailed:
+		// Terminal phases: nothing to reconcile.
+		return ctrl.Result{}, nil
 	}
 
 	return ctrl.Result{}, nil
@@ -117,10 +121,10 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 	}
 
 	for _, c := range job.Status.Conditions {
-		if c.Type == batchv1.JobComplete && c.Status == "True" {
+		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
 			return ctrl.Result{}, r.setPhase(ctx, bootSource, isobootv1alpha1.PhaseReady)
 		}
-		if c.Type == batchv1.JobFailed && c.Status == "True" {
+		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
 			return ctrl.Result{}, r.setPhase(ctx, bootSource, isobootv1alpha1.PhaseFailed)
 		}
 	}
