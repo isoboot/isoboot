@@ -74,6 +74,12 @@ make lint-fix   # Auto-fix code style
 make test       # Run unit tests
 ```
 
+**Before creating a PR:**
+```
+make helm-sync  # Sync CRD changes to Helm chart
+make verify     # Ensure generated files are up to date
+```
+
 ## CLI Commands Cheat Sheet
 
 ### Create API (your own types)
