@@ -30,6 +30,7 @@ type URLSource struct {
 	Binary string `json:"binary"`
 	// Shasum is the URL to download the checksum file from.
 	// When set, the downloaded file is verified against this checksum.
+	// When omitted, no checksum verification is performed.
 	// +optional
 	Shasum string `json:"shasum,omitempty"`
 }
