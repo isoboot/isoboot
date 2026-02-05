@@ -23,7 +23,7 @@ fi
 {{if .ShasumURL -}}
 echo ">> Verifying {{.Name}}..."
 wget --timeout=300 --tries=3 -O "{{.Dest}}.shasum" "{{.ShasumURL}}"
-HASH_SAMPLE=$(grep -oEm1 '[0-9a-f]{64,128}' "{{.Dest}}.shasum" | head -1)
+HASH_SAMPLE=$(grep -oEm1 '[0-9a-f]{64,128}' "{{.Dest}}.shasum" | head -1 || true)
 HASH_LEN=${#HASH_SAMPLE}
 if [ "$HASH_LEN" -eq 128 ]; then
   TOOL=sha512sum
