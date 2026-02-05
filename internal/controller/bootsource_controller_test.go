@@ -40,13 +40,13 @@ var testNN = types.NamespacedName{Name: testName, Namespace: testNamespace}
 // fakeJobBuilder implements JobBuilder for unit tests by returning a minimal Job.
 type fakeJobBuilder struct{}
 
-func (f *fakeJobBuilder) Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error) {
+func (f *fakeJobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job, error) {
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      bs.Name + "-download",
-			Namespace: bs.Namespace,
+			Name:      bootSource.Name + "-download",
+			Namespace: bootSource.Namespace,
 			Labels: map[string]string{
-				"isoboot.github.io/bootsource": bs.Name,
+				"isoboot.github.io/bootsource": bootSource.Name,
 				"app.kubernetes.io/component":  "downloader",
 			},
 		},
@@ -94,9 +94,9 @@ var _ = Describe("BootSource Controller", func() {
 		})
 
 		It("should not change phase if already set", func() {
-			bs := newTestBootSource()
-			bs.Status.Phase = isobootv1alpha1.PhaseReady
-			reconciler := newFakeReconciler(bs)
+			bootSource := newTestBootSource()
+			bootSource.Status.Phase = isobootv1alpha1.PhaseReady
+			reconciler := newFakeReconciler(bootSource)
 
 			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseReady))
 		})
@@ -115,9 +115,9 @@ var _ = Describe("BootSource Controller", func() {
 		})
 
 		It("should create download job and transition to Downloading from Pending", func() {
-			bs := newTestBootSource()
-			bs.Status.Phase = isobootv1alpha1.PhasePending
-			reconciler := newFakeReconciler(bs)
+			bootSource := newTestBootSource()
+			bootSource.Status.Phase = isobootv1alpha1.PhasePending
+			reconciler := newFakeReconciler(bootSource)
 
 			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseDownloading))
 
@@ -129,28 +129,28 @@ var _ = Describe("BootSource Controller", func() {
 		})
 
 		It("should transition to Ready when download job completes", func() {
-			bs := newTestBootSource()
-			bs.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource := newTestBootSource()
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
 			job := newTestDownloadJob(newJobCondition(batchv1.JobComplete, corev1.ConditionTrue))
-			reconciler := newFakeReconciler(bs, job)
+			reconciler := newFakeReconciler(bootSource, job)
 
 			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseReady))
 		})
 
 		It("should transition to Failed when download job fails", func() {
-			bs := newTestBootSource()
-			bs.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource := newTestBootSource()
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
 			job := newTestDownloadJob(newJobCondition(batchv1.JobFailed, corev1.ConditionTrue))
-			reconciler := newFakeReconciler(bs, job)
+			reconciler := newFakeReconciler(bootSource, job)
 
 			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseFailed))
 		})
 
 		It("should stay in Downloading when job is still running", func() {
-			bs := newTestBootSource()
-			bs.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource := newTestBootSource()
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
 			job := newTestDownloadJob() // no conditions = still running
-			reconciler := newFakeReconciler(bs, job)
+			reconciler := newFakeReconciler(bootSource, job)
 
 			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseDownloading))
 		})
