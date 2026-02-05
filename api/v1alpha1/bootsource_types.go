@@ -41,6 +41,11 @@ type PathSource struct {
 	Kernel string `json:"kernel"`
 	// Initrd is the path to the initrd inside the ISO
 	Initrd string `json:"initrd"`
+	// Firmware is the path to the firmware cpio.gz inside the ISO.
+	// When set, a combined initrd is produced by concatenating initrd + firmware
+	// (the standard Debian netboot firmware pattern).
+	// +optional
+	Firmware string `json:"firmware,omitempty"`
 }
 
 // KernelSource defines a kernel binary source

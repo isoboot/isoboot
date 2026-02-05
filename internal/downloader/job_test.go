@@ -130,6 +130,48 @@ func TestBuild_ISO(t *testing.T) {
 	assertContains(t, script, "mount -o ro,loop")
 	assertContains(t, script, "/linux")
 	assertContains(t, script, "/initrd.gz")
+
+	// No firmware -> no concatenation
+	assertNotContains(t, script, "with-firmware")
+
+	// Initrd goes into subdirectory
+	assertContains(t, script, "initrd/initrd.gz")
+}
+
+func TestBuild_ISOWithFirmware(t *testing.T) {
+	bs := &isobootv1alpha1.BootSource{
+		ObjectMeta: metav1.ObjectMeta{Name: "debian", Namespace: "default", UID: "uid"},
+		Spec: isobootv1alpha1.BootSourceSpec{
+			ISO: &isobootv1alpha1.ISOSource{
+				URL: isobootv1alpha1.URLSource{
+					Binary: "https://example.com/mini.iso",
+					Shasum: "https://example.com/SHA256SUMS",
+				},
+				Path: isobootv1alpha1.PathSource{
+					Kernel:   "linux",
+					Initrd:   "initrd.gz",
+					Firmware: "firmware.cpio.gz",
+				},
+			},
+		},
+	}
+
+	job, err := NewJobBuilder("/data").Build(bs)
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	script := job.Spec.Template.Spec.Containers[0].Command[2]
+
+	// Extract firmware from ISO
+	assertContains(t, script, "firmware.cpio.gz")
+
+	// Original initrd in initrd/initrd.gz
+	assertContains(t, script, "initrd/initrd.gz")
+
+	// Concatenated initrd+firmware in initrd/with-firmware/initrd.gz
+	assertContains(t, script, "initrd/with-firmware/initrd.gz")
+	assertContains(t, script, `cat "$DIR/initrd/initrd.gz" "$DIR/firmware"`)
 }
 
 func TestBuild_NoShasumSkipsVerify(t *testing.T) {
