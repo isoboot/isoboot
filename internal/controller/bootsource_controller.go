@@ -33,7 +33,7 @@ import (
 
 // JobBuilder builds a Kubernetes Job for a BootSource.
 type JobBuilder interface {
-	Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error)
+	Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job, error)
 }
 
 // BootSourceReconciler reconciles a BootSource object
@@ -83,10 +83,10 @@ func (r *BootSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 // reconcilePending creates a download Job and transitions to Downloading.
-func (r *BootSourceReconciler) reconcilePending(ctx context.Context, bs *isobootv1alpha1.BootSource) (ctrl.Result, error) {
+func (r *BootSourceReconciler) reconcilePending(ctx context.Context, bootSource *isobootv1alpha1.BootSource) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	job, err := r.JobBuilder.Build(bs)
+	job, err := r.JobBuilder.Build(bootSource)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("building download job: %w", err)
 	}
@@ -101,27 +101,27 @@ func (r *BootSourceReconciler) reconcilePending(ctx context.Context, bs *isoboot
 		log.Info("Created download job", "job", job.Name)
 	}
 
-	return ctrl.Result{}, r.setPhase(ctx, bs, isobootv1alpha1.PhaseDownloading)
+	return ctrl.Result{}, r.setPhase(ctx, bootSource, isobootv1alpha1.PhaseDownloading)
 }
 
 // reconcileDownloading checks the download Job status and transitions accordingly.
-func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bs *isobootv1alpha1.BootSource) (ctrl.Result, error) {
+func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSource *isobootv1alpha1.BootSource) (ctrl.Result, error) {
 	job := &batchv1.Job{}
-	jobName := types.NamespacedName{Name: bs.Name + "-download", Namespace: bs.Namespace}
+	jobName := types.NamespacedName{Name: bootSource.Name + "-download", Namespace: bootSource.Namespace}
 	if err := r.Get(ctx, jobName, job); err != nil {
 		if errors.IsNotFound(err) {
 			// Job was deleted externally; go back to Pending to recreate
-			return ctrl.Result{}, r.setPhase(ctx, bs, isobootv1alpha1.PhasePending)
+			return ctrl.Result{}, r.setPhase(ctx, bootSource, isobootv1alpha1.PhasePending)
 		}
 		return ctrl.Result{}, fmt.Errorf("getting download job: %w", err)
 	}
 
 	for _, c := range job.Status.Conditions {
 		if c.Type == batchv1.JobComplete && c.Status == "True" {
-			return ctrl.Result{}, r.setPhase(ctx, bs, isobootv1alpha1.PhaseReady)
+			return ctrl.Result{}, r.setPhase(ctx, bootSource, isobootv1alpha1.PhaseReady)
 		}
 		if c.Type == batchv1.JobFailed && c.Status == "True" {
-			return ctrl.Result{}, r.setPhase(ctx, bs, isobootv1alpha1.PhaseFailed)
+			return ctrl.Result{}, r.setPhase(ctx, bootSource, isobootv1alpha1.PhaseFailed)
 		}
 	}
 
@@ -130,14 +130,14 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bs *iso
 }
 
 // setPhase updates the BootSource status phase.
-func (r *BootSourceReconciler) setPhase(ctx context.Context, bs *isobootv1alpha1.BootSource, phase isobootv1alpha1.BootSourcePhase) error {
+func (r *BootSourceReconciler) setPhase(ctx context.Context, bootSource *isobootv1alpha1.BootSource, phase isobootv1alpha1.BootSourcePhase) error {
 	log := logf.FromContext(ctx)
-	bs.Status.Phase = phase
-	if err := r.Status().Update(ctx, bs); err != nil {
+	bootSource.Status.Phase = phase
+	if err := r.Status().Update(ctx, bootSource); err != nil {
 		log.Error(err, "Failed to update BootSource phase", "phase", phase)
 		return err
 	}
-	log.Info("Updated BootSource phase", "name", bs.Name, "phase", phase)
+	log.Info("Updated BootSource phase", "name", bootSource.Name, "phase", phase)
 	return nil
 }
 

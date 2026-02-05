@@ -26,7 +26,7 @@ import (
 )
 
 func TestBuild_KernelInitrd(t *testing.T) {
-	bs := &isobootv1alpha1.BootSource{
+	bootSource := &isobootv1alpha1.BootSource{
 		ObjectMeta: metav1.ObjectMeta{Name: "myboot", Namespace: "default", UID: "uid"},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			Kernel: &isobootv1alpha1.KernelSource{
@@ -44,7 +44,7 @@ func TestBuild_KernelInitrd(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/var/lib/isoboot").Build(bs)
+	job, err := NewJobBuilder("/var/lib/isoboot").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestBuild_KernelInitrd(t *testing.T) {
 }
 
 func TestBuild_ISO(t *testing.T) {
-	bs := &isobootv1alpha1.BootSource{
+	bootSource := &isobootv1alpha1.BootSource{
 		ObjectMeta: metav1.ObjectMeta{Name: "isoboot", Namespace: "ns1", UID: "uid"},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			ISO: &isobootv1alpha1.ISOSource{
@@ -104,7 +104,7 @@ func TestBuild_ISO(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/data").Build(bs)
+	job, err := NewJobBuilder("/data").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestBuild_ISO(t *testing.T) {
 }
 
 func TestBuild_ISOWithFirmware(t *testing.T) {
-	bs := &isobootv1alpha1.BootSource{
+	bootSource := &isobootv1alpha1.BootSource{
 		ObjectMeta: metav1.ObjectMeta{Name: "debian", Namespace: "default", UID: "uid"},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			ISO: &isobootv1alpha1.ISOSource{
@@ -156,7 +156,7 @@ func TestBuild_ISOWithFirmware(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/data").Build(bs)
+	job, err := NewJobBuilder("/data").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestBuild_ISOWithFirmware(t *testing.T) {
 }
 
 func TestBuild_NoShasumSkipsVerify(t *testing.T) {
-	bs := &isobootv1alpha1.BootSource{
+	bootSource := &isobootv1alpha1.BootSource{
 		ObjectMeta: metav1.ObjectMeta{Name: "noshasum", Namespace: "default", UID: "uid"},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			Kernel: &isobootv1alpha1.KernelSource{
@@ -187,7 +187,7 @@ func TestBuild_NoShasumSkipsVerify(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/data").Build(bs)
+	job, err := NewJobBuilder("/data").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestBuild_NoShasumSkipsVerify(t *testing.T) {
 }
 
 func TestBuild_WithFirmware(t *testing.T) {
-	bs := &isobootv1alpha1.BootSource{
+	bootSource := &isobootv1alpha1.BootSource{
 		ObjectMeta: metav1.ObjectMeta{Name: "fw", Namespace: "default", UID: "uid"},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			Kernel: &isobootv1alpha1.KernelSource{
@@ -213,7 +213,7 @@ func TestBuild_WithFirmware(t *testing.T) {
 		},
 	}
 
-	job, err := NewJobBuilder("/data").Build(bs)
+	job, err := NewJobBuilder("/data").Build(bootSource)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}

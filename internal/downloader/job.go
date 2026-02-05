@@ -71,9 +71,9 @@ func NewJobBuilder(baseDir string) *JobBuilder {
 
 // Build creates a Kubernetes Job that downloads, verifies, and (for ISOs)
 // extracts all files for a BootSource.
-func (b *JobBuilder) Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error) {
-	dir := filepath.Join(b.BaseDir, bs.Namespace, bs.Name)
-	spec := bs.Spec
+func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job, error) {
+	dir := filepath.Join(b.BaseDir, bootSource.Namespace, bootSource.Name)
+	spec := bootSource.Spec
 
 	var files []fileItem
 	if spec.Kernel != nil {
@@ -127,15 +127,15 @@ func (b *JobBuilder) Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error)
 	backoffLimit := int32(3)
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      bs.Name + "-download",
-			Namespace: bs.Namespace,
+			Name:      bootSource.Name + "-download",
+			Namespace: bootSource.Namespace,
 			Labels: map[string]string{
-				"isoboot.github.io/bootsource": bs.Name,
+				"isoboot.github.io/bootsource": bootSource.Name,
 				"app.kubernetes.io/component":  "downloader",
 				"app.kubernetes.io/managed-by": "isoboot",
 			},
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(bs, isobootv1alpha1.GroupVersion.WithKind("BootSource")),
+				*metav1.NewControllerRef(bootSource, isobootv1alpha1.GroupVersion.WithKind("BootSource")),
 			},
 		},
 		Spec: batchv1.JobSpec{
