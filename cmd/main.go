@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"path/filepath"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -93,6 +94,15 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	if baseDir == "" || !filepath.IsAbs(baseDir) {
+		setupLog.Error(nil, "base-dir must be a non-empty absolute path", "base-dir", baseDir)
+		os.Exit(1)
+	}
+	if downloaderImage == "" {
+		setupLog.Error(nil, "downloader-image must not be empty")
+		os.Exit(1)
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 

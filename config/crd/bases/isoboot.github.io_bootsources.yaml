@@ -277,6 +277,9 @@ spec:
                 type: string
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: name must be at most 200 characters
+          rule: size(self.metadata.name) <= 200
     served: true
     storage: true
     subresources:
