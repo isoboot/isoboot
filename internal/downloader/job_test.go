@@ -66,17 +66,19 @@ func TestBuild_KernelInitrd(t *testing.T) {
 		t.Errorf("image: got %s, want alpine:3.23", container.Image)
 	}
 
-	// No privileged for non-ISO
+	// No capabilities for non-ISO
 	if container.SecurityContext != nil {
-		t.Error("non-ISO job should not be privileged")
+		t.Error("non-ISO job should not have security context")
 	}
 
 	script := container.Command[2]
 
-	// Download section
+	// Download section — files go into type/basename subdirectories
 	assertContains(t, script, "Checking kernel")
+	assertContains(t, script, "kernel/vmlinuz")
 	assertContains(t, script, "https://example.com/vmlinuz")
 	assertContains(t, script, "Checking initrd")
+	assertContains(t, script, "initrd/initrd.img")
 	assertContains(t, script, "https://example.com/initrd.img")
 
 	// Verify section
@@ -113,8 +115,17 @@ func TestBuild_ISO(t *testing.T) {
 	if container.Image != "alpine:3.23" {
 		t.Errorf("image: got %s, want alpine:3.23", container.Image)
 	}
-	if container.SecurityContext == nil || !*container.SecurityContext.Privileged {
-		t.Error("ISO job should be privileged")
+	if container.SecurityContext == nil || container.SecurityContext.Capabilities == nil {
+		t.Fatal("ISO job should have SYS_ADMIN capability")
+	}
+	hasSysAdmin := false
+	for _, cap := range container.SecurityContext.Capabilities.Add {
+		if cap == "SYS_ADMIN" {
+			hasSysAdmin = true
+		}
+	}
+	if !hasSysAdmin {
+		t.Error("ISO job should have SYS_ADMIN capability")
 	}
 
 	script := container.Command[2]
@@ -223,6 +234,11 @@ func TestBuild_WithFirmware(t *testing.T) {
 	assertContains(t, script, "https://example.com/firmware.bin")
 	assertContains(t, script, "Verifying firmware")
 	assertContains(t, script, `BASENAME="firmware.bin"`)
+
+	// Non-ISO firmware concatenation
+	assertContains(t, script, "Building initrd with firmware")
+	assertContains(t, script, `cat "$DIR/initrd/initrd.img" "$DIR/firmware/firmware.bin"`)
+	assertContains(t, script, "initrd/with-firmware/initrd.img")
 }
 
 func assertContains(t *testing.T, s, sub string) {

@@ -53,10 +53,17 @@ type isoData struct {
 	FirmwareBasename string // e.g. "firmware.cpio.gz"
 }
 
+// firmwareConcat holds paths for non-ISO firmware concatenation.
+type firmwareConcat struct {
+	InitrdBasename   string
+	FirmwareBasename string
+}
+
 type templateData struct {
-	Dir   string
-	Files []fileItem
-	ISO   *isoData
+	Dir            string
+	Files          []fileItem
+	ISO            *isoData
+	FirmwareConcat *firmwareConcat
 }
 
 // JobBuilder builds download Jobs for a BootSource.
@@ -99,14 +106,23 @@ func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job
 
 	data := templateData{Dir: dir, Files: files}
 	if spec.ISO != nil {
-		data.ISO = &isoData{
-			ISOPath:          filepath.Join(dir, "iso", path.Base(spec.ISO.URL.Binary)),
-			KernelPath:       spec.ISO.Path.Kernel,
-			KernelBasename:   path.Base(spec.ISO.Path.Kernel),
-			InitrdPath:       spec.ISO.Path.Initrd,
-			InitrdBasename:   path.Base(spec.ISO.Path.Initrd),
-			FirmwarePath:     spec.ISO.Path.Firmware,
-			FirmwareBasename: path.Base(spec.ISO.Path.Firmware),
+		iso := &isoData{
+			ISOPath:        filepath.Join(dir, "iso", path.Base(spec.ISO.URL.Binary)),
+			KernelPath:     spec.ISO.Path.Kernel,
+			KernelBasename: path.Base(spec.ISO.Path.Kernel),
+			InitrdPath:     spec.ISO.Path.Initrd,
+			InitrdBasename: path.Base(spec.ISO.Path.Initrd),
+			FirmwarePath:   spec.ISO.Path.Firmware,
+		}
+		if spec.ISO.Path.Firmware != "" {
+			iso.FirmwareBasename = path.Base(spec.ISO.Path.Firmware)
+		}
+		data.ISO = iso
+	}
+	if spec.ISO == nil && spec.Initrd != nil && spec.Firmware != nil {
+		data.FirmwareConcat = &firmwareConcat{
+			InitrdBasename:   path.Base(spec.Initrd.URL.Binary),
+			FirmwareBasename: path.Base(spec.Firmware.URL.Binary),
 		}
 	}
 
@@ -121,8 +137,11 @@ func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job
 
 	var secCtx *corev1.SecurityContext
 	if spec.ISO != nil {
-		privileged := true
-		secCtx = &corev1.SecurityContext{Privileged: &privileged}
+		secCtx = &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{"SYS_ADMIN"},
+			},
+		}
 	}
 
 	backoffLimit := int32(3)
@@ -175,11 +194,12 @@ func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job
 }
 
 func newFileItem(name string, url isobootv1alpha1.URLSource, dir string) fileItem {
+	basename := path.Base(url.Binary)
 	return fileItem{
 		Name:        name,
 		URL:         url.Binary,
 		ShasumURL:   url.Shasum,
-		URLBasename: path.Base(url.Binary),
-		Dest:        filepath.Join(dir, name),
+		URLBasename: basename,
+		Dest:        filepath.Join(dir, name, basename),
 	}
 }
