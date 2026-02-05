@@ -46,6 +46,7 @@ type fileItem struct {
 type isoData struct {
 	ISOPath        string
 	KernelPath     string
+	KernelBasename string // e.g. "linux"
 	InitrdPath     string
 	InitrdBasename string // e.g. "initrd.gz"
 	FirmwarePath   string // empty if no firmware inside ISO
@@ -84,14 +85,22 @@ func (b *JobBuilder) Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error)
 		files = append(files, newFileItem("firmware", spec.Firmware.URL, dir))
 	}
 	if spec.ISO != nil {
-		files = append(files, newFileItem("iso", spec.ISO.URL, dir))
+		basename := path.Base(spec.ISO.URL.Binary)
+		files = append(files, fileItem{
+			Name:        "iso",
+			URL:         spec.ISO.URL.Binary,
+			ShasumURL:   spec.ISO.URL.Shasum,
+			URLBasename: basename,
+			Dest:        filepath.Join(dir, "iso", basename),
+		})
 	}
 
 	data := templateData{Dir: dir, Files: files}
 	if spec.ISO != nil {
 		data.ISO = &isoData{
-			ISOPath:        filepath.Join(dir, "iso"),
+			ISOPath:        filepath.Join(dir, "iso", path.Base(spec.ISO.URL.Binary)),
 			KernelPath:     spec.ISO.Path.Kernel,
+			KernelBasename: path.Base(spec.ISO.Path.Kernel),
 			InitrdPath:     spec.ISO.Path.Initrd,
 			InitrdBasename: path.Base(spec.ISO.Path.Initrd),
 			FirmwarePath:   spec.ISO.Path.Firmware,

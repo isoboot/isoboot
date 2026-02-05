@@ -126,16 +126,16 @@ func TestBuild_ISO(t *testing.T) {
 	assertContains(t, script, "Verifying iso")
 	assertContains(t, script, `BASENAME="boot.iso"`)
 
-	// Extract
+	// Extract into subdirectories
 	assertContains(t, script, "mount -o ro,loop")
-	assertContains(t, script, "/linux")
-	assertContains(t, script, "/initrd.gz")
+	assertContains(t, script, "kernel/linux")
+	assertContains(t, script, "initrd/initrd.gz")
+
+	// ISO downloaded into iso/ subdirectory
+	assertContains(t, script, "iso/boot.iso")
 
 	// No firmware -> no concatenation
 	assertNotContains(t, script, "with-firmware")
-
-	// Initrd goes into subdirectory
-	assertContains(t, script, "initrd/initrd.gz")
 }
 
 func TestBuild_ISOWithFirmware(t *testing.T) {
