@@ -43,11 +43,12 @@ type fakeJobBuilder struct{}
 func (f *fakeJobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job, error) {
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      bootSource.Name + "-download",
+			Name:      bootSource.Name + downloader.JobNameSuffix,
 			Namespace: bootSource.Namespace,
 			Labels: map[string]string{
 				"isoboot.github.io/bootsource": bootSource.Name,
 				"app.kubernetes.io/component":  "downloader",
+				"app.kubernetes.io/managed-by": "isoboot",
 			},
 		},
 	}, nil
