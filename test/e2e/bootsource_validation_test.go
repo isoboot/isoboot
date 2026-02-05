@@ -49,10 +49,12 @@ import (
 // PathSource:
 //   8. kernel path must contain only safe characters
 //   9. initrd path must contain only safe characters
+//  10. kernel path must not contain path traversal (..)
+//  11. initrd path must not contain path traversal (..)
 //
 // BootSourceSpec:
-//  10. must specify either (kernel AND initrd) OR iso
-//  11. cannot specify both (kernel OR initrd) AND iso
+//  12. must specify either (kernel AND initrd) OR iso
+//  13. cannot specify both (kernel OR initrd) AND iso
 
 var (
 	testEnv   *envtest.Environment
@@ -311,7 +313,55 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "initrd path contains invalid characters",
 		},
 
-		// === BootSourceSpec: (kernel && initrd) || iso [Rule 10] ===
+		// === PathSource: kernel path traversal [Rule 10] ===
+		{
+			name: "invalid: kernel path with .. traversal",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "../../etc/shadow", Initrd: "/casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path must not contain path traversal",
+		},
+		{
+			name: "invalid: kernel path with mid-path traversal",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/../../../etc/passwd", Initrd: "/casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path must not contain path traversal",
+		},
+
+		// === PathSource: initrd path traversal [Rule 11] ===
+		{
+			name: "invalid: initrd path with .. traversal",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz", Initrd: "../../etc/passwd"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path must not contain path traversal",
+		},
+		{
+			name: "invalid: initrd path with mid-path traversal",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz", Initrd: "/casper/../../../etc/shadow"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path must not contain path traversal",
+		},
+
+		// === BootSourceSpec: (kernel && initrd) || iso [Rule 12] ===
 		{
 			name:     "invalid: empty spec",
 			spec:     v1alpha1.BootSourceSpec{},
@@ -337,7 +387,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "must specify either (kernel and initrd) or iso",
 		},
 
-		// === BootSourceSpec: XOR constraint [Rule 11] ===
+		// === BootSourceSpec: XOR constraint [Rule 13] ===
 		{
 			name:     "invalid: kernel + initrd + iso",
 			spec:     v1alpha1.BootSourceSpec{Kernel: kernelSource(), Initrd: initrdSource(), ISO: isoSource()},
