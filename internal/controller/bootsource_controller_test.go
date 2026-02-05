@@ -21,7 +21,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,111 +32,140 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
+	"github.com/isoboot/isoboot/internal/downloader"
 )
 
-// newFakeReconciler creates a reconciler with a fake client for unit testing
-func newFakeReconciler(objs ...client.Object) *BootSourceReconciler {
-	scheme := runtime.NewScheme()
-	if err := isobootv1alpha1.AddToScheme(scheme); err != nil {
-		panic(err)
-	}
+var testNN = types.NamespacedName{Name: testName, Namespace: testNamespace}
 
+// fakeJobBuilder implements JobBuilder for unit tests by returning a minimal Job.
+type fakeJobBuilder struct{}
+
+func (f *fakeJobBuilder) Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error) {
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      bs.Name + "-download",
+			Namespace: bs.Namespace,
+			Labels: map[string]string{
+				"isoboot.github.io/bootsource": bs.Name,
+				"app.kubernetes.io/component":  "downloader",
+			},
+		},
+	}, nil
+}
+
+func newTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	Expect(isobootv1alpha1.AddToScheme(s)).To(Succeed())
+	Expect(batchv1.AddToScheme(s)).To(Succeed())
+	return s
+}
+
+// newFakeReconciler creates a reconciler with a fake client and fakeJobBuilder.
+func newFakeReconciler(objs ...client.Object) *BootSourceReconciler {
+	s := newTestScheme()
 	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
+		WithScheme(s).
 		WithObjects(objs...).
 		WithStatusSubresource(&isobootv1alpha1.BootSource{}).
 		Build()
 
 	return &BootSourceReconciler{
-		Client: fakeClient,
-		Scheme: scheme,
+		Client:     fakeClient,
+		Scheme:     s,
+		JobBuilder: &fakeJobBuilder{},
 	}
 }
 
-var _ = Describe("BootSource Controller", func() {
-	const (
-		testName      = "test-bootsource"
-		testNamespace = "default"
-	)
+// reconcileAndGetPhase runs one reconcile cycle and returns the resulting phase.
+func reconcileAndGetPhase(reconciler *BootSourceReconciler) isobootv1alpha1.BootSourcePhase {
+	_, err := reconciler.Reconcile(context.Background(), reconcile.Request{NamespacedName: testNN})
+	Expect(err).NotTo(HaveOccurred())
 
+	updated := &isobootv1alpha1.BootSource{}
+	Expect(reconciler.Get(context.Background(), testNN, updated)).To(Succeed())
+	return updated.Status.Phase
+}
+
+var _ = Describe("BootSource Controller", func() {
 	Context("Unit tests with fake client", func() {
 		It("should set phase to Pending for new resources", func() {
-			ctx := context.Background()
-			bootSource := newTestBootSource(testName, testNamespace)
-			reconciler := newFakeReconciler(bootSource)
-
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			updated := &isobootv1alpha1.BootSource{}
-			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
+			reconciler := newFakeReconciler(newTestBootSource())
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhasePending))
 		})
 
 		It("should not change phase if already set", func() {
-			ctx := context.Background()
-			bootSource := newTestBootSource(testName, testNamespace)
-			bootSource.Status.Phase = isobootv1alpha1.PhaseReady
-			reconciler := newFakeReconciler(bootSource)
+			bs := newTestBootSource()
+			bs.Status.Phase = isobootv1alpha1.PhaseReady
+			reconciler := newFakeReconciler(bs)
 
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			updated := &isobootv1alpha1.BootSource{}
-			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseReady))
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseReady))
 		})
 
 		It("should handle not found resources gracefully", func() {
-			ctx := context.Background()
-			reconciler := newFakeReconciler() // no objects
-
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+			reconciler := newFakeReconciler()
+			_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: "nonexistent", Namespace: testNamespace},
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should work with ISO-based BootSource", func() {
-			ctx := context.Background()
-			bootSource := newTestBootSourceISO(testName, testNamespace)
-			reconciler := newFakeReconciler(bootSource)
+			reconciler := newFakeReconciler(newTestBootSourceISO())
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhasePending))
+		})
 
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
-			})
-			Expect(err).NotTo(HaveOccurred())
+		It("should create download job and transition to Downloading from Pending", func() {
+			bs := newTestBootSource()
+			bs.Status.Phase = isobootv1alpha1.PhasePending
+			reconciler := newFakeReconciler(bs)
 
-			updated := &isobootv1alpha1.BootSource{}
-			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseDownloading))
+
+			// Verify job was created
+			job := &batchv1.Job{}
+			Expect(reconciler.Get(context.Background(), types.NamespacedName{Name: testName + "-download", Namespace: testNamespace}, job)).To(Succeed())
+			Expect(job.Labels["isoboot.github.io/bootsource"]).To(Equal(testName))
+			Expect(job.Labels["app.kubernetes.io/component"]).To(Equal("downloader"))
+		})
+
+		It("should transition to Verifying when download job completes", func() {
+			bs := newTestBootSource()
+			bs.Status.Phase = isobootv1alpha1.PhaseDownloading
+			job := newTestDownloadJob(newJobCondition(batchv1.JobComplete, corev1.ConditionTrue))
+			reconciler := newFakeReconciler(bs, job)
+
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseVerifying))
+		})
+
+		It("should transition to Failed when download job fails", func() {
+			bs := newTestBootSource()
+			bs.Status.Phase = isobootv1alpha1.PhaseDownloading
+			job := newTestDownloadJob(newJobCondition(batchv1.JobFailed, corev1.ConditionTrue))
+			reconciler := newFakeReconciler(bs, job)
+
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseFailed))
+		})
+
+		It("should stay in Downloading when job is still running", func() {
+			bs := newTestBootSource()
+			bs.Status.Phase = isobootv1alpha1.PhaseDownloading
+			job := newTestDownloadJob() // no conditions = still running
+			reconciler := newFakeReconciler(bs, job)
+
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseDownloading))
 		})
 	})
 
 	Context("Integration tests with envtest", func() {
-		var (
-			ctx                context.Context
-			typeNamespacedName types.NamespacedName
-		)
+		var ctx context.Context
 
 		BeforeEach(func() {
 			ctx = context.Background()
-			typeNamespacedName = types.NamespacedName{
-				Name:      testName,
-				Namespace: testNamespace,
-			}
 
-			err := k8sClient.Get(ctx, typeNamespacedName, &isobootv1alpha1.BootSource{})
+			err := k8sClient.Get(ctx, testNN, &isobootv1alpha1.BootSource{})
 			if err != nil {
 				if errors.IsNotFound(err) {
-					Expect(k8sClient.Create(ctx, newTestBootSource(testName, testNamespace))).To(Succeed())
+					Expect(k8sClient.Create(ctx, newTestBootSource())).To(Succeed())
 				} else {
 					Expect(err).NotTo(HaveOccurred())
 				}
@@ -142,7 +174,7 @@ var _ = Describe("BootSource Controller", func() {
 
 		AfterEach(func() {
 			resource := &isobootv1alpha1.BootSource{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			err := k8sClient.Get(ctx, testNN, resource)
 			if err == nil {
 				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			}
@@ -150,18 +182,16 @@ var _ = Describe("BootSource Controller", func() {
 
 		It("should reconcile successfully with real API server", func() {
 			reconciler := &BootSourceReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:     k8sClient,
+				Scheme:     k8sClient.Scheme(),
+				JobBuilder: downloader.NewJobBuilder("/var/lib/isoboot"),
 			}
 
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: testNN})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &isobootv1alpha1.BootSource{}
-			err = k8sClient.Get(ctx, typeNamespacedName, updated)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Get(ctx, testNN, updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
 		})
 	})
