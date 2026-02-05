@@ -46,9 +46,14 @@ import (
 //   6. path.kernel is required (non-empty)
 //   7. path.initrd is required (non-empty)
 //
+// PathSource:
+//   10. path.kernel must contain only safe characters
+//   11. path.initrd must contain only safe characters
+//   12. path.firmware must contain only safe characters (when present)
+//
 // BootSourceSpec:
-//   8. must specify either (kernel AND initrd) OR iso
-//   9. cannot specify both (kernel OR initrd) AND iso
+//   13. must specify either (kernel AND initrd) OR iso
+//   14. cannot specify both (kernel OR initrd) AND iso
 
 var (
 	testEnv   *envtest.Environment
@@ -248,7 +253,97 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "iso requires path.initrd to be specified",
 		},
 
-		// === BootSourceSpec: (kernel && initrd) || iso [Rule 8] ===
+		// === PathSource: kernel path must contain only safe characters [Rule 10] ===
+		{
+			name: "invalid: iso kernel path with shell metacharacters (backtick)",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/`whoami`", Initrd: "/casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path must contain only alphanumeric characters",
+		},
+		{
+			name: "invalid: iso kernel path with dollar sign",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/$EVIL", Initrd: "/casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path must contain only alphanumeric characters",
+		},
+		{
+			name: "invalid: iso kernel path with semicolon",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz; rm -rf /", Initrd: "/casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path must contain only alphanumeric characters",
+		},
+
+		// === PathSource: initrd path must contain only safe characters [Rule 11] ===
+		{
+			name: "invalid: iso initrd path with shell metacharacters (backtick)",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz", Initrd: "/casper/`id`"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path must contain only alphanumeric characters",
+		},
+		{
+			name: "invalid: iso initrd path with dollar sign",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz", Initrd: "/casper/$(echo evil)"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path must contain only alphanumeric characters",
+		},
+
+		// === PathSource: firmware path must contain only safe characters [Rule 12] ===
+		{
+			name: "invalid: iso firmware path with shell metacharacters",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL: urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{
+						Kernel:   "/casper/vmlinuz",
+						Initrd:   "/casper/initrd.gz",
+						Firmware: "/firmware/`evil`",
+					},
+				},
+			},
+			valid:    false,
+			errorMsg: "firmware path must contain only alphanumeric characters",
+		},
+		{
+			name: "valid: iso with complex but safe paths",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL: urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{
+						Kernel:   "/install.amd/vmlinuz-6.1.0-28",
+						Initrd:   "/install.amd/initrd_2024-01-15.gz",
+						Firmware: "/firmware/firmware_1.2.3-beta.cpio.gz",
+					},
+				},
+			},
+			valid: true,
+		},
+
+		// === BootSourceSpec: (kernel && initrd) || iso [Rule 13] ===
 		{
 			name:     "invalid: empty spec",
 			spec:     v1alpha1.BootSourceSpec{},
@@ -274,7 +369,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "must specify either (kernel and initrd) or iso",
 		},
 
-		// === BootSourceSpec: XOR constraint [Rule 9] ===
+		// === BootSourceSpec: XOR constraint [Rule 14] ===
 		{
 			name:     "invalid: kernel + initrd + iso",
 			spec:     v1alpha1.BootSourceSpec{Kernel: kernelSource(), Initrd: initrdSource(), ISO: isoSource()},
