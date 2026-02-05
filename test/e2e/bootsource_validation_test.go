@@ -22,6 +22,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -76,9 +78,11 @@ var _ = BeforeSuite(func() {
 		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
 	}
 
-	// Allow running from IDE without KUBEBUILDER_ASSETS set
-	if dir := getFirstFoundEnvTestBinaryDir(); dir != "" {
-		testEnv.BinaryAssetsDirectory = dir
+	// Only override when KUBEBUILDER_ASSETS is not already set (e.g. by make test)
+	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
+		if dir := getFirstFoundEnvTestBinaryDir(); dir != "" {
+			testEnv.BinaryAssetsDirectory = dir
+		}
 	}
 
 	cfg, err := testEnv.Start()
@@ -438,15 +442,17 @@ var _ = Describe("BootSource Validation", func() {
 	}
 })
 
-// getFirstFoundEnvTestBinaryDir locates the first binary directory under bin/k8s.
+// getFirstFoundEnvTestBinaryDir locates the envtest binary directory under
+// bin/k8s that matches the current GOOS/GOARCH.
 func getFirstFoundEnvTestBinaryDir() string {
 	basePath := filepath.Join("..", "..", "bin", "k8s")
 	entries, err := os.ReadDir(basePath)
 	if err != nil {
 		return ""
 	}
+	platform := runtime.GOOS + "-" + runtime.GOARCH
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() && strings.Contains(entry.Name(), platform) {
 			return filepath.Join(basePath, entry.Name())
 		}
 	}
