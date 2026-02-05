@@ -20,7 +20,10 @@ package e2e
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -36,23 +39,23 @@ import (
 // Validation rules tested:
 //
 // URLSource:
-//   1. binary URL is required (non-empty)
-//   2. shasum URL is required (non-empty)
-//   3. binary URL must use https
-//   4. shasum URL must use https
-//   5. binary and shasum URLs must be on the same server
+//   - binary URL is required (non-empty)
+//   - shasum URL is required (non-empty)
+//   - binary URL must use https
+//   - shasum URL must use https
+//   - binary and shasum URLs must be on the same server
 //
 // ISOSource:
-//   6. path.kernel is required (non-empty)
-//   7. path.initrd is required (non-empty)
+//   - path.kernel is required (non-empty)
+//   - path.initrd is required (non-empty)
 //
-// PathSource:
-//   8. kernel path must contain only safe characters
-//   9. initrd path must contain only safe characters
+// PathSource (character allowlist + traversal prevention):
+//   - kernel/initrd path must contain only safe characters
+//   - kernel/initrd path must not contain path traversal (..)
 //
-// BootSourceSpec:
-//  10. must specify either (kernel AND initrd) OR iso
-//  11. cannot specify both (kernel OR initrd) AND iso
+// BootSourceSpec (mutual exclusivity):
+//   - must specify either (kernel AND initrd) OR iso
+//   - cannot specify both (kernel OR initrd) AND iso
 
 var (
 	testEnv   *envtest.Environment
@@ -71,6 +74,13 @@ var _ = BeforeSuite(func() {
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
+	}
+
+	// Only override when KUBEBUILDER_ASSETS is not already set (e.g. by make test)
+	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
+		if dir := getFirstFoundEnvTestBinaryDir(); dir != "" {
+			testEnv.BinaryAssetsDirectory = dir
+		}
 	}
 
 	cfg, err := testEnv.Start()
@@ -158,7 +168,7 @@ var _ = Describe("BootSource Validation", func() {
 			valid: true,
 		},
 
-		// === URLSource: binary URL required [Rule 1] ===
+		// === URLSource: binary URL required ===
 		{
 			name: "invalid: empty kernel binary URL",
 			spec: v1alpha1.BootSourceSpec{
@@ -178,7 +188,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "binary URL is required",
 		},
 
-		// === URLSource: shasum URL required [Rule 2] ===
+		// === URLSource: shasum URL required ===
 		{
 			name: "invalid: empty kernel shasum URL",
 			spec: v1alpha1.BootSourceSpec{
@@ -189,7 +199,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "shasum URL is required",
 		},
 
-		// === URLSource: binary must be https [Rule 3] ===
+		// === URLSource: binary must be https ===
 		{
 			name: "invalid: http binary URL",
 			spec: v1alpha1.BootSourceSpec{
@@ -200,7 +210,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "binary URL must use https",
 		},
 
-		// === URLSource: shasum must be https [Rule 4] ===
+		// === URLSource: shasum must be https ===
 		{
 			name: "invalid: http shasum URL",
 			spec: v1alpha1.BootSourceSpec{
@@ -211,7 +221,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "shasum URL must use https",
 		},
 
-		// === URLSource: same server [Rule 5] ===
+		// === URLSource: same server ===
 		{
 			name: "invalid: binary and shasum on different servers",
 			spec: v1alpha1.BootSourceSpec{
@@ -226,7 +236,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "binary and shasum URLs must be on the same server",
 		},
 
-		// === ISOSource: path.kernel required [Rule 6] ===
+		// === ISOSource: path.kernel required ===
 		{
 			name: "invalid: iso with empty path.kernel",
 			spec: v1alpha1.BootSourceSpec{
@@ -239,7 +249,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "iso requires path.kernel to be specified",
 		},
 
-		// === ISOSource: path.initrd required [Rule 7] ===
+		// === ISOSource: path.initrd required ===
 		{
 			name: "invalid: iso with empty path.initrd",
 			spec: v1alpha1.BootSourceSpec{
@@ -252,7 +262,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "iso requires path.initrd to be specified",
 		},
 
-		// === PathSource: kernel path safe characters [Rule 8] ===
+		// === PathSource: kernel path safe characters ===
 		{
 			name: "invalid: kernel path with semicolon",
 			spec: v1alpha1.BootSourceSpec{
@@ -287,7 +297,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "kernel path contains invalid characters",
 		},
 
-		// === PathSource: initrd path safe characters [Rule 9] ===
+		// === PathSource: initrd path safe characters ===
 		{
 			name: "invalid: initrd path with shell expansion",
 			spec: v1alpha1.BootSourceSpec{
@@ -311,7 +321,55 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "initrd path contains invalid characters",
 		},
 
-		// === BootSourceSpec: (kernel && initrd) || iso [Rule 10] ===
+		// === PathSource: kernel path traversal ===
+		{
+			name: "invalid: kernel path with .. traversal",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "../../etc/shadow", Initrd: "/casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path must not contain path traversal",
+		},
+		{
+			name: "invalid: kernel path with mid-path traversal",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/../../../etc/passwd", Initrd: "/casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path must not contain path traversal",
+		},
+
+		// === PathSource: initrd path traversal ===
+		{
+			name: "invalid: initrd path with .. traversal",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz", Initrd: "../../etc/passwd"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path must not contain path traversal",
+		},
+		{
+			name: "invalid: initrd path with mid-path traversal",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz", Initrd: "/casper/../../../etc/shadow"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path must not contain path traversal",
+		},
+
+		// === BootSourceSpec: (kernel && initrd) || iso ===
 		{
 			name:     "invalid: empty spec",
 			spec:     v1alpha1.BootSourceSpec{},
@@ -337,7 +395,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "must specify either (kernel and initrd) or iso",
 		},
 
-		// === BootSourceSpec: XOR constraint [Rule 11] ===
+		// === BootSourceSpec: XOR constraint ===
 		{
 			name:     "invalid: kernel + initrd + iso",
 			spec:     v1alpha1.BootSourceSpec{Kernel: kernelSource(), Initrd: initrdSource(), ISO: isoSource()},
@@ -381,3 +439,20 @@ var _ = Describe("BootSource Validation", func() {
 		})
 	}
 })
+
+// getFirstFoundEnvTestBinaryDir locates the envtest binary directory under
+// bin/k8s that matches the current GOOS/GOARCH.
+func getFirstFoundEnvTestBinaryDir() string {
+	basePath := filepath.Join("..", "..", "bin", "k8s")
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return ""
+	}
+	platform := runtime.GOOS + "-" + runtime.GOARCH
+	for _, entry := range entries {
+		if entry.IsDir() && strings.Contains(entry.Name(), platform) {
+			return filepath.Join(basePath, entry.Name())
+		}
+	}
+	return ""
+}
