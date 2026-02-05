@@ -34,6 +34,9 @@ type URLSource struct {
 }
 
 // PathSource defines paths inside an ISO image
+// +kubebuilder:validation:XValidation:rule="self.kernel.matches('^[a-zA-Z0-9/._-]+$')",message="kernel path contains invalid characters"
+// +kubebuilder:validation:XValidation:rule="self.initrd.matches('^[a-zA-Z0-9/._-]+$')",message="initrd path contains invalid characters"
+// +kubebuilder:validation:XValidation:rule="!has(self.firmware) || self.firmware.matches('^[a-zA-Z0-9/._-]+$')",message="firmware path contains invalid characters"
 type PathSource struct {
 	// Kernel is the path to the kernel inside the ISO
 	Kernel string `json:"kernel"`
