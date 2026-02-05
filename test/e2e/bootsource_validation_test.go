@@ -379,8 +379,12 @@ var _ = Describe("BootSource Validation", func() {
 			name: "invalid: iso firmware path starts with /",
 			spec: v1alpha1.BootSourceSpec{
 				ISO: &v1alpha1.ISOSource{
-					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
-					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "casper/initrd.gz", Firmware: "/var/run/secrets/token"},
+					URL: urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{
+						Kernel:   "casper/vmlinuz",
+						Initrd:   "casper/initrd.gz",
+						Firmware: "/var/run/secrets/token",
+					},
 				},
 			},
 			valid:    false,
@@ -392,8 +396,12 @@ var _ = Describe("BootSource Validation", func() {
 			name: "invalid: iso firmware path with ../ prefix",
 			spec: v1alpha1.BootSourceSpec{
 				ISO: &v1alpha1.ISOSource{
-					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
-					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "casper/initrd.gz", Firmware: "../../../var/run/secrets/token"},
+					URL: urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{
+						Kernel:   "casper/vmlinuz",
+						Initrd:   "casper/initrd.gz",
+						Firmware: "../../../var/run/secrets/token",
+					},
 				},
 			},
 			valid:    false,
@@ -403,8 +411,12 @@ var _ = Describe("BootSource Validation", func() {
 			name: "invalid: iso firmware path with /../ in middle",
 			spec: v1alpha1.BootSourceSpec{
 				ISO: &v1alpha1.ISOSource{
-					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
-					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "casper/initrd.gz", Firmware: "firmware/../../../var/run/secrets/token"},
+					URL: urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{
+						Kernel:   "casper/vmlinuz",
+						Initrd:   "casper/initrd.gz",
+						Firmware: "firmware/../../../var/run/secrets/token",
+					},
 				},
 			},
 			valid:    false,
