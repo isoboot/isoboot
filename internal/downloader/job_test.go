@@ -163,15 +163,15 @@ func TestBuild_ISOWithFirmware(t *testing.T) {
 
 	script := job.Spec.Template.Spec.Containers[0].Command[2]
 
-	// Extract firmware from ISO
-	assertContains(t, script, "firmware.cpio.gz")
+	// Extract firmware into firmware/ subdirectory
+	assertContains(t, script, "firmware/firmware.cpio.gz")
 
 	// Original initrd in initrd/initrd.gz
 	assertContains(t, script, "initrd/initrd.gz")
 
 	// Concatenated initrd+firmware in initrd/with-firmware/initrd.gz
 	assertContains(t, script, "initrd/with-firmware/initrd.gz")
-	assertContains(t, script, `cat "$DIR/initrd/initrd.gz" "$DIR/firmware"`)
+	assertContains(t, script, `cat "$DIR/initrd/initrd.gz" "$DIR/firmware/firmware.cpio.gz"`)
 }
 
 func TestBuild_NoShasumSkipsVerify(t *testing.T) {
