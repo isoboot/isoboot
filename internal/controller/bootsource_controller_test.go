@@ -184,7 +184,7 @@ var _ = Describe("BootSource Controller", func() {
 			reconciler := &BootSourceReconciler{
 				Client:     k8sClient,
 				Scheme:     k8sClient.Scheme(),
-				JobBuilder: downloader.NewJobBuilder("/var/lib/isoboot"),
+				JobBuilder: downloader.NewJobBuilder("/var/lib/isoboot", "alpine:3.23"),
 			}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: testNN})
