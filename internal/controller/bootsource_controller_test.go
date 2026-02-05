@@ -128,13 +128,13 @@ var _ = Describe("BootSource Controller", func() {
 			Expect(job.Labels["app.kubernetes.io/component"]).To(Equal("downloader"))
 		})
 
-		It("should transition to Verifying when download job completes", func() {
+		It("should transition to Ready when download job completes", func() {
 			bs := newTestBootSource()
 			bs.Status.Phase = isobootv1alpha1.PhaseDownloading
 			job := newTestDownloadJob(newJobCondition(batchv1.JobComplete, corev1.ConditionTrue))
 			reconciler := newFakeReconciler(bs, job)
 
-			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseVerifying))
+			Expect(reconcileAndGetPhase(reconciler)).To(Equal(isobootv1alpha1.PhaseReady))
 		})
 
 		It("should transition to Failed when download job fails", func() {

@@ -1,18 +1,61 @@
 #!/bin/sh
 set -e
-mkdir -p "{{.Dir}}"
-{{- if .ISO}}
-{{range .Downloads -}}
-wget -O "{{.Dest}}.tmp" "{{.URL}}" && mv "{{.Dest}}.tmp" "{{.Dest}}"
+
+DIR="{{.Dir}}"
+mkdir -p "$DIR"
+
+# ── Download phase ──────────────────────────────────────────────
+{{range .Files -}}
+echo ">> Checking {{.Name}}..."
+if [ -f "{{.Dest}}" ]; then
+  echo "   SKIP: {{.Name}} already exists at {{.Dest}}"
+else
+  echo "   DOWNLOADING: {{.Name}} from {{.URL}}"
+  wget -O "{{.Dest}}.tmp" "{{.URL}}"
+  mv "{{.Dest}}.tmp" "{{.Dest}}"
+  echo "   DONE: {{.Name}}"
+fi
+{{end}}
+# ── Verify phase ────────────────────────────────────────────────
+{{range .Files -}}
+{{if .ShasumURL -}}
+echo ">> Verifying {{.Name}}..."
+wget -O "{{.Dest}}.shasum" "{{.ShasumURL}}"
+HASH_SAMPLE=$(grep -oEm1 '[0-9a-f]{64,128}' "{{.Dest}}.shasum" | head -1)
+HASH_LEN=${#HASH_SAMPLE}
+if [ "$HASH_LEN" -ge 128 ]; then
+  TOOL=sha512sum
+elif [ "$HASH_LEN" -ge 64 ]; then
+  TOOL=sha256sum
+else
+  echo "   FAIL: cannot detect hash type (length=$HASH_LEN) in {{.ShasumURL}}"
+  exit 1
+fi
+OUR_HASH=$($TOOL "{{.Dest}}" | awk '{print $1}')
+BASENAME="{{.URLBasename}}"
+if ! grep "$OUR_HASH" "{{.Dest}}.shasum" | grep -q "$BASENAME"; then
+  echo "   FAIL: hash $OUR_HASH not found for $BASENAME in shasum file"
+  cat "{{.Dest}}.shasum"
+  exit 1
+fi
+echo "   VERIFIED: {{.Name}} ($TOOL, $BASENAME)"
 {{end -}}
+{{end}}
+{{- if .ISO}}
+# ── Extract phase ───────────────────────────────────────────────
+echo ">> Extracting kernel and initrd from ISO..."
 MNTDIR="$(mktemp -d)"
 mount -o ro,loop "{{.ISO.ISOPath}}" "$MNTDIR"
-cp "$MNTDIR/{{.ISO.KernelPath}}" "{{.Dir}}/kernel"
-cp "$MNTDIR/{{.ISO.InitrdPath}}" "{{.Dir}}/initrd"
+cp "$MNTDIR/{{.ISO.KernelPath}}" "$DIR/kernel"
+echo "   EXTRACTED: kernel from {{.ISO.KernelPath}}"
+cp "$MNTDIR/{{.ISO.InitrdPath}}" "$DIR/initrd"
+echo "   EXTRACTED: initrd from {{.ISO.InitrdPath}}"
+{{- if .ISO.FirmwarePath}}
+cp "$MNTDIR/{{.ISO.FirmwarePath}}" "$DIR/firmware"
+echo "   EXTRACTED: firmware from {{.ISO.FirmwarePath}}"
+{{- end}}
 umount "$MNTDIR"
 rmdir "$MNTDIR"
-{{- else}}
-{{range .Downloads -}}
-curl -fSL -o "{{.Dest}}.tmp" "{{.URL}}" && mv "{{.Dest}}.tmp" "{{.Dest}}"
-{{end -}}
 {{- end}}
+
+echo ">> All done!"

@@ -19,6 +19,7 @@ package downloader
 import (
 	"bytes"
 	_ "embed"
+	"path"
 	"path/filepath"
 	"text/template"
 
@@ -32,23 +33,27 @@ import (
 //go:embed download.sh.tmpl
 var scriptTemplate string
 
-// downloadItem represents a single file to download.
-type downloadItem struct {
-	URL  string
-	Dest string
+// fileItem is a single downloadable file passed to the shell template.
+type fileItem struct {
+	Name        string // "kernel", "initrd", "firmware", "iso"
+	URL         string // binary download URL
+	ShasumURL   string // shasum file URL (may be empty)
+	URLBasename string // final path component of URL, e.g. "mini.iso"
+	Dest        string // absolute destination path
 }
 
-// isoData holds ISO-specific template fields for extracting kernel/initrd.
+// isoData holds ISO-specific extraction paths for the shell template.
 type isoData struct {
-	ISOPath    string
-	KernelPath string
-	InitrdPath string
+	ISOPath      string
+	KernelPath   string
+	InitrdPath   string
+	FirmwarePath string // empty if no firmware inside ISO
 }
 
 type templateData struct {
-	Dir       string
-	Downloads []downloadItem
-	ISO       *isoData
+	Dir   string
+	Files []fileItem
+	ISO   *isoData
 }
 
 // JobBuilder builds download Jobs for a BootSource.
@@ -61,56 +66,46 @@ func NewJobBuilder(baseDir string) *JobBuilder {
 	return &JobBuilder{BaseDir: baseDir}
 }
 
-// Build creates a Kubernetes Job that downloads all binary files for a BootSource.
+// Build creates a Kubernetes Job that downloads, verifies, and (for ISOs)
+// extracts all files for a BootSource.
 func (b *JobBuilder) Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error) {
-	return buildJob(bs, b.BaseDir)
-}
-
-func buildJob(bs *isobootv1alpha1.BootSource, baseDir string) (*batchv1.Job, error) {
-	dir := filepath.Join(baseDir, bs.Namespace, bs.Name)
+	dir := filepath.Join(b.BaseDir, bs.Namespace, bs.Name)
 	spec := bs.Spec
 
-	var downloads []downloadItem
+	var files []fileItem
 	if spec.Kernel != nil {
-		downloads = append(downloads, downloadItem{URL: spec.Kernel.URL.Binary, Dest: filepath.Join(dir, "kernel")})
+		files = append(files, newFileItem("kernel", spec.Kernel.URL, dir))
 	}
 	if spec.Initrd != nil {
-		downloads = append(downloads, downloadItem{URL: spec.Initrd.URL.Binary, Dest: filepath.Join(dir, "initrd")})
+		files = append(files, newFileItem("initrd", spec.Initrd.URL, dir))
 	}
 	if spec.Firmware != nil {
-		downloads = append(downloads, downloadItem{URL: spec.Firmware.URL.Binary, Dest: filepath.Join(dir, "firmware")})
+		files = append(files, newFileItem("firmware", spec.Firmware.URL, dir))
 	}
 	if spec.ISO != nil {
-		downloads = append(downloads, downloadItem{URL: spec.ISO.URL.Binary, Dest: filepath.Join(dir, "iso")})
+		files = append(files, newFileItem("iso", spec.ISO.URL, dir))
+	}
+
+	data := templateData{Dir: dir, Files: files}
+	if spec.ISO != nil {
+		data.ISO = &isoData{
+			ISOPath:    filepath.Join(dir, "iso"),
+			KernelPath: spec.ISO.Path.Kernel,
+			InitrdPath: spec.ISO.Path.Initrd,
+		}
 	}
 
 	tmpl, err := template.New("download").Parse(scriptTemplate)
 	if err != nil {
 		return nil, err
 	}
-
-	data := templateData{
-		Dir:       dir,
-		Downloads: downloads,
-	}
-	if bs.Spec.ISO != nil {
-		data.ISO = &isoData{
-			ISOPath:    filepath.Join(dir, "iso"),
-			KernelPath: bs.Spec.ISO.Path.Kernel,
-			InitrdPath: bs.Spec.ISO.Path.Initrd,
-		}
-	}
-
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return nil, err
 	}
 
-	image := "curlimages/curl"
 	var secCtx *corev1.SecurityContext
-	if bs.Spec.ISO != nil {
-		// ISO extraction needs mount; use alpine (has mount+curl) and run privileged
-		image = "alpine"
+	if spec.ISO != nil {
 		privileged := true
 		secCtx = &corev1.SecurityContext{Privileged: &privileged}
 	}
@@ -137,13 +132,13 @@ func buildJob(bs *isobootv1alpha1.BootSource, baseDir string) (*batchv1.Job, err
 					Containers: []corev1.Container{
 						{
 							Name:            "download",
-							Image:           image,
+							Image:           "alpine",
 							Command:         []string{"/bin/sh", "-c", buf.String()},
 							SecurityContext: secCtx,
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "data",
-									MountPath: baseDir,
+									MountPath: b.BaseDir,
 								},
 							},
 						},
@@ -153,7 +148,7 @@ func buildJob(bs *isobootv1alpha1.BootSource, baseDir string) (*batchv1.Job, err
 							Name: "data",
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
-									Path: baseDir,
+									Path: b.BaseDir,
 								},
 							},
 						},
@@ -162,4 +157,14 @@ func buildJob(bs *isobootv1alpha1.BootSource, baseDir string) (*batchv1.Job, err
 			},
 		},
 	}, nil
+}
+
+func newFileItem(name string, url isobootv1alpha1.URLSource, dir string) fileItem {
+	return fileItem{
+		Name:        name,
+		URL:         url.Binary,
+		ShasumURL:   url.Shasum,
+		URLBasename: path.Base(url.Binary),
+		Dest:        filepath.Join(dir, name),
+	}
 }
