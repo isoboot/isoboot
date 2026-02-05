@@ -32,10 +32,12 @@ elif [ "$HASH_LEN" -eq 64 ]; then
 elif [ "$HASH_LEN" -eq 0 ]; then
   echo "   FAIL: no hash found in {{.ShasumURL}}"
   echo "         Only SHA256 (64 chars) and SHA512 (128 chars) are supported."
+  rm -f "{{.Dest}}"
   exit 1
 else
   echo "   FAIL: unsupported hash length ($HASH_LEN) in {{.ShasumURL}}"
   echo "         Only SHA256 (64 chars) and SHA512 (128 chars) are supported."
+  rm -f "{{.Dest}}"
   exit 1
 fi
 OUR_HASH=$($TOOL "{{.Dest}}" | awk '{print $1}')
@@ -44,10 +46,12 @@ EXPECTED_HASH=$(awk -v name="$BASENAME" '$2 == name || $2 == ("*" name) { print 
 if [ -z "$EXPECTED_HASH" ]; then
   echo "   FAIL: no hash entry found for $BASENAME in shasum file"
   cat "{{.Dest}}.shasum"
+  rm -f "{{.Dest}}"
   exit 1
 fi
 if [ "$OUR_HASH" != "$EXPECTED_HASH" ]; then
   echo "   FAIL: hash mismatch for $BASENAME (expected $EXPECTED_HASH, got $OUR_HASH)"
+  rm -f "{{.Dest}}"
   exit 1
 fi
 echo "   VERIFIED: {{.Name}} ($TOOL, $BASENAME)"
