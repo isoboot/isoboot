@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -36,6 +37,9 @@ import (
 func newFakeReconciler(objs ...client.Object) *BootSourceReconciler {
 	scheme := runtime.NewScheme()
 	if err := isobootv1alpha1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
+	if err := batchv1.AddToScheme(scheme); err != nil {
 		panic(err)
 	}
 
@@ -136,6 +140,140 @@ var _ = Describe("BootSource Controller", func() {
 				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
 			})
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("Pending phase", func() {
+		It("should create a download Job and transition to Downloading", func() {
+			ctx := context.Background()
+			pendingName := "pending-source"
+			bootSource := newTestBootSource(pendingName, testNamespace)
+			bootSource.Status.Phase = isobootv1alpha1.PhasePending
+			reconciler := newFakeReconciler(bootSource)
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: pendingName, Namespace: testNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify phase transitioned to Downloading
+			updated := &isobootv1alpha1.BootSource{}
+			err = reconciler.Get(ctx, types.NamespacedName{Name: pendingName, Namespace: testNamespace}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseDownloading))
+			Expect(updated.Status.DownloadJobName).To(Equal("isoboot-download-" + pendingName))
+
+			// Verify the Job was created
+			job := &batchv1.Job{}
+			err = reconciler.Get(ctx, types.NamespacedName{
+				Name:      "isoboot-download-" + pendingName,
+				Namespace: testNamespace,
+			}, job)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal("alpine:3.21"))
+		})
+	})
+
+	Context("Downloading phase", func() {
+		It("should transition to Verifying when Job completes", func() {
+			ctx := context.Background()
+			bootSource := newTestBootSource(testName, testNamespace)
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource.Status.DownloadJobName = "isoboot-download-" + testName
+
+			// Create a completed Job
+			completedJob := &batchv1.Job{}
+			completedJob.Name = "isoboot-download-" + testName
+			completedJob.Namespace = testNamespace
+			completedJob.Status.Conditions = []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: "True"},
+			}
+
+			reconciler := newFakeReconciler(bootSource, completedJob)
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &isobootv1alpha1.BootSource{}
+			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseVerifying))
+			Expect(updated.Status.ArtifactPaths).To(HaveKey("kernel"))
+			Expect(updated.Status.ArtifactPaths).To(HaveKey("initrd"))
+		})
+
+		It("should transition to Failed when Job fails", func() {
+			ctx := context.Background()
+			ns := "custom-ns"
+			bootSource := newTestBootSource(testName, ns)
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource.Status.DownloadJobName = "isoboot-download-" + testName
+
+			failedJob := &batchv1.Job{}
+			failedJob.Name = "isoboot-download-" + testName
+			failedJob.Namespace = ns
+			failedJob.Status.Conditions = []batchv1.JobCondition{
+				{Type: batchv1.JobFailed, Status: "True"},
+			}
+
+			reconciler := newFakeReconciler(bootSource, failedJob)
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: testName, Namespace: ns},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &isobootv1alpha1.BootSource{}
+			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: ns}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseFailed))
+		})
+
+		It("should revert to Pending when Job is missing", func() {
+			ctx := context.Background()
+			bootSource := newTestBootSource(testName, testNamespace)
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource.Status.DownloadJobName = "isoboot-download-" + testName
+
+			// No Job object in the fake client
+			reconciler := newFakeReconciler(bootSource)
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &isobootv1alpha1.BootSource{}
+			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
+			Expect(updated.Status.DownloadJobName).To(BeEmpty())
+		})
+
+		It("should stay in Downloading when Job is still running", func() {
+			ctx := context.Background()
+			bootSource := newTestBootSource(testName, testNamespace)
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource.Status.DownloadJobName = "isoboot-download-" + testName
+
+			// Job with no conditions (still running)
+			runningJob := &batchv1.Job{}
+			runningJob.Name = "isoboot-download-" + testName
+			runningJob.Namespace = testNamespace
+
+			reconciler := newFakeReconciler(bootSource, runningJob)
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &isobootv1alpha1.BootSource{}
+			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseDownloading))
 		})
 	})
 
