@@ -37,6 +37,7 @@ import (
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/controller"
+	"github.com/isoboot/isoboot/internal/downloader"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -54,6 +55,7 @@ func init() {
 
 // nolint:gocyclo
 func main() {
+	var baseDir string
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -62,6 +64,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	flag.StringVar(&baseDir, "base-dir", "/var/lib/isoboot", "Base directory for storing downloaded boot files.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -179,8 +182,9 @@ func main() {
 	}
 
 	if err := (&controller.BootSourceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		JobBuilder: downloader.NewJobBuilder(baseDir),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BootSource")
 		os.Exit(1)

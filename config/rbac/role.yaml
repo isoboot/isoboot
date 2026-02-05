@@ -5,6 +5,16 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
   - isoboot.github.io
   resources:
   - bootsources

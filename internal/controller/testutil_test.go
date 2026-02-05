@@ -17,17 +17,24 @@ limitations under the License.
 package controller
 
 import (
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
+const (
+	testName      = "test-bootsource"
+	testNamespace = "default"
+)
+
 // newTestBootSource creates a BootSource for testing with kernel+initrd
-func newTestBootSource(name, namespace string) *isobootv1alpha1.BootSource {
+func newTestBootSource() *isobootv1alpha1.BootSource {
 	return &isobootv1alpha1.BootSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      testName,
+			Namespace: testNamespace,
 		},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			Kernel: &isobootv1alpha1.KernelSource{
@@ -46,12 +53,33 @@ func newTestBootSource(name, namespace string) *isobootv1alpha1.BootSource {
 	}
 }
 
+// newTestDownloadJob creates a download Job for testing with optional conditions.
+func newTestDownloadJob(conditions ...batchv1.JobCondition) *batchv1.Job {
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testName + "-download",
+			Namespace: testNamespace,
+		},
+		Status: batchv1.JobStatus{
+			Conditions: conditions,
+		},
+	}
+}
+
+// newJobCondition creates a batchv1.JobCondition for testing.
+func newJobCondition(condType batchv1.JobConditionType, status corev1.ConditionStatus) batchv1.JobCondition {
+	return batchv1.JobCondition{
+		Type:   condType,
+		Status: status,
+	}
+}
+
 // newTestBootSourceISO creates a BootSource for testing with ISO
-func newTestBootSourceISO(name, namespace string) *isobootv1alpha1.BootSource {
+func newTestBootSourceISO() *isobootv1alpha1.BootSource {
 	return &isobootv1alpha1.BootSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      testName,
+			Namespace: testNamespace,
 		},
 		Spec: isobootv1alpha1.BootSourceSpec{
 			ISO: &isobootv1alpha1.ISOSource{
