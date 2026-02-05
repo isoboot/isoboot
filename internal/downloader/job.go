@@ -44,11 +44,11 @@ type fileItem struct {
 
 // isoData holds ISO-specific extraction paths for the shell template.
 type isoData struct {
-	ISOPath        string
-	KernelPath     string
-	KernelBasename string // e.g. "linux"
-	InitrdPath     string
-	InitrdBasename string // e.g. "initrd.gz"
+	ISOPath          string
+	KernelPath       string
+	KernelBasename   string // e.g. "linux"
+	InitrdPath       string
+	InitrdBasename   string // e.g. "initrd.gz"
 	FirmwarePath     string // empty if no firmware inside ISO
 	FirmwareBasename string // e.g. "firmware.cpio.gz"
 }
@@ -99,11 +99,11 @@ func (b *JobBuilder) Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error)
 	data := templateData{Dir: dir, Files: files}
 	if spec.ISO != nil {
 		data.ISO = &isoData{
-			ISOPath:        filepath.Join(dir, "iso", path.Base(spec.ISO.URL.Binary)),
-			KernelPath:     spec.ISO.Path.Kernel,
-			KernelBasename: path.Base(spec.ISO.Path.Kernel),
-			InitrdPath:     spec.ISO.Path.Initrd,
-			InitrdBasename: path.Base(spec.ISO.Path.Initrd),
+			ISOPath:          filepath.Join(dir, "iso", path.Base(spec.ISO.URL.Binary)),
+			KernelPath:       spec.ISO.Path.Kernel,
+			KernelBasename:   path.Base(spec.ISO.Path.Kernel),
+			InitrdPath:       spec.ISO.Path.Initrd,
+			InitrdBasename:   path.Base(spec.ISO.Path.Initrd),
 			FirmwarePath:     spec.ISO.Path.Firmware,
 			FirmwareBasename: path.Base(spec.ISO.Path.Firmware),
 		}
