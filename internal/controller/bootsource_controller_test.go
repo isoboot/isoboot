@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -45,8 +46,9 @@ func newFakeReconciler(objs ...client.Object) *BootSourceReconciler {
 		Build()
 
 	return &BootSourceReconciler{
-		Client: fakeClient,
-		Scheme: scheme,
+		Client:          fakeClient,
+		Scheme:          scheme,
+		HostPathBaseDir: "/var/lib/isoboot",
 	}
 }
 
@@ -115,6 +117,42 @@ var _ = Describe("BootSource Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
 		})
+
+		It("should return an error when Get fails with a non-NotFound error", func() {
+			ctx := context.Background()
+			// Build a client with an empty scheme so Get returns a "no kind is registered" error
+			emptyScheme := runtime.NewScheme()
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(emptyScheme).
+				Build()
+
+			reconciler := &BootSourceReconciler{
+				Client:          fakeClient,
+				Scheme:          emptyScheme,
+				HostPathBaseDir: "/var/lib/isoboot",
+			}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+			})
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("SetupWithManager", func() {
+		It("should register the controller with the manager", func() {
+			mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+				Scheme: k8sClient.Scheme(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			reconciler := &BootSourceReconciler{
+				Client:          mgr.GetClient(),
+				Scheme:          mgr.GetScheme(),
+				HostPathBaseDir: "/var/lib/isoboot",
+			}
+			Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
+		})
 	})
 
 	Context("Integration tests with envtest", func() {
@@ -150,8 +188,9 @@ var _ = Describe("BootSource Controller", func() {
 
 		It("should reconcile successfully with real API server", func() {
 			reconciler := &BootSourceReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				HostPathBaseDir: "/var/lib/isoboot",
 			}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{

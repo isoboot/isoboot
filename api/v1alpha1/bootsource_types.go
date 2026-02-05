@@ -122,6 +122,12 @@ type BootSourceStatus struct {
 	// Conditions represent the latest available observations of an object's state
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// DownloadJobName is the name of the batch/v1 Job performing downloads
+	// +optional
+	DownloadJobName string `json:"downloadJobName,omitempty"`
+	// ArtifactPaths maps resource type (kernel, initrd, etc.) to host path
+	// +optional
+	ArtifactPaths map[string]string `json:"artifactPaths,omitempty"`
 }
 
 // +kubebuilder:object:root=true
