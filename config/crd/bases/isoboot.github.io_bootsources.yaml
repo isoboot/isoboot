@@ -270,12 +270,8 @@ spec:
                 enum:
                 - Pending
                 - Downloading
-                - Verifying
-                - Extracting
-                - Building
                 - Ready
                 - Failed
-                - Corrupted
                 type: string
             type: object
         type: object

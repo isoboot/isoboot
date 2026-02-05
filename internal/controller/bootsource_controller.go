@@ -118,7 +118,7 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bs *iso
 
 	for _, c := range job.Status.Conditions {
 		if c.Type == batchv1.JobComplete && c.Status == "True" {
-			return ctrl.Result{}, r.setPhase(ctx, bs, isobootv1alpha1.PhaseVerifying)
+			return ctrl.Result{}, r.setPhase(ctx, bs, isobootv1alpha1.PhaseReady)
 		}
 		if c.Type == batchv1.JobFailed && c.Status == "True" {
 			return ctrl.Result{}, r.setPhase(ctx, bs, isobootv1alpha1.PhaseFailed)
