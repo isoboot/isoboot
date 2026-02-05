@@ -23,9 +23,9 @@ echo ">> Verifying {{.Name}}..."
 wget -O "{{.Dest}}.shasum" "{{.ShasumURL}}"
 HASH_SAMPLE=$(grep -oEm1 '[0-9a-f]{64,128}' "{{.Dest}}.shasum" | head -1)
 HASH_LEN=${#HASH_SAMPLE}
-if [ "$HASH_LEN" -ge 128 ]; then
+if [ "$HASH_LEN" -eq 128 ]; then
   TOOL=sha512sum
-elif [ "$HASH_LEN" -ge 64 ]; then
+elif [ "$HASH_LEN" -eq 64 ]; then
   TOOL=sha256sum
 else
   echo "   FAIL: cannot detect hash type (length=$HASH_LEN) in {{.ShasumURL}}"
