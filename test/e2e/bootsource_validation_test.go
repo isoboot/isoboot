@@ -46,9 +46,17 @@ import (
 //   6. path.kernel is required (non-empty)
 //   7. path.initrd is required (non-empty)
 //
+// PathSource (path traversal prevention):
+//   10. path.kernel must be relative (cannot start with /)
+//   11. path.kernel cannot contain .. components
+//   12. path.initrd must be relative (cannot start with /)
+//   13. path.initrd cannot contain .. components
+//   14. path.firmware must be relative (cannot start with /)
+//   15. path.firmware cannot contain .. components
+//
 // BootSourceSpec:
-//   8. must specify either (kernel AND initrd) OR iso
-//   9. cannot specify both (kernel OR initrd) AND iso
+//   16. must specify either (kernel AND initrd) OR iso
+//   17. cannot specify both (kernel OR initrd) AND iso
 
 var (
 	testEnv   *envtest.Environment
@@ -125,7 +133,7 @@ func firmwareSource() *v1alpha1.FirmwareSource {
 func isoSource() *v1alpha1.ISOSource {
 	return &v1alpha1.ISOSource{
 		URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
-		Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz", Initrd: "/casper/initrd.gz"},
+		Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "casper/initrd.gz"},
 	}
 }
 
@@ -228,7 +236,7 @@ var _ = Describe("BootSource Validation", func() {
 			spec: v1alpha1.BootSourceSpec{
 				ISO: &v1alpha1.ISOSource{
 					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
-					Path: v1alpha1.PathSource{Kernel: "", Initrd: "/casper/initrd.gz"},
+					Path: v1alpha1.PathSource{Kernel: "", Initrd: "casper/initrd.gz"},
 				},
 			},
 			valid:    false,
@@ -241,14 +249,203 @@ var _ = Describe("BootSource Validation", func() {
 			spec: v1alpha1.BootSourceSpec{
 				ISO: &v1alpha1.ISOSource{
 					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
-					Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz", Initrd: ""},
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: ""},
 				},
 			},
 			valid:    false,
 			errorMsg: "iso requires path.initrd to be specified",
 		},
 
-		// === BootSourceSpec: (kernel && initrd) || iso [Rule 8] ===
+		// === PathSource: kernel absolute path [Rule 10] ===
+		{
+			name: "invalid: iso kernel path starts with /",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/etc/passwd", Initrd: "casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path must be relative",
+		},
+
+		// === PathSource: kernel path traversal [Rule 11] ===
+		{
+			name: "invalid: iso kernel path with ../ prefix",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "../etc/passwd", Initrd: "casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path cannot contain .. components",
+		},
+		{
+			name: "invalid: iso kernel path with /../ in middle",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/../../../etc/passwd", Initrd: "casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path cannot contain .. components",
+		},
+		{
+			name: "invalid: iso kernel path with /.. suffix",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz/..", Initrd: "casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path cannot contain .. components",
+		},
+		{
+			name: "invalid: iso kernel path is just ..",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "..", Initrd: "casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path cannot contain .. components",
+		},
+
+		// === PathSource: initrd absolute path [Rule 12] ===
+		{
+			name: "invalid: iso initrd path starts with /",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "/etc/shadow"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path must be relative",
+		},
+
+		// === PathSource: initrd path traversal [Rule 13] ===
+		{
+			name: "invalid: iso initrd path with ../ prefix",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "../../../etc/shadow"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path cannot contain .. components",
+		},
+		{
+			name: "invalid: iso initrd path with /../ in middle",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "casper/../../../etc/shadow"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path cannot contain .. components",
+		},
+		{
+			name: "invalid: iso initrd path with /.. suffix",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "casper/initrd.gz/.."},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path cannot contain .. components",
+		},
+		{
+			name: "invalid: iso initrd path is just ..",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: ".."},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path cannot contain .. components",
+		},
+
+		// === PathSource: firmware absolute path [Rule 14] ===
+		{
+			name: "invalid: iso firmware path starts with /",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL: urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{
+						Kernel:   "casper/vmlinuz",
+						Initrd:   "casper/initrd.gz",
+						Firmware: "/var/run/secrets/token",
+					},
+				},
+			},
+			valid:    false,
+			errorMsg: "firmware path must be relative",
+		},
+
+		// === PathSource: firmware path traversal [Rule 15] ===
+		{
+			name: "invalid: iso firmware path with ../ prefix",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL: urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{
+						Kernel:   "casper/vmlinuz",
+						Initrd:   "casper/initrd.gz",
+						Firmware: "../../../var/run/secrets/token",
+					},
+				},
+			},
+			valid:    false,
+			errorMsg: "firmware path cannot contain .. components",
+		},
+		{
+			name: "invalid: iso firmware path with /../ in middle",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL: urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{
+						Kernel:   "casper/vmlinuz",
+						Initrd:   "casper/initrd.gz",
+						Firmware: "firmware/../../../var/run/secrets/token",
+					},
+				},
+			},
+			valid:    false,
+			errorMsg: "firmware path cannot contain .. components",
+		},
+		{
+			name: "invalid: iso firmware path with /.. suffix",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "casper/initrd.gz", Firmware: "firmware.cpio.gz/.."},
+				},
+			},
+			valid:    false,
+			errorMsg: "firmware path cannot contain .. components",
+		},
+		{
+			name: "invalid: iso firmware path is just ..",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "casper/initrd.gz", Firmware: ".."},
+				},
+			},
+			valid:    false,
+			errorMsg: "firmware path cannot contain .. components",
+		},
+
+		// === BootSourceSpec: (kernel && initrd) || iso [Rule 16] ===
 		{
 			name:     "invalid: empty spec",
 			spec:     v1alpha1.BootSourceSpec{},
@@ -274,7 +471,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "must specify either (kernel and initrd) or iso",
 		},
 
-		// === BootSourceSpec: XOR constraint [Rule 9] ===
+		// === BootSourceSpec: XOR constraint [Rule 17] ===
 		{
 			name:     "invalid: kernel + initrd + iso",
 			spec:     v1alpha1.BootSourceSpec{Kernel: kernelSource(), Initrd: initrdSource(), ISO: isoSource()},

@@ -133,6 +133,23 @@ spec:
                     - initrd
                     - kernel
                     type: object
+                    x-kubernetes-validations:
+                    - message: kernel path must be relative (cannot start with /)
+                      rule: '!self.kernel.startsWith(''/'')'
+                    - message: kernel path cannot contain .. components
+                      rule: '!self.kernel.contains(''/../'') && !self.kernel.startsWith(''../'')
+                        && !self.kernel.endsWith(''/..'') && self.kernel != ''..'''
+                    - message: initrd path must be relative (cannot start with /)
+                      rule: '!self.initrd.startsWith(''/'')'
+                    - message: initrd path cannot contain .. components
+                      rule: '!self.initrd.contains(''/../'') && !self.initrd.startsWith(''../'')
+                        && !self.initrd.endsWith(''/..'') && self.initrd != ''..'''
+                    - message: firmware path must be relative (cannot start with /)
+                      rule: '!has(self.firmware) || size(self.firmware) == 0 || !self.firmware.startsWith(''/'')'
+                    - message: firmware path cannot contain .. components
+                      rule: '!has(self.firmware) || size(self.firmware) == 0 || (!self.firmware.contains(''/../'')
+                        && !self.firmware.startsWith(''../'') && !self.firmware.endsWith(''/..'')
+                        && self.firmware != ''..'')'
                   url:
                     description: URL contains the download URLs for the ISO
                     properties:
