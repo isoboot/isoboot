@@ -48,7 +48,7 @@ func DownloadPath(baseDir, namespace, name string, rt ResourceType, rawURL strin
 	}
 
 	filename := path.Base(u.Path)
-	if filename == "" || filename == "." || filename == "/" {
+	if filename == "" || filename == "." || filename == "/" || filename == ".." {
 		return "", fmt.Errorf("URL %q has no filename", rawURL)
 	}
 

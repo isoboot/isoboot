@@ -88,6 +88,12 @@ var _ = Describe("DownloadPath", func() {
 		Expect(err.Error()).To(ContainSubstring("invalid URL"))
 	})
 
+	It("should return an error when URL path resolves to ..", func() {
+		_, err := DownloadPath(baseDir, namespace, name, ResourceKernel, "https://example.com/a/..")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("no filename"))
+	})
+
 	It("should reject path traversal in namespace", func() {
 		_, err := DownloadPath(baseDir, "../escape", name, ResourceKernel, "https://example.com/vmlinuz")
 		Expect(err).To(HaveOccurred())
