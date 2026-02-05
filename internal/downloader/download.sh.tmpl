@@ -1,6 +1,18 @@
 #!/bin/sh
 set -e
 mkdir -p "{{.Dir}}"
+{{- if .ISO}}
+{{range .Downloads -}}
+wget -O "{{.Dest}}.tmp" "{{.URL}}" && mv "{{.Dest}}.tmp" "{{.Dest}}"
+{{end -}}
+MNTDIR="$(mktemp -d)"
+mount -o ro,loop "{{.ISO.ISOPath}}" "$MNTDIR"
+cp "$MNTDIR/{{.ISO.KernelPath}}" "{{.Dir}}/kernel"
+cp "$MNTDIR/{{.ISO.InitrdPath}}" "{{.Dir}}/initrd"
+umount "$MNTDIR"
+rmdir "$MNTDIR"
+{{- else}}
 {{range .Downloads -}}
 curl -fSL -o "{{.Dest}}.tmp" "{{.URL}}" && mv "{{.Dest}}.tmp" "{{.Dest}}"
-{{end}}
+{{end -}}
+{{- end}}
