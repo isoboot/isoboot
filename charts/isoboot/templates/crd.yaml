@@ -134,6 +134,10 @@ spec:
                       rule: self.kernel.matches('^[a-zA-Z0-9/._-]+$')
                     - message: initrd path contains invalid characters
                       rule: self.initrd.matches('^[a-zA-Z0-9/._-]+$')
+                    - message: kernel path must not contain path traversal (..)
+                      rule: '!self.kernel.contains(''..'')'
+                    - message: initrd path must not contain path traversal (..)
+                      rule: '!self.initrd.contains(''..'')'
                   url:
                     description: URL contains the download URLs for the ISO
                     properties:
