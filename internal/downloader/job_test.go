@@ -27,12 +27,12 @@ import (
 )
 
 const (
-	testImage      = "alpine:3.23"
-	testBaseDir    = "/data"
-	testShasumURL  = "https://example.com/SHA256SUMS"
-	testKernelURL  = "https://example.com/vmlinuz"
-	testInitrdURL  = "https://example.com/initrd.img"
-	testNamespace  = "default"
+	testImage     = "alpine:3.23"
+	testBaseDir   = "/data"
+	testShasumURL = "https://example.com/SHA256SUMS"
+	testKernelURL = "https://example.com/vmlinuz"
+	testInitrdURL = "https://example.com/initrd.img"
+	testNamespace = "default"
 )
 
 func TestBuild_KernelInitrd(t *testing.T) {
