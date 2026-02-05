@@ -63,6 +63,7 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
+          - --host-path-base-dir=/var/lib/isoboot
         image: controller:latest
         name: manager
         ports: []
@@ -93,7 +94,13 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts: []
-      volumes: []
+        volumeMounts:
+          - name: isoboot-data
+            mountPath: /var/lib/isoboot
+      volumes:
+        - name: isoboot-data
+          hostPath:
+            path: /var/lib/isoboot
+            type: DirectoryOrCreate
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
