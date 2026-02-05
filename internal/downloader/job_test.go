@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
@@ -69,6 +70,17 @@ func TestBuild_KernelInitrd(t *testing.T) {
 	// No capabilities for non-ISO
 	if container.SecurityContext != nil {
 		t.Error("non-ISO job should not have security context")
+	}
+
+	// TTL auto-cleanup
+	if job.Spec.TTLSecondsAfterFinished == nil || *job.Spec.TTLSecondsAfterFinished != 600 {
+		t.Error("TTLSecondsAfterFinished should be 600")
+	}
+
+	// HostPath type
+	vol := job.Spec.Template.Spec.Volumes[0]
+	if vol.HostPath.Type == nil || *vol.HostPath.Type != corev1.HostPathDirectoryOrCreate {
+		t.Error("HostPath type should be DirectoryOrCreate")
 	}
 
 	script := container.Command[2]

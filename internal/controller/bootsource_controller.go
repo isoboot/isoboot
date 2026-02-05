@@ -30,6 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
+	"github.com/isoboot/isoboot/internal/downloader"
 )
 
 // JobBuilder builds a Kubernetes Job for a BootSource.
@@ -111,7 +112,7 @@ func (r *BootSourceReconciler) reconcilePending(ctx context.Context, bootSource 
 // reconcileDownloading checks the download Job status and transitions accordingly.
 func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSource *isobootv1alpha1.BootSource) (ctrl.Result, error) {
 	job := &batchv1.Job{}
-	jobName := types.NamespacedName{Name: bootSource.Name + "-download", Namespace: bootSource.Namespace}
+	jobName := types.NamespacedName{Name: bootSource.Name + downloader.JobNameSuffix, Namespace: bootSource.Namespace}
 	if err := r.Get(ctx, jobName, job); err != nil {
 		if errors.IsNotFound(err) {
 			// Job was deleted externally; go back to Pending to recreate

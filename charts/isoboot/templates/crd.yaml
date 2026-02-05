@@ -56,18 +56,16 @@ spec:
                         description: Binary is the URL to download the file from
                         type: string
                       shasum:
-                        description: Shasum is the URL to download the checksum file
-                          from
+                        description: |-
+                          Shasum is the URL to download the checksum file from.
+                          When set, the downloaded file is verified against this checksum.
                         type: string
                     required:
                     - binary
-                    - shasum
                     type: object
                     x-kubernetes-validations:
                     - message: binary URL is required
                       rule: size(self.binary) > 0
-                    - message: shasum URL is required
-                      rule: size(self.shasum) > 0
                     - message: binary URL must use https
                       rule: size(self.binary) == 0 || self.binary.startsWith('https://')
                     - message: shasum URL must use https
@@ -89,18 +87,16 @@ spec:
                         description: Binary is the URL to download the file from
                         type: string
                       shasum:
-                        description: Shasum is the URL to download the checksum file
-                          from
+                        description: |-
+                          Shasum is the URL to download the checksum file from.
+                          When set, the downloaded file is verified against this checksum.
                         type: string
                     required:
                     - binary
-                    - shasum
                     type: object
                     x-kubernetes-validations:
                     - message: binary URL is required
                       rule: size(self.binary) > 0
-                    - message: shasum URL is required
-                      rule: size(self.shasum) > 0
                     - message: binary URL must use https
                       rule: size(self.binary) == 0 || self.binary.startsWith('https://')
                     - message: shasum URL must use https
@@ -147,18 +143,16 @@ spec:
                         description: Binary is the URL to download the file from
                         type: string
                       shasum:
-                        description: Shasum is the URL to download the checksum file
-                          from
+                        description: |-
+                          Shasum is the URL to download the checksum file from.
+                          When set, the downloaded file is verified against this checksum.
                         type: string
                     required:
                     - binary
-                    - shasum
                     type: object
                     x-kubernetes-validations:
                     - message: binary URL is required
                       rule: size(self.binary) > 0
-                    - message: shasum URL is required
-                      rule: size(self.shasum) > 0
                     - message: binary URL must use https
                       rule: size(self.binary) == 0 || self.binary.startsWith('https://')
                     - message: shasum URL must use https
@@ -186,18 +180,16 @@ spec:
                         description: Binary is the URL to download the file from
                         type: string
                       shasum:
-                        description: Shasum is the URL to download the checksum file
-                          from
+                        description: |-
+                          Shasum is the URL to download the checksum file from.
+                          When set, the downloaded file is verified against this checksum.
                         type: string
                     required:
                     - binary
-                    - shasum
                     type: object
                     x-kubernetes-validations:
                     - message: binary URL is required
                       rule: size(self.binary) > 0
-                    - message: shasum URL is required
-                      rule: size(self.shasum) > 0
                     - message: binary URL must use https
                       rule: size(self.binary) == 0 || self.binary.startsWith('https://')
                     - message: shasum URL must use https

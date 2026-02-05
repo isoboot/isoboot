@@ -22,15 +22,16 @@ import (
 
 // URLSource defines URLs for a downloadable resource and its checksum file
 // +kubebuilder:validation:XValidation:rule="size(self.binary) > 0",message="binary URL is required"
-// +kubebuilder:validation:XValidation:rule="size(self.shasum) > 0",message="shasum URL is required"
 // +kubebuilder:validation:XValidation:rule="size(self.binary) == 0 || self.binary.startsWith('https://')",message="binary URL must use https"
 // +kubebuilder:validation:XValidation:rule="size(self.shasum) == 0 || self.shasum.startsWith('https://')",message="shasum URL must use https"
 // +kubebuilder:validation:XValidation:rule="size(self.binary) == 0 || size(self.shasum) == 0 || !self.binary.startsWith('https://') || !self.shasum.startsWith('https://') || self.binary.split('://')[1].split('/')[0] == self.shasum.split('://')[1].split('/')[0]",message="binary and shasum URLs must be on the same server"
 type URLSource struct {
 	// Binary is the URL to download the file from
 	Binary string `json:"binary"`
-	// Shasum is the URL to download the checksum file from
-	Shasum string `json:"shasum"`
+	// Shasum is the URL to download the checksum file from.
+	// When set, the downloaded file is verified against this checksum.
+	// +optional
+	Shasum string `json:"shasum,omitempty"`
 }
 
 // PathSource defines paths inside an ISO image
