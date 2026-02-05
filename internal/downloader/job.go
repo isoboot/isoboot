@@ -32,48 +32,23 @@ import (
 //go:embed download.sh.tmpl
 var scriptTemplate string
 
-// DownloadItem represents a single file to download.
-type DownloadItem struct {
+// downloadItem represents a single file to download.
+type downloadItem struct {
 	URL  string
 	Dest string
 }
 
-type templateData struct {
-	Dir       string
-	Downloads []DownloadItem
+// isoData holds ISO-specific template fields for extracting kernel/initrd.
+type isoData struct {
+	ISOPath    string
+	KernelPath string
+	InitrdPath string
 }
 
-// ExtractDownloads builds the list of download items from a BootSourceSpec.
-func ExtractDownloads(spec isobootv1alpha1.BootSourceSpec, baseDir, namespace, name string) []DownloadItem {
-	dir := filepath.Join(baseDir, namespace, name)
-	var items []DownloadItem
-
-	if spec.Kernel != nil {
-		items = append(items, DownloadItem{
-			URL:  spec.Kernel.URL.Binary,
-			Dest: filepath.Join(dir, "kernel"),
-		})
-	}
-	if spec.Initrd != nil {
-		items = append(items, DownloadItem{
-			URL:  spec.Initrd.URL.Binary,
-			Dest: filepath.Join(dir, "initrd"),
-		})
-	}
-	if spec.Firmware != nil {
-		items = append(items, DownloadItem{
-			URL:  spec.Firmware.URL.Binary,
-			Dest: filepath.Join(dir, "firmware"),
-		})
-	}
-	if spec.ISO != nil {
-		items = append(items, DownloadItem{
-			URL:  spec.ISO.URL.Binary,
-			Dest: filepath.Join(dir, "iso"),
-		})
-	}
-
-	return items
+type templateData struct {
+	Dir       string
+	Downloads []downloadItem
+	ISO       *isoData
 }
 
 // JobBuilder builds download Jobs for a BootSource.
@@ -92,20 +67,52 @@ func (b *JobBuilder) Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error)
 }
 
 func buildJob(bs *isobootv1alpha1.BootSource, baseDir string) (*batchv1.Job, error) {
-	downloads := ExtractDownloads(bs.Spec, baseDir, bs.Namespace, bs.Name)
 	dir := filepath.Join(baseDir, bs.Namespace, bs.Name)
+	spec := bs.Spec
+
+	var downloads []downloadItem
+	if spec.Kernel != nil {
+		downloads = append(downloads, downloadItem{URL: spec.Kernel.URL.Binary, Dest: filepath.Join(dir, "kernel")})
+	}
+	if spec.Initrd != nil {
+		downloads = append(downloads, downloadItem{URL: spec.Initrd.URL.Binary, Dest: filepath.Join(dir, "initrd")})
+	}
+	if spec.Firmware != nil {
+		downloads = append(downloads, downloadItem{URL: spec.Firmware.URL.Binary, Dest: filepath.Join(dir, "firmware")})
+	}
+	if spec.ISO != nil {
+		downloads = append(downloads, downloadItem{URL: spec.ISO.URL.Binary, Dest: filepath.Join(dir, "iso")})
+	}
 
 	tmpl, err := template.New("download").Parse(scriptTemplate)
 	if err != nil {
 		return nil, err
 	}
 
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, templateData{
+	data := templateData{
 		Dir:       dir,
 		Downloads: downloads,
-	}); err != nil {
+	}
+	if bs.Spec.ISO != nil {
+		data.ISO = &isoData{
+			ISOPath:    filepath.Join(dir, "iso"),
+			KernelPath: bs.Spec.ISO.Path.Kernel,
+			InitrdPath: bs.Spec.ISO.Path.Initrd,
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
 		return nil, err
+	}
+
+	image := "curlimages/curl"
+	var secCtx *corev1.SecurityContext
+	if bs.Spec.ISO != nil {
+		// ISO extraction needs mount; use alpine (has mount+curl) and run privileged
+		image = "alpine"
+		privileged := true
+		secCtx = &corev1.SecurityContext{Privileged: &privileged}
 	}
 
 	backoffLimit := int32(3)
@@ -129,9 +136,10 @@ func buildJob(bs *isobootv1alpha1.BootSource, baseDir string) (*batchv1.Job, err
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{
 						{
-							Name:    "download",
-							Image:   "curlimages/curl",
-							Command: []string{"/bin/sh", "-c", buf.String()},
+							Name:            "download",
+							Image:           image,
+							Command:         []string{"/bin/sh", "-c", buf.String()},
+							SecurityContext: secCtx,
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "data",

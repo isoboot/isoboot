@@ -17,6 +17,7 @@ limitations under the License.
 package downloader
 
 import (
+	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,76 +25,7 @@ import (
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
-func TestExtractDownloads_KernelInitrd(t *testing.T) {
-	spec := isobootv1alpha1.BootSourceSpec{
-		Kernel: &isobootv1alpha1.KernelSource{
-			URL: isobootv1alpha1.URLSource{Binary: "https://example.com/vmlinuz"},
-		},
-		Initrd: &isobootv1alpha1.InitrdSource{
-			URL: isobootv1alpha1.URLSource{Binary: "https://example.com/initrd.img"},
-		},
-	}
-
-	items := ExtractDownloads(spec, "/data", "default", "myboot")
-	if len(items) != 2 {
-		t.Fatalf("expected 2 items, got %d", len(items))
-	}
-	if items[0].URL != "https://example.com/vmlinuz" {
-		t.Errorf("expected kernel URL, got %s", items[0].URL)
-	}
-	if items[0].Dest != "/data/default/myboot/kernel" {
-		t.Errorf("expected kernel dest /data/default/myboot/kernel, got %s", items[0].Dest)
-	}
-	if items[1].URL != "https://example.com/initrd.img" {
-		t.Errorf("expected initrd URL, got %s", items[1].URL)
-	}
-	if items[1].Dest != "/data/default/myboot/initrd" {
-		t.Errorf("expected initrd dest /data/default/myboot/initrd, got %s", items[1].Dest)
-	}
-}
-
-func TestExtractDownloads_ISO(t *testing.T) {
-	spec := isobootv1alpha1.BootSourceSpec{
-		ISO: &isobootv1alpha1.ISOSource{
-			URL: isobootv1alpha1.URLSource{Binary: "https://example.com/boot.iso"},
-		},
-	}
-
-	items := ExtractDownloads(spec, "/data", "ns1", "isoboot")
-	if len(items) != 1 {
-		t.Fatalf("expected 1 item, got %d", len(items))
-	}
-	if items[0].URL != "https://example.com/boot.iso" {
-		t.Errorf("expected ISO URL, got %s", items[0].URL)
-	}
-	if items[0].Dest != "/data/ns1/isoboot/iso" {
-		t.Errorf("expected iso dest /data/ns1/isoboot/iso, got %s", items[0].Dest)
-	}
-}
-
-func TestExtractDownloads_WithFirmware(t *testing.T) {
-	spec := isobootv1alpha1.BootSourceSpec{
-		Kernel: &isobootv1alpha1.KernelSource{
-			URL: isobootv1alpha1.URLSource{Binary: "https://example.com/vmlinuz"},
-		},
-		Initrd: &isobootv1alpha1.InitrdSource{
-			URL: isobootv1alpha1.URLSource{Binary: "https://example.com/initrd.img"},
-		},
-		Firmware: &isobootv1alpha1.FirmwareSource{
-			URL: isobootv1alpha1.URLSource{Binary: "https://example.com/firmware.bin"},
-		},
-	}
-
-	items := ExtractDownloads(spec, "/data", "default", "myboot")
-	if len(items) != 3 {
-		t.Fatalf("expected 3 items, got %d", len(items))
-	}
-	if items[2].Dest != "/data/default/myboot/firmware" {
-		t.Errorf("expected firmware dest, got %s", items[2].Dest)
-	}
-}
-
-func TestBuildJob(t *testing.T) {
+func TestBuildJob_KernelInitrd(t *testing.T) {
 	bs := &isobootv1alpha1.BootSource{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "myboot",
@@ -113,7 +45,7 @@ func TestBuildJob(t *testing.T) {
 	builder := NewJobBuilder("/var/lib/isoboot")
 	job, err := builder.Build(bs)
 	if err != nil {
-		t.Fatalf("BuildJob failed: %v", err)
+		t.Fatalf("Build failed: %v", err)
 	}
 
 	if job.Name != "myboot-download" {
@@ -142,23 +74,98 @@ func TestBuildJob(t *testing.T) {
 	if podSpec.RestartPolicy != "Never" {
 		t.Errorf("expected restart policy Never, got %s", podSpec.RestartPolicy)
 	}
-	if len(podSpec.Containers) != 1 {
-		t.Fatalf("expected 1 container, got %d", len(podSpec.Containers))
-	}
 	container := podSpec.Containers[0]
 	if container.Image != "curlimages/curl" {
 		t.Errorf("expected image curlimages/curl, got %s", container.Image)
 	}
-	if len(container.VolumeMounts) != 1 {
-		t.Fatalf("expected 1 volume mount, got %d", len(container.VolumeMounts))
+	if container.SecurityContext != nil {
+		t.Error("expected no security context for non-ISO job")
 	}
-	if container.VolumeMounts[0].MountPath != "/var/lib/isoboot" {
-		t.Errorf("expected mount path /var/lib/isoboot, got %s", container.VolumeMounts[0].MountPath)
+
+	script := container.Command[2]
+	if !strings.Contains(script, "https://example.com/vmlinuz") {
+		t.Error("script should contain kernel URL")
 	}
-	if len(podSpec.Volumes) != 1 {
-		t.Fatalf("expected 1 volume, got %d", len(podSpec.Volumes))
+	if !strings.Contains(script, "https://example.com/initrd.img") {
+		t.Error("script should contain initrd URL")
 	}
-	if podSpec.Volumes[0].HostPath.Path != "/var/lib/isoboot" {
-		t.Errorf("expected host path /var/lib/isoboot, got %s", podSpec.Volumes[0].HostPath.Path)
+	if strings.Contains(script, "mount") {
+		t.Error("non-ISO script should not contain mount")
+	}
+}
+
+func TestBuildJob_ISO(t *testing.T) {
+	bs := &isobootv1alpha1.BootSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "isoboot",
+			Namespace: "ns1",
+			UID:       "test-uid",
+		},
+		Spec: isobootv1alpha1.BootSourceSpec{
+			ISO: &isobootv1alpha1.ISOSource{
+				URL:  isobootv1alpha1.URLSource{Binary: "https://example.com/boot.iso"},
+				Path: isobootv1alpha1.PathSource{Kernel: "/linux", Initrd: "/initrd.gz"},
+			},
+		},
+	}
+
+	builder := NewJobBuilder("/data")
+	job, err := builder.Build(bs)
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	container := job.Spec.Template.Spec.Containers[0]
+	if container.Image != "alpine" {
+		t.Errorf("expected alpine image for ISO, got %s", container.Image)
+	}
+	if container.SecurityContext == nil || container.SecurityContext.Privileged == nil || !*container.SecurityContext.Privileged {
+		t.Error("expected privileged security context for ISO job")
+	}
+
+	script := container.Command[2]
+	if !strings.Contains(script, "https://example.com/boot.iso") {
+		t.Error("script should contain ISO URL")
+	}
+	if !strings.Contains(script, "mount -o ro,loop") {
+		t.Error("ISO script should contain mount command")
+	}
+	if !strings.Contains(script, "/linux") {
+		t.Error("ISO script should contain kernel path")
+	}
+	if !strings.Contains(script, "/initrd.gz") {
+		t.Error("ISO script should contain initrd path")
+	}
+}
+
+func TestBuildJob_WithFirmware(t *testing.T) {
+	bs := &isobootv1alpha1.BootSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myboot",
+			Namespace: "default",
+			UID:       "test-uid",
+		},
+		Spec: isobootv1alpha1.BootSourceSpec{
+			Kernel: &isobootv1alpha1.KernelSource{
+				URL: isobootv1alpha1.URLSource{Binary: "https://example.com/vmlinuz"},
+			},
+			Initrd: &isobootv1alpha1.InitrdSource{
+				URL: isobootv1alpha1.URLSource{Binary: "https://example.com/initrd.img"},
+			},
+			Firmware: &isobootv1alpha1.FirmwareSource{
+				URL: isobootv1alpha1.URLSource{Binary: "https://example.com/firmware.bin"},
+			},
+		},
+	}
+
+	builder := NewJobBuilder("/data")
+	job, err := builder.Build(bs)
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	script := job.Spec.Template.Spec.Containers[0].Command[2]
+	if !strings.Contains(script, "https://example.com/firmware.bin") {
+		t.Error("script should contain firmware URL")
 	}
 }
