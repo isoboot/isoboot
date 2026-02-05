@@ -19,6 +19,7 @@ package downloader
 import (
 	"bytes"
 	_ "embed"
+	"fmt"
 	"path"
 	"path/filepath"
 	"text/template"
@@ -30,8 +31,13 @@ import (
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
+// JobNameSuffix is appended to the BootSource name to form the download Job name.
+const JobNameSuffix = "-download"
+
 //go:embed download.sh.tmpl
 var scriptTemplate string
+
+var scriptTmpl = template.Must(template.New("download").Parse(scriptTemplate))
 
 // fileItem is a single downloadable file passed to the shell template.
 type fileItem struct {
@@ -126,13 +132,9 @@ func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job
 		}
 	}
 
-	tmpl, err := template.New("download").Parse(scriptTemplate)
-	if err != nil {
-		return nil, err
-	}
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return nil, err
+	if err := scriptTmpl.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("rendering download script: %w", err)
 	}
 
 	var secCtx *corev1.SecurityContext
@@ -145,9 +147,11 @@ func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job
 	}
 
 	backoffLimit := int32(3)
+	ttl := int32(600)
+	hostPathType := corev1.HostPathDirectoryOrCreate
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      bootSource.Name + "-download",
+			Name:      bootSource.Name + JobNameSuffix,
 			Namespace: bootSource.Namespace,
 			Labels: map[string]string{
 				"isoboot.github.io/bootsource": bootSource.Name,
@@ -159,7 +163,8 @@ func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job
 			},
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: &backoffLimit,
+			BackoffLimit:            &backoffLimit,
+			TTLSecondsAfterFinished: &ttl,
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
@@ -183,6 +188,7 @@ func (b *JobBuilder) Build(bootSource *isobootv1alpha1.BootSource) (*batchv1.Job
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
 									Path: b.BaseDir,
+									Type: &hostPathType,
 								},
 							},
 						},
