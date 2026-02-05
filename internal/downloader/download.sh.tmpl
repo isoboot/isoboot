@@ -64,7 +64,7 @@ rmdir "$MNTDIR"
 echo ">> Building initrd with firmware..."
 mkdir -p "$DIR/initrd/with-firmware"
 cat "$DIR/initrd/{{.ISO.InitrdBasename}}" "$DIR/firmware/{{.ISO.FirmwareBasename}}" > "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}.tmp" && mv "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}.tmp" "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}"
-echo "   DONE: initrd/with-firmware/{{.ISO.InitrdBasename}} ($(wc -c < "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}") bytes)"
+echo "   DONE: initrd/with-firmware/{{.ISO.InitrdBasename}} ($(du -h "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}" | awk '{print $1}'))"
 {{- end}}
 {{- end}}
 
