@@ -40,8 +40,8 @@ type URLSource struct {
 // +kubebuilder:validation:XValidation:rule="!self.kernel.contains('/../') && !self.kernel.startsWith('../') && !self.kernel.endsWith('/..') && self.kernel != '..'",message="kernel path cannot contain .. components"
 // +kubebuilder:validation:XValidation:rule="!self.initrd.startsWith('/')",message="initrd path must be relative (cannot start with /)"
 // +kubebuilder:validation:XValidation:rule="!self.initrd.contains('/../') && !self.initrd.startsWith('../') && !self.initrd.endsWith('/..') && self.initrd != '..'",message="initrd path cannot contain .. components"
-// +kubebuilder:validation:XValidation:rule="size(self.firmware) == 0 || !self.firmware.startsWith('/')",message="firmware path must be relative (cannot start with /)"
-// +kubebuilder:validation:XValidation:rule="size(self.firmware) == 0 || (!self.firmware.contains('/../') && !self.firmware.startsWith('../') && !self.firmware.endsWith('/..') && self.firmware != '..')",message="firmware path cannot contain .. components"
+// +kubebuilder:validation:XValidation:rule="!has(self.firmware) || size(self.firmware) == 0 || !self.firmware.startsWith('/')",message="firmware path must be relative (cannot start with /)"
+// +kubebuilder:validation:XValidation:rule="!has(self.firmware) || size(self.firmware) == 0 || (!self.firmware.contains('/../') && !self.firmware.startsWith('../') && !self.firmware.endsWith('/..') && self.firmware != '..')",message="firmware path cannot contain .. components"
 type PathSource struct {
 	// Kernel is the path to the kernel inside the ISO
 	Kernel string `json:"kernel"`

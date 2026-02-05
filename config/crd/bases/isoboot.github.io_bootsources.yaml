@@ -145,11 +145,11 @@ spec:
                       rule: '!self.initrd.contains(''/../'') && !self.initrd.startsWith(''../'')
                         && !self.initrd.endsWith(''/..'') && self.initrd != ''..'''
                     - message: firmware path must be relative (cannot start with /)
-                      rule: size(self.firmware) == 0 || !self.firmware.startsWith('/')
+                      rule: '!has(self.firmware) || size(self.firmware) == 0 || !self.firmware.startsWith(''/'')'
                     - message: firmware path cannot contain .. components
-                      rule: size(self.firmware) == 0 || (!self.firmware.contains('/../')
-                        && !self.firmware.startsWith('../') && !self.firmware.endsWith('/..')
-                        && self.firmware != '..')
+                      rule: '!has(self.firmware) || size(self.firmware) == 0 || (!self.firmware.contains(''/../'')
+                        && !self.firmware.startsWith(''../'') && !self.firmware.endsWith(''/..'')
+                        && self.firmware != ''..'')'
                   url:
                     description: URL contains the download URLs for the ISO
                     properties:
