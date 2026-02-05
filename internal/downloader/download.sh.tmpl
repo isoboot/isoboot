@@ -54,15 +54,16 @@ mkdir -p "$DIR/initrd"
 cp "$MNTDIR/{{.ISO.InitrdPath}}" "$DIR/initrd/{{.ISO.InitrdBasename}}.tmp" && mv "$DIR/initrd/{{.ISO.InitrdBasename}}.tmp" "$DIR/initrd/{{.ISO.InitrdBasename}}"
 echo "   EXTRACTED: initrd/{{.ISO.InitrdBasename}} from {{.ISO.InitrdPath}}"
 {{- if .ISO.FirmwarePath}}
-cp "$MNTDIR/{{.ISO.FirmwarePath}}" "$DIR/firmware.tmp" && mv "$DIR/firmware.tmp" "$DIR/firmware"
-echo "   EXTRACTED: firmware from {{.ISO.FirmwarePath}}"
+mkdir -p "$DIR/firmware"
+cp "$MNTDIR/{{.ISO.FirmwarePath}}" "$DIR/firmware/{{.ISO.FirmwareBasename}}.tmp" && mv "$DIR/firmware/{{.ISO.FirmwareBasename}}.tmp" "$DIR/firmware/{{.ISO.FirmwareBasename}}"
+echo "   EXTRACTED: firmware/{{.ISO.FirmwareBasename}} from {{.ISO.FirmwarePath}}"
 {{- end}}
 umount "$MNTDIR"
 rmdir "$MNTDIR"
 {{- if .ISO.FirmwarePath}}
 echo ">> Building initrd with firmware..."
 mkdir -p "$DIR/initrd/with-firmware"
-cat "$DIR/initrd/{{.ISO.InitrdBasename}}" "$DIR/firmware" > "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}.tmp" && mv "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}.tmp" "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}"
+cat "$DIR/initrd/{{.ISO.InitrdBasename}}" "$DIR/firmware/{{.ISO.FirmwareBasename}}" > "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}.tmp" && mv "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}.tmp" "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}"
 echo "   DONE: initrd/with-firmware/{{.ISO.InitrdBasename}} ($(wc -c < "$DIR/initrd/with-firmware/{{.ISO.InitrdBasename}}") bytes)"
 {{- end}}
 {{- end}}

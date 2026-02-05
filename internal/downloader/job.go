@@ -49,7 +49,8 @@ type isoData struct {
 	KernelBasename string // e.g. "linux"
 	InitrdPath     string
 	InitrdBasename string // e.g. "initrd.gz"
-	FirmwarePath   string // empty if no firmware inside ISO
+	FirmwarePath     string // empty if no firmware inside ISO
+	FirmwareBasename string // e.g. "firmware.cpio.gz"
 }
 
 type templateData struct {
@@ -103,7 +104,8 @@ func (b *JobBuilder) Build(bs *isobootv1alpha1.BootSource) (*batchv1.Job, error)
 			KernelBasename: path.Base(spec.ISO.Path.Kernel),
 			InitrdPath:     spec.ISO.Path.Initrd,
 			InitrdBasename: path.Base(spec.ISO.Path.Initrd),
-			FirmwarePath:   spec.ISO.Path.Firmware,
+			FirmwarePath:     spec.ISO.Path.Firmware,
+			FirmwareBasename: path.Base(spec.ISO.Path.Firmware),
 		}
 	}
 
