@@ -39,25 +39,23 @@ import (
 // Validation rules tested:
 //
 // URLSource:
-//   1. binary URL is required (non-empty)
-//   2. shasum URL is required (non-empty)
-//   3. binary URL must use https
-//   4. shasum URL must use https
-//   5. binary and shasum URLs must be on the same server
+//   - binary URL is required (non-empty)
+//   - shasum URL is required (non-empty)
+//   - binary URL must use https
+//   - shasum URL must use https
+//   - binary and shasum URLs must be on the same server
 //
 // ISOSource:
-//   6. path.kernel is required (non-empty)
-//   7. path.initrd is required (non-empty)
+//   - path.kernel is required (non-empty)
+//   - path.initrd is required (non-empty)
 //
-// PathSource:
-//   8. kernel path must contain only safe characters
-//   9. initrd path must contain only safe characters
-//  10. kernel path must not contain path traversal (..)
-//  11. initrd path must not contain path traversal (..)
+// PathSource (character allowlist + traversal prevention):
+//   - kernel/initrd path must contain only safe characters
+//   - kernel/initrd path must not contain path traversal (..)
 //
-// BootSourceSpec:
-//  12. must specify either (kernel AND initrd) OR iso
-//  13. cannot specify both (kernel OR initrd) AND iso
+// BootSourceSpec (mutual exclusivity):
+//   - must specify either (kernel AND initrd) OR iso
+//   - cannot specify both (kernel OR initrd) AND iso
 
 var (
 	testEnv   *envtest.Environment
@@ -170,7 +168,7 @@ var _ = Describe("BootSource Validation", func() {
 			valid: true,
 		},
 
-		// === URLSource: binary URL required [Rule 1] ===
+		// === URLSource: binary URL required ===
 		{
 			name: "invalid: empty kernel binary URL",
 			spec: v1alpha1.BootSourceSpec{
@@ -190,7 +188,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "binary URL is required",
 		},
 
-		// === URLSource: shasum URL required [Rule 2] ===
+		// === URLSource: shasum URL required ===
 		{
 			name: "invalid: empty kernel shasum URL",
 			spec: v1alpha1.BootSourceSpec{
@@ -201,7 +199,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "shasum URL is required",
 		},
 
-		// === URLSource: binary must be https [Rule 3] ===
+		// === URLSource: binary must be https ===
 		{
 			name: "invalid: http binary URL",
 			spec: v1alpha1.BootSourceSpec{
@@ -212,7 +210,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "binary URL must use https",
 		},
 
-		// === URLSource: shasum must be https [Rule 4] ===
+		// === URLSource: shasum must be https ===
 		{
 			name: "invalid: http shasum URL",
 			spec: v1alpha1.BootSourceSpec{
@@ -223,7 +221,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "shasum URL must use https",
 		},
 
-		// === URLSource: same server [Rule 5] ===
+		// === URLSource: same server ===
 		{
 			name: "invalid: binary and shasum on different servers",
 			spec: v1alpha1.BootSourceSpec{
@@ -238,7 +236,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "binary and shasum URLs must be on the same server",
 		},
 
-		// === ISOSource: path.kernel required [Rule 6] ===
+		// === ISOSource: path.kernel required ===
 		{
 			name: "invalid: iso with empty path.kernel",
 			spec: v1alpha1.BootSourceSpec{
@@ -251,7 +249,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "iso requires path.kernel to be specified",
 		},
 
-		// === ISOSource: path.initrd required [Rule 7] ===
+		// === ISOSource: path.initrd required ===
 		{
 			name: "invalid: iso with empty path.initrd",
 			spec: v1alpha1.BootSourceSpec{
@@ -264,7 +262,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "iso requires path.initrd to be specified",
 		},
 
-		// === PathSource: kernel path safe characters [Rule 8] ===
+		// === PathSource: kernel path safe characters ===
 		{
 			name: "invalid: kernel path with semicolon",
 			spec: v1alpha1.BootSourceSpec{
@@ -299,7 +297,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "kernel path contains invalid characters",
 		},
 
-		// === PathSource: initrd path safe characters [Rule 9] ===
+		// === PathSource: initrd path safe characters ===
 		{
 			name: "invalid: initrd path with shell expansion",
 			spec: v1alpha1.BootSourceSpec{
@@ -323,7 +321,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "initrd path contains invalid characters",
 		},
 
-		// === PathSource: kernel path traversal [Rule 10] ===
+		// === PathSource: kernel path traversal ===
 		{
 			name: "invalid: kernel path with .. traversal",
 			spec: v1alpha1.BootSourceSpec{
@@ -347,7 +345,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "kernel path must not contain path traversal",
 		},
 
-		// === PathSource: initrd path traversal [Rule 11] ===
+		// === PathSource: initrd path traversal ===
 		{
 			name: "invalid: initrd path with .. traversal",
 			spec: v1alpha1.BootSourceSpec{
@@ -371,7 +369,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "initrd path must not contain path traversal",
 		},
 
-		// === BootSourceSpec: (kernel && initrd) || iso [Rule 12] ===
+		// === BootSourceSpec: (kernel && initrd) || iso ===
 		{
 			name:     "invalid: empty spec",
 			spec:     v1alpha1.BootSourceSpec{},
@@ -397,7 +395,7 @@ var _ = Describe("BootSource Validation", func() {
 			errorMsg: "must specify either (kernel and initrd) or iso",
 		},
 
-		// === BootSourceSpec: XOR constraint [Rule 13] ===
+		// === BootSourceSpec: XOR constraint ===
 		{
 			name:     "invalid: kernel + initrd + iso",
 			spec:     v1alpha1.BootSourceSpec{Kernel: kernelSource(), Initrd: initrdSource(), ISO: isoSource()},
