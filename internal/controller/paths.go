@@ -39,7 +39,7 @@ const (
 // single quotes. Only alphanumerics, dots, hyphens, underscores, plus, percent,
 // and tilde are allowed. This prevents shell injection via crafted URL filenames
 // (e.g. a single quote would break out of single-quoted shell contexts).
-var safeFilename = regexp.MustCompile(`^[a-zA-Z0-9._\-+%~]+$`)
+var safeFilename = regexp.MustCompile(`^[a-zA-Z0-9._+%~-]+$`)
 
 // DownloadPath computes the host-local file path where a downloaded resource
 // should be stored. The layout is:

@@ -79,7 +79,7 @@ if [ -f '{{ .Firmware.OutputPath }}' ]; then
   echo 'SKIP {{ .Firmware.OutputPath }} (already exists)'
 else
   mkdir -p '{{ .Firmware.OutputDir }}'
-  cat '{{ .Firmware.FirmwarePath }}' '{{ .Firmware.InitrdPath }}' > '{{ .Firmware.OutputPath }}'
+  cat '{{ .Firmware.InitrdPath }}' '{{ .Firmware.FirmwarePath }}' > '{{ .Firmware.OutputPath }}'
   echo 'Combined initrd: {{ .Firmware.OutputPath }}'
 fi
 {{- end }}

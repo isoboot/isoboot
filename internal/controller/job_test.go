@@ -18,6 +18,7 @@ package controller
 
 import (
 	"encoding/base64"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -351,12 +352,31 @@ var _ = Describe("Job construction", func() {
 			script := buildDownloadScript(tasks, nil, fw)
 			Expect(script).To(ContainSubstring("Building combined initrd with firmware"))
 			Expect(script).To(ContainSubstring("mkdir -p '/data/initrd/with-firmware'"))
-			Expect(script).To(ContainSubstring("cat '/data/firmware/firmware.cpio.gz' '/data/initrd/initrd.img' > '/data/initrd/with-firmware/initrd.img'"))
+			Expect(script).To(ContainSubstring("cat '/data/initrd/initrd.img' '/data/firmware/firmware.cpio.gz' > '/data/initrd/with-firmware/initrd.img'"))
 			Expect(script).To(ContainSubstring("Combined initrd: /data/initrd/with-firmware/initrd.img"))
 			// Skip-if-exists check
 			Expect(script).To(ContainSubstring("if [ -f '/data/initrd/with-firmware/initrd.img' ]"))
 			// du -h for combined file
 			Expect(script).To(ContainSubstring("du -h '/data/initrd/with-firmware/initrd.img'"))
+		})
+
+		It("should concatenate initrd before firmware per Debian NetbootFirmware convention", func() {
+			tasks := []downloadTask{
+				{URL: "https://example.com/initrd.img", OutputPath: "/data/initrd/initrd.img"},
+				{URL: "https://example.com/SHA256SUMS", OutputPath: "/data/initrd/SHA256SUMS"},
+			}
+			fw := &firmwareBuildInfo{
+				FirmwarePath: "/data/firmware/firmware.cpio.gz",
+				InitrdPath:   "/data/initrd/initrd.img",
+				OutputDir:    "/data/initrd/with-firmware",
+				OutputPath:   "/data/initrd/with-firmware/initrd.img",
+			}
+			script := buildDownloadScript(tasks, nil, fw)
+			initrdIdx := strings.Index(script, "cat '/data/initrd/initrd.img'")
+			firmwareIdx := strings.Index(script, "'/data/firmware/firmware.cpio.gz'")
+			Expect(initrdIdx).To(BeNumerically(">", -1), "initrd not found in cat command")
+			Expect(firmwareIdx).To(BeNumerically(">", -1), "firmware not found in cat command")
+			Expect(initrdIdx).To(BeNumerically("<", firmwareIdx), "initrd must come before firmware in cat")
 		})
 
 		It("should not include firmware concatenation when firmwareBuildInfo is nil", func() {
@@ -415,7 +435,7 @@ var _ = Describe("Job construction", func() {
 			Expect(script).To(ContainSubstring("mount -o ro,loop"))
 			// Firmware concatenation
 			Expect(script).To(ContainSubstring("Building combined initrd with firmware"))
-			Expect(script).To(ContainSubstring("cat '/data/firmware/firmware.cpio.gz' '/data/initrd/initrd' > '/data/initrd/with-firmware/initrd'"))
+			Expect(script).To(ContainSubstring("cat '/data/initrd/initrd' '/data/firmware/firmware.cpio.gz' > '/data/initrd/with-firmware/initrd'"))
 		})
 
 		It("should not include mount commands when isoExtractInfo is nil", func() {
