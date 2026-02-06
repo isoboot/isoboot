@@ -79,6 +79,10 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # - CERT_MANAGER_INSTALL_SKIP=true
 KIND_CLUSTER ?= isoboot-test-e2e
 
+# SKIP_CODEGEN skips manifests/generate/fmt/vet prerequisites in test-e2e.
+# Set to true in CI where Lint/Verify jobs already validate these.
+SKIP_CODEGEN ?= false
+
 .PHONY: setup-test-e2e
 setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	@command -v $(KIND) >/dev/null 2>&1 || { \
@@ -94,7 +98,7 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	esac
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+test-e2e: setup-test-e2e $(if $(filter false,$(SKIP_CODEGEN)),manifests generate fmt vet) ## Run the e2e tests. Expected an isolated environment using Kind.
 	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 
@@ -129,7 +133,15 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
+ifdef BUILDX_CACHE
+	$(CONTAINER_TOOL) buildx build \
+		--cache-from type=local,src=$(BUILDX_CACHE) \
+		--cache-to type=local,dest=$(BUILDX_CACHE)-new,mode=max \
+		--load -t ${IMG} .
+	rm -rf $(BUILDX_CACHE) && mv $(BUILDX_CACHE)-new $(BUILDX_CACHE)
+else
 	$(CONTAINER_TOOL) build -t ${IMG} .
+endif
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.

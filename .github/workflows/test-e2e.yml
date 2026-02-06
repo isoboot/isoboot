@@ -17,16 +17,38 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install the latest version of kind
+      - name: Get latest Kind version
+        id: kind-version
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          KIND_VERSION=$(gh api repos/kubernetes-sigs/kind/releases/latest --jq '.tag_name')
+          echo "version=$KIND_VERSION" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install Kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ steps.kind-version.outputs.version }}/kind-linux-$(go env GOARCH)
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
       - name: Verify kind installation
         run: kind version
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-kind${{ steps.kind-version.outputs.version }}-${{ hashFiles('go.sum', 'Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-kind${{ steps.kind-version.outputs.version }}-
+            ${{ runner.os }}-buildx-
+
       - name: Running Test e2e
         run: |
           go mod tidy
-          make test-e2e
+          make test-e2e SKIP_CODEGEN=true
+        env:
+          BUILDX_CACHE: /tmp/.buildx-cache
