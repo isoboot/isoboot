@@ -29,6 +29,7 @@ spec:
       labels:
         control-plane: controller-manager
         app.kubernetes.io/name: isoboot
+        app.kubernetes.io/managed-by: kustomize
     spec:
       # TODO(user): Uncomment the following code to configure the nodeAffinity expression
       # according to the platforms which are supported by your solution.
@@ -66,7 +67,6 @@ spec:
           - --download-image=alpine:3.23
         image: controller:latest
         name: manager
-        ports: []
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false
@@ -94,7 +94,5 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts: []
-      volumes: []
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
