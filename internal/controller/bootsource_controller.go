@@ -41,7 +41,7 @@ type BootSourceReconciler struct {
 }
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources,verbs=get;list;watch
-// +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources/status,verbs=get;patch
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources/finalizers,verbs=update
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=create;get;list;watch
 
@@ -66,8 +66,9 @@ func (r *BootSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// Set initial phase to Pending if not set
 	if bootSource.Status.Phase == "" {
+		patch := client.MergeFrom(bootSource.DeepCopy())
 		bootSource.Status.Phase = isobootv1alpha1.PhasePending
-		if err := r.Status().Update(ctx, bootSource); err != nil {
+		if err := r.Status().Patch(ctx, bootSource, patch); err != nil {
 			log.Error(err, "Failed to update BootSource status to Pending")
 			return ctrl.Result{}, err
 		}
@@ -103,9 +104,10 @@ func (r *BootSourceReconciler) reconcilePending(ctx context.Context, bootSource 
 		log.Info("Download job already exists", "job", job.Name)
 	}
 
+	patch := client.MergeFrom(bootSource.DeepCopy())
 	bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
 	bootSource.Status.DownloadJobName = job.Name
-	if err := r.Status().Update(ctx, bootSource); err != nil {
+	if err := r.Status().Patch(ctx, bootSource, patch); err != nil {
 		log.Error(err, "Failed to update BootSource status to Downloading")
 		return ctrl.Result{}, err
 	}
@@ -120,8 +122,9 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 
 	if bootSource.Status.DownloadJobName == "" {
 		log.Info("DownloadJobName is empty, reverting to Pending")
+		patch := client.MergeFrom(bootSource.DeepCopy())
 		bootSource.Status.Phase = isobootv1alpha1.PhasePending
-		if err := r.Status().Update(ctx, bootSource); err != nil {
+		if err := r.Status().Patch(ctx, bootSource, patch); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -132,9 +135,10 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 	if err := r.Get(ctx, jobKey, job); err != nil {
 		if errors.IsNotFound(err) {
 			log.Info("Download job not found, reverting to Pending")
+			patch := client.MergeFrom(bootSource.DeepCopy())
 			bootSource.Status.Phase = isobootv1alpha1.PhasePending
 			bootSource.Status.DownloadJobName = ""
-			if err := r.Status().Update(ctx, bootSource); err != nil {
+			if err := r.Status().Patch(ctx, bootSource, patch); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, nil
@@ -148,17 +152,19 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 			// verification in-band and exits non-zero on failure (which the
 			// controller sees as JobFailed → PhaseFailed).
 			log.Info("Download job completed, transitioning to Ready")
+			patch := client.MergeFrom(bootSource.DeepCopy())
 			bootSource.Status.Phase = isobootv1alpha1.PhaseReady
 			bootSource.Status.ArtifactPaths = buildArtifactPaths(ctx, bootSource.Spec, r.HostPathBaseDir, bootSource.Namespace, bootSource.Name)
-			if err := r.Status().Update(ctx, bootSource); err != nil {
+			if err := r.Status().Patch(ctx, bootSource, patch); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, nil
 		}
 		if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
 			log.Info("Download job failed, transitioning to Failed")
+			patch := client.MergeFrom(bootSource.DeepCopy())
 			bootSource.Status.Phase = isobootv1alpha1.PhaseFailed
-			if err := r.Status().Update(ctx, bootSource); err != nil {
+			if err := r.Status().Patch(ctx, bootSource, patch); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, nil

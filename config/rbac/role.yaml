@@ -34,4 +34,3 @@ rules:
   verbs:
   - get
   - patch
-  - update
