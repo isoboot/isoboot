@@ -111,7 +111,7 @@ type firmwareBuildInfo struct {
 // scriptData is the top-level data structure passed to the download script template.
 type scriptData struct {
 	Tasks    []scriptTask
-	ISO      *isoExtractInfo   // nil for non-ISO sources
+	ISO      *isoExtractInfo    // nil for non-ISO sources
 	Firmware *firmwareBuildInfo // nil when no firmware
 }
 
