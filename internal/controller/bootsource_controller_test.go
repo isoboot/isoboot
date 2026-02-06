@@ -254,6 +254,25 @@ var _ = Describe("BootSource Controller", func() {
 			Expect(updated.Status.DownloadJobName).To(BeEmpty())
 		})
 
+		It("should revert to Pending when DownloadJobName is empty", func() {
+			ctx := context.Background()
+			bootSource := newTestBootSource(testName, testNamespace)
+			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
+			bootSource.Status.DownloadJobName = ""
+
+			reconciler := newFakeReconciler(bootSource)
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: testName, Namespace: testNamespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &isobootv1alpha1.BootSource{}
+			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhasePending))
+		})
+
 		It("should stay in Downloading when Job is still running", func() {
 			ctx := context.Background()
 			bootSource := newTestBootSource(testName, testNamespace)

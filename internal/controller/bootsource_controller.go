@@ -116,6 +116,15 @@ func (r *BootSourceReconciler) reconcilePending(ctx context.Context, bootSource 
 func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSource *isobootv1alpha1.BootSource) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
+	if bootSource.Status.DownloadJobName == "" {
+		log.Info("DownloadJobName is empty, reverting to Pending")
+		bootSource.Status.Phase = isobootv1alpha1.PhasePending
+		if err := r.Status().Update(ctx, bootSource); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	job := &batchv1.Job{}
 	jobKey := types.NamespacedName{Name: bootSource.Status.DownloadJobName, Namespace: bootSource.Namespace}
 	if err := r.Get(ctx, jobKey, job); err != nil {
