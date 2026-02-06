@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -188,7 +189,7 @@ var _ = Describe("BootSource Controller", func() {
 			completedJob.Name = downloadJobName(testName)
 			completedJob.Namespace = testNamespace
 			completedJob.Status.Conditions = []batchv1.JobCondition{
-				{Type: batchv1.JobComplete, Status: "True"},
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
 			}
 
 			reconciler := newFakeReconciler(bootSource, completedJob)
@@ -217,7 +218,7 @@ var _ = Describe("BootSource Controller", func() {
 			failedJob.Name = downloadJobName(testName)
 			failedJob.Namespace = ns
 			failedJob.Status.Conditions = []batchv1.JobCondition{
-				{Type: batchv1.JobFailed, Status: "True"},
+				{Type: batchv1.JobFailed, Status: corev1.ConditionTrue},
 			}
 
 			reconciler := newFakeReconciler(bootSource, failedJob)
@@ -351,6 +352,7 @@ var _ = Describe("BootSource Controller", func() {
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
 				HostPathBaseDir: "/var/lib/isoboot",
+				DownloadImage:   testDownloadImage,
 			}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{

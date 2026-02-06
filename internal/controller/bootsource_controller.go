@@ -20,6 +20,7 @@ import (
 	"context"
 
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -141,7 +142,7 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 	}
 
 	for _, cond := range job.Status.Conditions {
-		if cond.Type == batchv1.JobComplete && cond.Status == "True" {
+		if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
 			log.Info("Download job completed, transitioning to Verifying")
 			bootSource.Status.Phase = isobootv1alpha1.PhaseVerifying
 			bootSource.Status.ArtifactPaths = buildArtifactPaths(ctx, bootSource.Spec, r.HostPathBaseDir, bootSource.Namespace, bootSource.Name)
@@ -150,7 +151,7 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 			}
 			return ctrl.Result{}, nil
 		}
-		if cond.Type == batchv1.JobFailed && cond.Status == "True" {
+		if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
 			log.Info("Download job failed, transitioning to Failed")
 			bootSource.Status.Phase = isobootv1alpha1.PhaseFailed
 			if err := r.Status().Update(ctx, bootSource); err != nil {

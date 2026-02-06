@@ -231,7 +231,7 @@ var _ = Describe("Job construction", func() {
 			Expect(job.OwnerReferences[0].Name).To(Equal("test-source"))
 		})
 
-		It("should use alpine image", func() {
+		It("should use the configured download image", func() {
 			source := newBootSource("test-source", "default", isobootv1alpha1.BootSourceSpec{
 				ISO: &isobootv1alpha1.ISOSource{
 					URL: isobootv1alpha1.URLSource{
