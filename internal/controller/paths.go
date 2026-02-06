@@ -33,6 +33,9 @@ const (
 	ResourceInitrd   ResourceType = "initrd"
 	ResourceFirmware ResourceType = "firmware"
 	ResourceISO      ResourceType = "iso"
+
+	// WithFirmwareDir is the subdirectory name for combined initrd+firmware files.
+	WithFirmwareDir = "with-firmware"
 )
 
 // safeFilename matches filenames that are safe for shell interpolation inside

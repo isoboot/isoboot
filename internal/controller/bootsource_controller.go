@@ -214,7 +214,7 @@ func buildArtifactPaths(ctx context.Context, spec isobootv1alpha1.BootSourceSpec
 	if spec.Firmware != nil {
 		origInitrd := paths[string(ResourceInitrd)]
 		paths["initrd-firmware"] = filepath.Join(
-			filepath.Dir(origInitrd), "with-firmware", filepath.Base(origInitrd))
+			filepath.Dir(origInitrd), WithFirmwareDir, filepath.Base(origInitrd))
 	}
 
 	return paths

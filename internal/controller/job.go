@@ -245,7 +245,7 @@ func buildDownloadJob(bootSource *isobootv1alpha1.BootSource, scheme *runtime.Sc
 		}
 
 		if initrdPath != "" {
-			outputDir := filepath.Join(filepath.Dir(initrdPath), "with-firmware")
+			outputDir := filepath.Join(filepath.Dir(initrdPath), WithFirmwareDir)
 			fw = &firmwareBuildInfo{
 				FirmwarePath: fwPath,
 				InitrdPath:   initrdPath,
