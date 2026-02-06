@@ -299,6 +299,28 @@ var _ = Describe("BootSource Controller", func() {
 		})
 	})
 
+	Context("buildArtifactPaths", func() {
+		It("should return kernel and initrd extracted paths for ISO sources", func() {
+			ctx := context.Background()
+			spec := isobootv1alpha1.BootSourceSpec{
+				ISO: &isobootv1alpha1.ISOSource{
+					URL: isobootv1alpha1.URLSource{
+						Binary: "https://example.com/boot.iso",
+						Shasum: "https://example.com/boot.iso.sha256",
+					},
+					Path: isobootv1alpha1.PathSource{
+						Kernel: "/casper/vmlinuz",
+						Initrd: "/casper/initrd.gz",
+					},
+				},
+			}
+			paths := buildArtifactPaths(ctx, spec, "/var/lib/isoboot", "default", "my-source")
+			Expect(paths).To(HaveKeyWithValue("iso", "/var/lib/isoboot/default/my-source/iso/boot.iso"))
+			Expect(paths).To(HaveKeyWithValue("kernel", "/var/lib/isoboot/default/my-source/kernel/vmlinuz"))
+			Expect(paths).To(HaveKeyWithValue("initrd", "/var/lib/isoboot/default/my-source/initrd/initrd.gz"))
+		})
+	})
+
 	Context("SetupWithManager", func() {
 		It("should register the controller with the manager", func() {
 			mgr, err := ctrl.NewManager(cfg, ctrl.Options{

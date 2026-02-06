@@ -49,9 +49,10 @@ import (
 //   - path.kernel is required (non-empty)
 //   - path.initrd is required (non-empty)
 //
-// PathSource (character allowlist + traversal prevention):
+// PathSource (character allowlist + traversal prevention + absolute path):
 //   - kernel/initrd path must contain only safe characters
 //   - kernel/initrd path must not contain path traversal (..)
+//   - kernel/initrd path must be absolute (start with /)
 //
 // BootSourceSpec (mutual exclusivity):
 //   - must specify either (kernel AND initrd) OR iso
@@ -367,6 +368,32 @@ var _ = Describe("BootSource Validation", func() {
 			},
 			valid:    false,
 			errorMsg: "initrd path must not contain path traversal",
+		},
+
+		// === PathSource: kernel path must be absolute ===
+		{
+			name: "invalid: kernel path without leading slash",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "casper/vmlinuz", Initrd: "/casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "kernel path must be absolute (start with /)",
+		},
+
+		// === PathSource: initrd path must be absolute ===
+		{
+			name: "invalid: initrd path without leading slash",
+			spec: v1alpha1.BootSourceSpec{
+				ISO: &v1alpha1.ISOSource{
+					URL:  urlSource(httpsURL("boot.iso"), httpsURL("boot.iso.sha256")),
+					Path: v1alpha1.PathSource{Kernel: "/casper/vmlinuz", Initrd: "casper/initrd.gz"},
+				},
+			},
+			valid:    false,
+			errorMsg: "initrd path must be absolute (start with /)",
 		},
 
 		// === BootSourceSpec: (kernel && initrd) || iso ===

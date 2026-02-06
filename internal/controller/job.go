@@ -21,7 +21,9 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -87,11 +89,56 @@ type scriptTask struct {
 	OutputPath string
 }
 
+// isoExtractInfo carries ISO extraction parameters into the script template.
+type isoExtractInfo struct {
+	ISOPath      string // host path to the downloaded ISO file
+	KernelSrc    string // path inside the ISO (e.g. "/casper/vmlinuz")
+	KernelDstDir string // directory for the extracted kernel
+	KernelDst    string // full path for the extracted kernel
+	InitrdSrc    string // path inside the ISO (e.g. "/casper/initrd")
+	InitrdDstDir string // directory for the extracted initrd
+	InitrdDst    string // full path for the extracted initrd
+}
+
+// scriptData is the top-level data structure passed to the download script template.
+type scriptData struct {
+	Tasks []scriptTask
+	ISO   *isoExtractInfo // nil for non-ISO sources
+}
+
+// relativeURLPath computes the relative path of binaryURL from the directory
+// of shasumURL. For example, given binary ".../images/netboot/.../linux" and
+// shasum ".../images/SHA256SUMS", it returns "netboot/.../linux".
+func relativeURLPath(binaryURL, shasumURL string) string {
+	bu, err := url.Parse(binaryURL)
+	if err != nil {
+		return filepath.Base(binaryURL)
+	}
+	su, err := url.Parse(shasumURL)
+	if err != nil {
+		return filepath.Base(binaryURL)
+	}
+	lastSlash := strings.LastIndex(su.Path, "/")
+	if lastSlash == -1 {
+		return filepath.Base(bu.Path)
+	}
+	shasumDir := su.Path[:lastSlash+1]
+	rel := strings.TrimPrefix(bu.Path, shasumDir)
+	return strings.TrimPrefix(rel, "./")
+}
+
 // templateFuncs contains reusable template functions.
 var templateFuncs = template.FuncMap{
 	"b64enc": func(s string) string {
 		return base64.StdEncoding.EncodeToString([]byte(s))
 	},
+	"mod": func(a, b int) int {
+		return a % b
+	},
+	"sub": func(a, b int) int {
+		return a - b
+	},
+	"relpath": relativeURLPath,
 }
 
 // downloadScriptRaw is the raw shell template embedded from download.sh.tmpl.
@@ -108,16 +155,22 @@ var downloadScriptTmpl = template.Must(template.New("download").Funcs(templateFu
 // buildDownloadScript generates a shell script that downloads every task.
 // URLs are base64-encoded and decoded to a temporary file at runtime, so they
 // never enter a shell-interpreted context.
-func buildDownloadScript(tasks []downloadTask) string {
-	data := make([]scriptTask, len(tasks))
+//
+// Tasks must arrive in binary/shasum pairs: even indices are binaries,
+// odd indices are the corresponding shasum files. This invariant is
+// maintained by collectDownloadTasks which iterates {Binary, Shasum}
+// for each resource.
+func buildDownloadScript(tasks []downloadTask, iso *isoExtractInfo) string {
+	st := make([]scriptTask, len(tasks))
 	for i, t := range tasks {
-		data[i] = scriptTask{
+		st[i] = scriptTask{
 			Index:      i,
 			URL:        t.URL,
 			OutputDir:  filepath.Dir(t.OutputPath),
 			OutputPath: t.OutputPath,
 		}
 	}
+	data := scriptData{Tasks: st, ISO: iso}
 	var buf bytes.Buffer
 	if err := downloadScriptTmpl.Execute(&buf, data); err != nil {
 		// Template is static and data is pre-validated; this should never happen.
@@ -142,13 +195,53 @@ func buildDownloadJob(bootSource *isobootv1alpha1.BootSource, scheme *runtime.Sc
 		return nil, err
 	}
 
-	script := buildDownloadScript(tasks)
+	volumeDir := filepath.Join(baseDir, bootSource.Namespace, bootSource.Name)
+
+	// Compute ISO extraction info when an ISO source is configured.
+	var iso *isoExtractInfo
+	if bootSource.Spec.ISO != nil {
+		isoPath, err := DownloadPath(baseDir, bootSource.Namespace, bootSource.Name, ResourceISO, bootSource.Spec.ISO.URL.Binary)
+		if err != nil {
+			return nil, fmt.Errorf("computing ISO download path: %w", err)
+		}
+		kernelDst := filepath.Join(volumeDir, string(ResourceKernel), filepath.Base(bootSource.Spec.ISO.Path.Kernel))
+		initrdDst := filepath.Join(volumeDir, string(ResourceInitrd), filepath.Base(bootSource.Spec.ISO.Path.Initrd))
+		iso = &isoExtractInfo{
+			ISOPath:      isoPath,
+			KernelSrc:    bootSource.Spec.ISO.Path.Kernel,
+			KernelDstDir: filepath.Dir(kernelDst),
+			KernelDst:    kernelDst,
+			InitrdSrc:    bootSource.Spec.ISO.Path.Initrd,
+			InitrdDstDir: filepath.Dir(initrdDst),
+			InitrdDst:    initrdDst,
+		}
+	}
+
+	script := buildDownloadScript(tasks, iso)
 
 	jobName := downloadJobName(bootSource.Name)
 
-	volumeDir := filepath.Join(baseDir, bootSource.Namespace, bootSource.Name)
 	dirOrCreate := corev1.HostPathDirectoryOrCreate
 	var backoffLimit int32 = 2
+
+	container := corev1.Container{
+		Name:    "download",
+		Image:   downloadImage,
+		Command: []string{"/bin/sh", "-c", script},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "data",
+				MountPath: volumeDir,
+			},
+		},
+	}
+	if iso != nil {
+		container.SecurityContext = &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{"SYS_ADMIN"},
+			},
+		}
+	}
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -164,19 +257,7 @@ func buildDownloadJob(bootSource *isobootv1alpha1.BootSource, scheme *runtime.Sc
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
-					Containers: []corev1.Container{
-						{
-							Name:    "download",
-							Image:   downloadImage,
-							Command: []string{"/bin/sh", "-c", script},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "data",
-									MountPath: volumeDir,
-								},
-							},
-						},
-					},
+					Containers:    []corev1.Container{container},
 					Volumes: []corev1.Volume{
 						{
 							Name: "data",
