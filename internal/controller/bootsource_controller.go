@@ -144,8 +144,11 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 
 	for _, cond := range job.Status.Conditions {
 		if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
-			log.Info("Download job completed, transitioning to Verifying")
-			bootSource.Status.Phase = isobootv1alpha1.PhaseVerifying
+			// Transition directly to Ready: the download script performs hash
+			// verification in-band and exits non-zero on failure (which the
+			// controller sees as JobFailed → PhaseFailed).
+			log.Info("Download job completed, transitioning to Ready")
+			bootSource.Status.Phase = isobootv1alpha1.PhaseReady
 			bootSource.Status.ArtifactPaths = buildArtifactPaths(ctx, bootSource.Spec, r.HostPathBaseDir, bootSource.Namespace, bootSource.Name)
 			if err := r.Status().Update(ctx, bootSource); err != nil {
 				return ctrl.Result{}, err
@@ -204,6 +207,14 @@ func buildArtifactPaths(ctx context.Context, spec isobootv1alpha1.BootSourceSpec
 	if spec.ISO != nil {
 		paths[string(ResourceKernel)] = filepath.Join(baseDir, namespace, name, string(ResourceKernel), filepath.Base(spec.ISO.Path.Kernel))
 		paths[string(ResourceInitrd)] = filepath.Join(baseDir, namespace, name, string(ResourceInitrd), filepath.Base(spec.ISO.Path.Initrd))
+	}
+
+	// When firmware is present, expose the combined initrd as a separate path.
+	// Clients choose "initrd" (plain) or "initrd-firmware" (with firmware).
+	if spec.Firmware != nil {
+		origInitrd := paths[string(ResourceInitrd)]
+		paths["initrd-firmware"] = filepath.Join(
+			filepath.Dir(origInitrd), WithFirmwareDir, filepath.Base(origInitrd))
 	}
 
 	return paths

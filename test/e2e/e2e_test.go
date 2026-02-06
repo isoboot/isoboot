@@ -320,8 +320,8 @@ spec:
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(Or(
 					Equal("Downloading"),
-					Equal("Verifying"),
-				), "expected phase Downloading or Verifying, got: "+output)
+					Equal("Ready"),
+				), "expected phase Downloading or Ready, got: "+output)
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 			By("verifying the download Job was created")
@@ -344,13 +344,13 @@ spec:
 				g.Expect(output).To(Equal("True"), "Job not yet complete")
 			}, 5*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("waiting for the BootSource to reach Verifying phase")
+			By("waiting for the BootSource to reach Ready phase")
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "bootsource", bootSourceName,
 					"-n", bootSourceNS, "-o", "jsonpath={.status.phase}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("Verifying"))
+				g.Expect(output).To(Equal("Ready"))
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 			By("verifying artifactPaths are populated")

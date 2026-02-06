@@ -100,10 +100,19 @@ type isoExtractInfo struct {
 	InitrdDst    string // full path for the extracted initrd
 }
 
+// firmwareBuildInfo carries firmware concatenation parameters into the script template.
+type firmwareBuildInfo struct {
+	FirmwarePath string // host path to downloaded firmware
+	InitrdPath   string // host path to initrd (downloaded or extracted)
+	OutputDir    string // directory for combined initrd
+	OutputPath   string // full path for combined initrd
+}
+
 // scriptData is the top-level data structure passed to the download script template.
 type scriptData struct {
-	Tasks []scriptTask
-	ISO   *isoExtractInfo // nil for non-ISO sources
+	Tasks    []scriptTask
+	ISO      *isoExtractInfo    // nil for non-ISO sources
+	Firmware *firmwareBuildInfo // nil when no firmware
 }
 
 // relativeURLPath computes the relative path of binaryURL from the directory
@@ -160,7 +169,7 @@ var downloadScriptTmpl = template.Must(template.New("download").Funcs(templateFu
 // odd indices are the corresponding shasum files. This invariant is
 // maintained by collectDownloadTasks which iterates {Binary, Shasum}
 // for each resource.
-func buildDownloadScript(tasks []downloadTask, iso *isoExtractInfo) string {
+func buildDownloadScript(tasks []downloadTask, iso *isoExtractInfo, fw *firmwareBuildInfo) string {
 	st := make([]scriptTask, len(tasks))
 	for i, t := range tasks {
 		st[i] = scriptTask{
@@ -170,7 +179,7 @@ func buildDownloadScript(tasks []downloadTask, iso *isoExtractInfo) string {
 			OutputPath: t.OutputPath,
 		}
 	}
-	data := scriptData{Tasks: st, ISO: iso}
+	data := scriptData{Tasks: st, ISO: iso, Firmware: fw}
 	var buf bytes.Buffer
 	if err := downloadScriptTmpl.Execute(&buf, data); err != nil {
 		// Template is static and data is pre-validated; this should never happen.
@@ -217,7 +226,36 @@ func buildDownloadJob(bootSource *isobootv1alpha1.BootSource, scheme *runtime.Sc
 		}
 	}
 
-	script := buildDownloadScript(tasks, iso)
+	// Compute firmware concatenation info when firmware is configured.
+	var fw *firmwareBuildInfo
+	if bootSource.Spec.Firmware != nil {
+		fwPath, err := DownloadPath(baseDir, bootSource.Namespace, bootSource.Name, ResourceFirmware, bootSource.Spec.Firmware.URL.Binary)
+		if err != nil {
+			return nil, fmt.Errorf("computing firmware download path: %w", err)
+		}
+
+		var initrdPath string
+		if iso != nil {
+			initrdPath = iso.InitrdDst
+		} else if bootSource.Spec.Initrd != nil {
+			initrdPath, err = DownloadPath(baseDir, bootSource.Namespace, bootSource.Name, ResourceInitrd, bootSource.Spec.Initrd.URL.Binary)
+			if err != nil {
+				return nil, fmt.Errorf("computing initrd download path: %w", err)
+			}
+		}
+
+		if initrdPath != "" {
+			outputDir := filepath.Join(filepath.Dir(initrdPath), WithFirmwareDir)
+			fw = &firmwareBuildInfo{
+				FirmwarePath: fwPath,
+				InitrdPath:   initrdPath,
+				OutputDir:    outputDir,
+				OutputPath:   filepath.Join(outputDir, filepath.Base(initrdPath)),
+			}
+		}
+	}
+
+	script := buildDownloadScript(tasks, iso, fw)
 
 	jobName := downloadJobName(bootSource.Name)
 

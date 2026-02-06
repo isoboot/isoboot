@@ -105,4 +105,34 @@ var _ = Describe("DownloadPath", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("escapes base directory"))
 	})
+
+	It("should reject filenames with single quotes (shell injection)", func() {
+		_, err := DownloadPath(baseDir, namespace, name, ResourceFirmware, "https://example.com/fw'$(whoami).bin")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("unsafe filename"))
+	})
+
+	It("should reject filenames with backticks", func() {
+		_, err := DownloadPath(baseDir, namespace, name, ResourceKernel, "https://example.com/vm`id`linuz")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("unsafe filename"))
+	})
+
+	It("should reject filenames with spaces", func() {
+		_, err := DownloadPath(baseDir, namespace, name, ResourceKernel, "https://example.com/my file.iso")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("unsafe filename"))
+	})
+
+	It("should reject filenames with semicolons", func() {
+		_, err := DownloadPath(baseDir, namespace, name, ResourceKernel, "https://example.com/file;rm -rf.iso")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("unsafe filename"))
+	})
+
+	It("should accept filenames with plus signs", func() {
+		p, err := DownloadPath(baseDir, namespace, name, ResourceFirmware, "https://example.com/firmware+extra.bin")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(p).To(ContainSubstring("firmware+extra.bin"))
+	})
 })

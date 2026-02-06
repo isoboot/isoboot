@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -32,7 +33,16 @@ const (
 	ResourceInitrd   ResourceType = "initrd"
 	ResourceFirmware ResourceType = "firmware"
 	ResourceISO      ResourceType = "iso"
+
+	// WithFirmwareDir is the subdirectory name for combined initrd+firmware files.
+	WithFirmwareDir = "with-firmware"
 )
+
+// safeFilename matches filenames that are safe for shell interpolation inside
+// single quotes. Only alphanumerics, dots, hyphens, underscores, plus, percent,
+// and tilde are allowed. This prevents shell injection via crafted URL filenames
+// (e.g. a single quote would break out of single-quoted shell contexts).
+var safeFilename = regexp.MustCompile(`^[a-zA-Z0-9._+%~-]+$`)
 
 // DownloadPath computes the host-local file path where a downloaded resource
 // should be stored. The layout is:
@@ -50,6 +60,10 @@ func DownloadPath(baseDir, namespace, name string, rt ResourceType, rawURL strin
 	filename := path.Base(u.Path)
 	if filename == "" || filename == "." || filename == "/" || filename == ".." {
 		return "", fmt.Errorf("URL %q has no filename", rawURL)
+	}
+
+	if !safeFilename.MatchString(filename) {
+		return "", fmt.Errorf("URL %q has unsafe filename %q: only [a-zA-Z0-9._-+%%~] allowed", rawURL, filename)
 	}
 
 	result := filepath.Join(baseDir, namespace, name, string(rt), filename)

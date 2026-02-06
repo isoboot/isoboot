@@ -94,7 +94,7 @@ type BootSourceSpec struct {
 }
 
 // BootSourcePhase represents the current phase of a BootSource
-// +kubebuilder:validation:Enum=Pending;Downloading;Verifying;Extracting;Building;Ready;Failed;Corrupted
+// +kubebuilder:validation:Enum=Pending;Downloading;Ready;Failed
 type BootSourcePhase string
 
 const (
@@ -102,18 +102,10 @@ const (
 	PhasePending BootSourcePhase = "Pending"
 	// PhaseDownloading indicates the BootSource is downloading files
 	PhaseDownloading BootSourcePhase = "Downloading"
-	// PhaseVerifying indicates the BootSource is verifying checksums
-	PhaseVerifying BootSourcePhase = "Verifying"
-	// PhaseExtracting indicates the BootSource is extracting files from ISO
-	PhaseExtracting BootSourcePhase = "Extracting"
-	// PhaseBuilding indicates the BootSource is building artifacts
-	PhaseBuilding BootSourcePhase = "Building"
 	// PhaseReady indicates the BootSource is ready for use
 	PhaseReady BootSourcePhase = "Ready"
 	// PhaseFailed indicates the BootSource processing failed
 	PhaseFailed BootSourcePhase = "Failed"
-	// PhaseCorrupted indicates the BootSource checksum verification failed
-	PhaseCorrupted BootSourcePhase = "Corrupted"
 )
 
 // BootSourceStatus defines the observed state of BootSource
