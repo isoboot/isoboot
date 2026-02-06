@@ -62,6 +62,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var hostPathBaseDir string
+	var downloadImage string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -82,6 +83,8 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.StringVar(&hostPathBaseDir, "host-path-base-dir", "/var/lib/isoboot",
 		"Base directory on the host for storing downloaded boot artifacts")
+	flag.StringVar(&downloadImage, "download-image", "alpine:3.23",
+		"Container image used by download Jobs")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -185,6 +188,7 @@ func main() {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		HostPathBaseDir: hostPathBaseDir,
+		DownloadImage:   downloadImage,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BootSource")
 		os.Exit(1)

@@ -1,1 +1,4 @@
 # Default values for isoboot
+
+# Image used by download Jobs to fetch boot artifacts
+downloadImage: alpine:3.23

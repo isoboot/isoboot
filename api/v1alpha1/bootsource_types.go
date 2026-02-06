@@ -134,6 +134,10 @@ type BootSourceStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// Names are limited to 50 characters so that derived resource names
+// (e.g. "<name>-download" Jobs) stay within the 63-char DNS label limit
+// and fit in Kubernetes label values without truncation.
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 50",message="name must be 50 characters or less"
 
 // BootSource is the Schema for the bootsources API
 type BootSource struct {

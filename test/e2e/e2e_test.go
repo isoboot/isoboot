@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -266,16 +267,134 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
+	})
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput, err := getMetricsOutput()
-		// Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+	Context("BootSource Download Pipeline", func() {
+		const (
+			bootSourceName = "e2e-download-test"
+			bootSourceNS   = "default"
+		)
+
+		BeforeAll(func() {
+			if os.Getenv("ISOBOOT_E2E_DOWNLOAD") != "1" {
+				Skip("ISOBOOT_E2E_DOWNLOAD=1 not set; skipping download pipeline test")
+			}
+		})
+
+		AfterAll(func() {
+			cmd := exec.Command("kubectl", "delete", "bootsource", bootSourceName,
+				"-n", bootSourceNS, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should create a Job, download files, and transition through phases", func() {
+			By("creating a BootSource with kernel+initrd URLs")
+			// Use the Alpine APK key as a small, stable HTTPS-hosted file
+			bootSourceYAML := fmt.Sprintf(`apiVersion: isoboot.github.io/v1alpha1
+kind: BootSource
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  kernel:
+    url:
+      binary: "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/APKINDEX.tar.gz"
+      shasum: "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/APKINDEX.tar.gz"
+  initrd:
+    url:
+      binary: "https://dl-cdn.alpinelinux.org/alpine/v3.23/community/aarch64/APKINDEX.tar.gz"
+      shasum: "https://dl-cdn.alpinelinux.org/alpine/v3.23/community/aarch64/APKINDEX.tar.gz"
+`, bootSourceName, bootSourceNS)
+
+			tmpFile := filepath.Join("/tmp", "e2e-bootsource.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(bootSourceYAML), 0o644)).To(Succeed())
+			cmd := exec.Command("kubectl", "apply", "-f", tmpFile)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create BootSource")
+
+			By("waiting for the BootSource to reach Downloading phase")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "bootsource", bootSourceName,
+					"-n", bootSourceNS, "-o", "jsonpath={.status.phase}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Or(
+					Equal("Downloading"),
+					Equal("Verifying"),
+				), "expected phase Downloading or Verifying, got: "+output)
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying the download Job was created")
+			jobName := bootSourceName + "-download" // matches downloadJobName()
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "job", jobName,
+					"-n", bootSourceNS, "-o", "jsonpath={.metadata.name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal(jobName))
+			}, time.Minute, 2*time.Second).Should(Succeed())
+
+			By("waiting for the download Job to complete")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "job", jobName,
+					"-n", bootSourceNS,
+					"-o", "jsonpath={.status.conditions[?(@.type=='Complete')].status}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True"), "Job not yet complete")
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("waiting for the BootSource to reach Verifying phase")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "bootsource", bootSourceName,
+					"-n", bootSourceNS, "-o", "jsonpath={.status.phase}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("Verifying"))
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying artifactPaths are populated")
+			cmd = exec.Command("kubectl", "get", "bootsource", bootSourceName,
+				"-n", bootSourceNS, "-o", "jsonpath={.status.artifactPaths.kernel}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(ContainSubstring("/kernel/"))
+
+			By("verifying files exist on the Kind node")
+			// Get the kind node container name
+			kindCluster := os.Getenv("KIND_CLUSTER")
+			if kindCluster == "" {
+				kindCluster = "kind"
+			}
+			nodeName := kindCluster + "-control-plane"
+
+			// Check that the kernel binary was downloaded to the host path
+			cmd = exec.Command("docker", "exec", nodeName,
+				"ls", "-la",
+				fmt.Sprintf("/var/lib/isoboot/%s/%s/kernel/", bootSourceNS, bootSourceName))
+			output, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to list kernel directory on node")
+			Expect(output).To(ContainSubstring("APKINDEX.tar.gz"),
+				"kernel binary not found on host path")
+
+			cmd = exec.Command("docker", "exec", nodeName,
+				"ls", "-la",
+				fmt.Sprintf("/var/lib/isoboot/%s/%s/initrd/", bootSourceNS, bootSourceName))
+			output, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to list initrd directory on node")
+			Expect(output).To(ContainSubstring("APKINDEX.tar.gz"),
+				"initrd binary not found on host path")
+
+			By("verifying downloaded files are non-empty")
+			cmd = exec.Command("docker", "exec", nodeName,
+				"sh", "-c",
+				fmt.Sprintf("stat -c %%s /var/lib/isoboot/%s/%s/kernel/APKINDEX.tar.gz",
+					bootSourceNS, bootSourceName))
+			output, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(output)).NotTo(Equal("0"),
+				"downloaded kernel file should not be empty")
+		})
 	})
 })
 
