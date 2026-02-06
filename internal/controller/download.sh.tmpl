@@ -34,7 +34,7 @@ for word in $HASH_LINE; do
   fi
 done
 if [ -z "$ALGO" ]; then
-  echo "ERROR: no valid hash found for {{ $bin.OutputPath }}" >&2
+  echo 'ERROR: no valid hash found for {{ $bin.OutputPath }}' >&2
   rm -f '{{ $bin.OutputPath }}'
   VERIFY_FAILED=1
 else
@@ -46,9 +46,9 @@ else
   echo "Expected ($ALGO): $EXPECTED"
   echo "Actual   ($ALGO): $ACTUAL"
   if [ "$EXPECTED" = "$ACTUAL" ]; then
-    echo "PASS: {{ $bin.OutputPath }}"
+    echo 'PASS: {{ $bin.OutputPath }}'
   else
-    echo "FAIL: {{ $bin.OutputPath }}" >&2
+    echo 'FAIL: {{ $bin.OutputPath }}' >&2
     rm -f '{{ $bin.OutputPath }}'
     VERIFY_FAILED=1
   fi
@@ -70,8 +70,18 @@ cp "$MOUNT_DIR"/'{{ .ISO.InitrdSrc }}' '{{ .ISO.InitrdDst }}'
 umount "$MOUNT_DIR"
 rmdir "$MOUNT_DIR"
 trap - EXIT
-echo "Extracted kernel: {{ .ISO.KernelDst }}"
-echo "Extracted initrd: {{ .ISO.InitrdDst }}"
+echo 'Extracted kernel: {{ .ISO.KernelDst }}'
+echo 'Extracted initrd: {{ .ISO.InitrdDst }}'
+{{- end }}
+{{- if .Firmware }}
+echo "--- Building combined initrd with firmware ---"
+if [ -f '{{ .Firmware.OutputPath }}' ]; then
+  echo 'SKIP {{ .Firmware.OutputPath }} (already exists)'
+else
+  mkdir -p '{{ .Firmware.OutputDir }}'
+  cat '{{ .Firmware.FirmwarePath }}' '{{ .Firmware.InitrdPath }}' > '{{ .Firmware.OutputPath }}'
+  echo 'Combined initrd: {{ .Firmware.OutputPath }}'
+fi
 {{- end }}
 echo "--- File sizes ---"
 {{- range $i, $t := $tasks }}
@@ -82,4 +92,7 @@ du -h '{{ $t.OutputPath }}' 2>/dev/null || echo '{{ $t.OutputPath }}: not found'
 {{- if .ISO }}
 du -h '{{ .ISO.KernelDst }}' 2>/dev/null || echo '{{ .ISO.KernelDst }}: not found'
 du -h '{{ .ISO.InitrdDst }}' 2>/dev/null || echo '{{ .ISO.InitrdDst }}: not found'
+{{- end }}
+{{- if .Firmware }}
+du -h '{{ .Firmware.OutputPath }}' 2>/dev/null || echo '{{ .Firmware.OutputPath }}: not found'
 {{- end }}

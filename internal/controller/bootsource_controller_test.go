@@ -178,7 +178,7 @@ var _ = Describe("BootSource Controller", func() {
 	})
 
 	Context("Downloading phase", func() {
-		It("should transition to Verifying when Job completes", func() {
+		It("should transition to Ready when Job completes", func() {
 			ctx := context.Background()
 			bootSource := newTestBootSource(testName, testNamespace)
 			bootSource.Status.Phase = isobootv1alpha1.PhaseDownloading
@@ -202,7 +202,7 @@ var _ = Describe("BootSource Controller", func() {
 			updated := &isobootv1alpha1.BootSource{}
 			err = reconciler.Get(ctx, types.NamespacedName{Name: testName, Namespace: testNamespace}, updated)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseVerifying))
+			Expect(updated.Status.Phase).To(Equal(isobootv1alpha1.PhaseReady))
 			Expect(updated.Status.ArtifactPaths).To(HaveKey("kernel"))
 			Expect(updated.Status.ArtifactPaths).To(HaveKey("initrd"))
 		})
@@ -300,6 +300,34 @@ var _ = Describe("BootSource Controller", func() {
 	})
 
 	Context("buildArtifactPaths", func() {
+		It("should point initrd to with-firmware path when firmware is present", func() {
+			ctx := context.Background()
+			spec := isobootv1alpha1.BootSourceSpec{
+				Kernel: &isobootv1alpha1.KernelSource{
+					URL: isobootv1alpha1.URLSource{
+						Binary: "https://example.com/vmlinuz",
+						Shasum: "https://example.com/vmlinuz.sha256",
+					},
+				},
+				Initrd: &isobootv1alpha1.InitrdSource{
+					URL: isobootv1alpha1.URLSource{
+						Binary: "https://example.com/initrd.img",
+						Shasum: "https://example.com/initrd.img.sha256",
+					},
+				},
+				Firmware: &isobootv1alpha1.FirmwareSource{
+					URL: isobootv1alpha1.URLSource{
+						Binary: "https://example.com/firmware.cpio.gz",
+						Shasum: "https://example.com/firmware.cpio.gz.sha256",
+					},
+				},
+			}
+			paths := buildArtifactPaths(ctx, spec, "/var/lib/isoboot", "default", "my-source")
+			Expect(paths).To(HaveKeyWithValue("kernel", "/var/lib/isoboot/default/my-source/kernel/vmlinuz"))
+			Expect(paths).To(HaveKeyWithValue("initrd", "/var/lib/isoboot/default/my-source/initrd/with-firmware/initrd.img"))
+			Expect(paths).To(HaveKeyWithValue("firmware", "/var/lib/isoboot/default/my-source/firmware/firmware.cpio.gz"))
+		})
+
 		It("should return kernel and initrd extracted paths for ISO sources", func() {
 			ctx := context.Background()
 			spec := isobootv1alpha1.BootSourceSpec{
