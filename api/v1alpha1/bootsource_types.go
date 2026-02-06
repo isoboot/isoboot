@@ -94,7 +94,7 @@ type BootSourceSpec struct {
 }
 
 // BootSourcePhase represents the current phase of a BootSource
-// +kubebuilder:validation:Enum=Pending;Downloading;Ready;Failed;Corrupted
+// +kubebuilder:validation:Enum=Pending;Downloading;Ready;Failed
 type BootSourcePhase string
 
 const (
@@ -106,8 +106,6 @@ const (
 	PhaseReady BootSourcePhase = "Ready"
 	// PhaseFailed indicates the BootSource processing failed
 	PhaseFailed BootSourcePhase = "Failed"
-	// PhaseCorrupted indicates the BootSource checksum verification failed
-	PhaseCorrupted BootSourcePhase = "Corrupted"
 )
 
 // BootSourceStatus defines the observed state of BootSource
