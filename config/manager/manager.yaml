@@ -61,7 +61,6 @@ spec:
       - command:
         - /manager
         args:
-          - --leader-elect
           - --health-probe-bind-address=:8081
           - --host-path-base-dir=/var/lib/isoboot
           - --download-image=alpine:3.23
