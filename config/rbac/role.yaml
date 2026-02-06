@@ -18,12 +18,8 @@ rules:
   resources:
   - bootsources
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - isoboot.github.io

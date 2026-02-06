@@ -40,7 +40,7 @@ type BootSourceReconciler struct {
 	DownloadImage   string
 }
 
-// +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources,verbs=get;list;watch
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources/finalizers,verbs=update
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=create;get;list;watch
