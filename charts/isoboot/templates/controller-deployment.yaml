@@ -1,0 +1,67 @@
+{{- include "isoboot.validate" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "isoboot.fullname" . }}-controller-manager
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: {{ .Values.nodeName }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: manager
+        image: {{ .Values.controllerImage }}
+        command:
+        - /manager
+        args:
+        - --health-probe-bind-address=:8081
+        - --host-path-base-dir={{ .Values.hostPathBaseDir }}
+        - --download-image={{ .Values.downloadImage }}
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        volumeMounts:
+        - name: boot-artifacts
+          mountPath: {{ .Values.hostPathBaseDir }}
+      volumes:
+      - name: boot-artifacts
+        hostPath:
+          path: {{ .Values.hostPathBaseDir }}
+          type: DirectoryOrCreate
+      serviceAccountName: {{ include "isoboot.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 10
