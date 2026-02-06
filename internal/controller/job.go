@@ -18,6 +18,7 @@ package controller
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"path/filepath"
@@ -34,8 +35,8 @@ import (
 
 // downloadTask represents a single file to download.
 type downloadTask struct {
-	// EncodedURL is the base64-encoded URL to download from.
-	EncodedURL string
+	// URL is the raw URL to download from.
+	URL string
 	// OutputPath is the absolute host path where the file should be written.
 	OutputPath string
 }
@@ -70,7 +71,7 @@ func collectDownloadTasks(spec isobootv1alpha1.BootSourceSpec, baseDir, namespac
 				return nil, fmt.Errorf("computing download path for %s %q: %w", e.rt, raw, err)
 			}
 			tasks = append(tasks, downloadTask{
-				EncodedURL: base64.StdEncoding.EncodeToString([]byte(raw)),
+				URL:        raw,
 				OutputPath: outPath,
 			})
 		}
@@ -81,24 +82,28 @@ func collectDownloadTasks(spec isobootv1alpha1.BootSourceSpec, baseDir, namespac
 // scriptTask holds per-task data for the download script template.
 type scriptTask struct {
 	Index      int
-	EncodedURL string
+	URL        string
 	OutputDir  string
 	OutputPath string
 }
 
-// downloadScriptTmpl is the shell template for downloading files. Base64
-// alphabet characters [A-Za-z0-9+/=] cannot break out of single quotes, so
-// EncodedURL is safe to interpolate. OutputDir and OutputPath come from
-// DownloadPath which only produces filesystem-safe characters.
-var downloadScriptTmpl = template.Must(template.New("download").Parse(`set -eu
-apk add --no-cache wget
-{{- range . }}
-mkdir -p '{{ .OutputDir }}'
-echo '{{ .EncodedURL }}' | base64 -d > '/tmp/url_{{ .Index }}.txt'
-wget -q -i '/tmp/url_{{ .Index }}.txt' -O '{{ .OutputPath }}'
-rm -f '/tmp/url_{{ .Index }}.txt'
-{{- end }}
-`))
+// templateFuncs contains reusable template functions.
+var templateFuncs = template.FuncMap{
+	"b64enc": func(s string) string {
+		return base64.StdEncoding.EncodeToString([]byte(s))
+	},
+}
+
+// downloadScriptRaw is the raw shell template embedded from download.sh.tmpl.
+// The b64enc function encodes URLs so they never enter a shell-interpreted
+// context. Base64 alphabet [A-Za-z0-9+/=] cannot break single quotes.
+// OutputDir and OutputPath come from DownloadPath which only produces
+// filesystem-safe characters.
+//
+//go:embed download.sh.tmpl
+var downloadScriptRaw string
+
+var downloadScriptTmpl = template.Must(template.New("download").Funcs(templateFuncs).Parse(downloadScriptRaw))
 
 // buildDownloadScript generates a shell script that downloads every task.
 // URLs are base64-encoded and decoded to a temporary file at runtime, so they
@@ -108,7 +113,7 @@ func buildDownloadScript(tasks []downloadTask) string {
 	for i, t := range tasks {
 		data[i] = scriptTask{
 			Index:      i,
-			EncodedURL: t.EncodedURL,
+			URL:        t.URL,
 			OutputDir:  filepath.Dir(t.OutputPath),
 			OutputPath: t.OutputPath,
 		}

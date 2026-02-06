@@ -56,15 +56,11 @@ var _ = Describe("Job construction", func() {
 			Expect(tasks).To(HaveLen(4))
 
 			// Verify kernel binary task
-			decoded, err := base64.StdEncoding.DecodeString(tasks[0].EncodedURL)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(decoded)).To(Equal("https://example.com/vmlinuz"))
+			Expect(tasks[0].URL).To(Equal("https://example.com/vmlinuz"))
 			Expect(tasks[0].OutputPath).To(Equal("/var/lib/isoboot/default/my-source/kernel/vmlinuz"))
 
 			// Verify kernel shasum task
-			decoded, err = base64.StdEncoding.DecodeString(tasks[1].EncodedURL)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(decoded)).To(Equal("https://example.com/vmlinuz.sha256"))
+			Expect(tasks[1].URL).To(Equal("https://example.com/vmlinuz.sha256"))
 		})
 
 		It("should return 2 tasks for iso", func() {
@@ -128,7 +124,7 @@ var _ = Describe("Job construction", func() {
 		It("should start with set -eu and install wget", func() {
 			tasks := []downloadTask{
 				{
-					EncodedURL: base64.StdEncoding.EncodeToString([]byte("https://example.com/vmlinuz")),
+					URL:        "https://example.com/vmlinuz",
 					OutputPath: "/var/lib/isoboot/default/my-source/kernel/vmlinuz",
 				},
 			}
@@ -137,22 +133,22 @@ var _ = Describe("Job construction", func() {
 			Expect(script).To(ContainSubstring("apk add --no-cache wget"))
 		})
 
-		It("should contain base64-encoded URLs", func() {
-			encoded := base64.StdEncoding.EncodeToString([]byte("https://example.com/vmlinuz"))
+		It("should contain base64-encoded URLs via b64enc", func() {
 			tasks := []downloadTask{
 				{
-					EncodedURL: encoded,
+					URL:        "https://example.com/vmlinuz",
 					OutputPath: "/var/lib/isoboot/default/my-source/kernel/vmlinuz",
 				},
 			}
 			script := buildDownloadScript(tasks)
+			encoded := base64.StdEncoding.EncodeToString([]byte("https://example.com/vmlinuz"))
 			Expect(script).To(ContainSubstring(encoded))
 		})
 
 		It("should use wget -i to read URL from file", func() {
 			tasks := []downloadTask{
 				{
-					EncodedURL: base64.StdEncoding.EncodeToString([]byte("https://example.com/vmlinuz")),
+					URL:        "https://example.com/vmlinuz",
 					OutputPath: "/var/lib/isoboot/default/my-source/kernel/vmlinuz",
 				},
 			}
@@ -163,11 +159,11 @@ var _ = Describe("Job construction", func() {
 		It("should generate unique temp files per task", func() {
 			tasks := []downloadTask{
 				{
-					EncodedURL: base64.StdEncoding.EncodeToString([]byte("https://example.com/a")),
+					URL:        "https://example.com/a",
 					OutputPath: "/data/a",
 				},
 				{
-					EncodedURL: base64.StdEncoding.EncodeToString([]byte("https://example.com/b")),
+					URL:        "https://example.com/b",
 					OutputPath: "/data/b",
 				},
 			}

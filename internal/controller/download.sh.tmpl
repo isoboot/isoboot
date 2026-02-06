@@ -1,0 +1,8 @@
+set -eu
+apk add --no-cache wget
+{{- range . }}
+mkdir -p '{{ .OutputDir }}'
+echo '{{ .URL | b64enc }}' | base64 -d > '/tmp/url_{{ .Index }}.txt'
+wget -q -i '/tmp/url_{{ .Index }}.txt' -O '{{ .OutputPath }}'
+rm -f '/tmp/url_{{ .Index }}.txt'
+{{- end }}
