@@ -13,7 +13,7 @@ downloadImage: alpine:3.23
 httpPort: 8080
 
 # Controller manager image
-controllerImage: controller:latest
+controllerImage: ghcr.io/isoboot/isoboot:test
 
 # Host path base directory for boot artifacts
 hostPathBaseDir: /var/lib/isoboot
