@@ -275,6 +275,12 @@ var _ = Describe("Manager", Ordered, func() {
 			bootSourceNS   = "default"
 		)
 
+		BeforeAll(func() {
+			if os.Getenv("ISOBOOT_E2E_DOWNLOAD") != "1" {
+				Skip("ISOBOOT_E2E_DOWNLOAD=1 not set; skipping download pipeline test")
+			}
+		})
+
 		AfterAll(func() {
 			cmd := exec.Command("kubectl", "delete", "bootsource", bootSourceName,
 				"-n", bootSourceNS, "--ignore-not-found")

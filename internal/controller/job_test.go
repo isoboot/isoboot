@@ -297,7 +297,7 @@ var _ = Describe("Job construction", func() {
 			Expect(job.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "isoboot"))
 		})
 
-		It("should truncate long names to 63 characters", func() {
+		It("should truncate long names to 63 characters with hash suffix", func() {
 			longName := strings.Repeat("a", 80)
 			source := newBootSource(longName, "default", isobootv1alpha1.BootSourceSpec{
 				ISO: &isobootv1alpha1.ISOSource{
@@ -311,6 +311,15 @@ var _ = Describe("Job construction", func() {
 			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(job.Name)).To(BeNumerically("<=", 63))
+			// Should end with a hex hash suffix
+			Expect(job.Name).To(MatchRegexp(`-[0-9a-f]{5}$`))
+		})
+
+		It("should produce different names for long names with same prefix", func() {
+			prefix := strings.Repeat("a", 60)
+			name1 := downloadJobName(prefix + "-alpha")
+			name2 := downloadJobName(prefix + "-bravo")
+			Expect(name1).NotTo(Equal(name2))
 		})
 	})
 })
