@@ -13,6 +13,9 @@
 ## PRs and Issues
 - When a GitHub issue is referenced (e.g. "Closes #205"), link the PR to the issue using `--body "Closes #NNN"` in `gh pr create`
 
+## PR Maintenance
+- After pushing new commits to a PR, update the PR description to reflect the full scope of changes
+
 ## Post-Push
 - After pushing, monitor CI with `gh run list -b <branch> --limit 3` and `gh run watch <run-id>`
 - Check for failures and fix before moving on
