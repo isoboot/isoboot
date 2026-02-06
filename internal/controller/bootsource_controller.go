@@ -35,6 +35,7 @@ type BootSourceReconciler struct {
 	client.Client
 	Scheme          *runtime.Scheme
 	HostPathBaseDir string
+	DownloadImage   string
 }
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootsources,verbs=get;list;watch;create;update;patch;delete
@@ -86,7 +87,7 @@ func (r *BootSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 func (r *BootSourceReconciler) reconcilePending(ctx context.Context, bootSource *isobootv1alpha1.BootSource) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	job, err := buildDownloadJob(bootSource, r.Scheme, r.HostPathBaseDir)
+	job, err := buildDownloadJob(bootSource, r.Scheme, r.HostPathBaseDir, r.DownloadImage)
 	if err != nil {
 		log.Error(err, "Failed to build download job")
 		return ctrl.Result{}, err

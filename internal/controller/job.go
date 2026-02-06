@@ -17,10 +17,11 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"path/filepath"
-	"strings"
+	"text/template"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -77,30 +78,63 @@ func collectDownloadTasks(spec isobootv1alpha1.BootSourceSpec, baseDir, namespac
 	return tasks, nil
 }
 
+// scriptTask holds per-task data for the download script template.
+type scriptTask struct {
+	Index      int
+	EncodedURL string
+	OutputDir  string
+	OutputPath string
+}
+
+// downloadScriptTmpl is the shell template for downloading files. Base64
+// alphabet characters [A-Za-z0-9+/=] cannot break out of single quotes, so
+// EncodedURL is safe to interpolate. OutputDir and OutputPath come from
+// DownloadPath which only produces filesystem-safe characters.
+var downloadScriptTmpl = template.Must(template.New("download").Parse(`set -eu
+apk add --no-cache wget
+{{- range . }}
+mkdir -p '{{ .OutputDir }}'
+echo '{{ .EncodedURL }}' | base64 -d > '/tmp/url_{{ .Index }}.txt'
+wget -q -i '/tmp/url_{{ .Index }}.txt' -O '{{ .OutputPath }}'
+rm -f '/tmp/url_{{ .Index }}.txt'
+{{- end }}
+`))
+
 // buildDownloadScript generates a shell script that downloads every task.
 // URLs are base64-encoded and decoded to a temporary file at runtime, so they
 // never enter a shell-interpreted context.
 func buildDownloadScript(tasks []downloadTask) string {
-	var b strings.Builder
-	b.WriteString("set -eu\napk add --no-cache wget\n")
+	data := make([]scriptTask, len(tasks))
 	for i, t := range tasks {
-		dir := filepath.Dir(t.OutputPath)
-		fmt.Fprintf(&b, "mkdir -p '%s'\n", dir)
-		fmt.Fprintf(&b, "echo '%s' | base64 -d > '/tmp/url_%d.txt'\n", t.EncodedURL, i)
-		fmt.Fprintf(&b, "wget -q -i '/tmp/url_%d.txt' -O '%s'\n", i, t.OutputPath)
-		fmt.Fprintf(&b, "rm -f '/tmp/url_%d.txt'\n", i)
+		data[i] = scriptTask{
+			Index:      i,
+			EncodedURL: t.EncodedURL,
+			OutputDir:  filepath.Dir(t.OutputPath),
+			OutputPath: t.OutputPath,
+		}
 	}
-	return b.String()
+	var buf bytes.Buffer
+	if err := downloadScriptTmpl.Execute(&buf, data); err != nil {
+		// Template is static and data is pre-validated; this should never happen.
+		panic(fmt.Sprintf("executing download script template: %v", err))
+	}
+	return buf.String()
 }
 
-const (
-	jobNamePrefix = "isoboot-download-"
-	maxJobNameLen = 63
-)
+const maxJobNameLen = 63
+
+// downloadJobName returns the Job name for a given BootSource name.
+func downloadJobName(bootSourceName string) string {
+	name := bootSourceName + "-download"
+	if len(name) > maxJobNameLen {
+		name = name[:maxJobNameLen]
+	}
+	return name
+}
 
 // buildDownloadJob constructs a batch/v1 Job that downloads all resources for
 // the given BootSource.
-func buildDownloadJob(bootSource *isobootv1alpha1.BootSource, scheme *runtime.Scheme, baseDir string) (*batchv1.Job, error) {
+func buildDownloadJob(bootSource *isobootv1alpha1.BootSource, scheme *runtime.Scheme, baseDir, downloadImage string) (*batchv1.Job, error) {
 	tasks, err := collectDownloadTasks(bootSource.Spec, baseDir, bootSource.Namespace, bootSource.Name)
 	if err != nil {
 		return nil, err
@@ -108,10 +142,7 @@ func buildDownloadJob(bootSource *isobootv1alpha1.BootSource, scheme *runtime.Sc
 
 	script := buildDownloadScript(tasks)
 
-	jobName := jobNamePrefix + bootSource.Name
-	if len(jobName) > maxJobNameLen {
-		jobName = jobName[:maxJobNameLen]
-	}
+	jobName := downloadJobName(bootSource.Name)
 
 	volumeDir := filepath.Join(baseDir, bootSource.Namespace, bootSource.Name)
 	dirOrCreate := corev1.HostPathDirectoryOrCreate
@@ -134,7 +165,7 @@ func buildDownloadJob(bootSource *isobootv1alpha1.BootSource, scheme *runtime.Sc
 					Containers: []corev1.Container{
 						{
 							Name:    "download",
-							Image:   "alpine:3.21",
+							Image:   downloadImage,
 							Command: []string{"/bin/sh", "-c", script},
 							VolumeMounts: []corev1.VolumeMount{
 								{

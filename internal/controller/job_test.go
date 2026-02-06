@@ -209,9 +209,9 @@ var _ = Describe("Job construction", func() {
 					},
 				},
 			})
-			job, err := buildDownloadJob(source, newScheme(), baseDir)
+			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(job.Name).To(Equal("isoboot-download-test-source"))
+			Expect(job.Name).To(Equal(downloadJobName("test-source")))
 			Expect(job.Namespace).To(Equal("kube-system"))
 		})
 
@@ -230,7 +230,7 @@ var _ = Describe("Job construction", func() {
 					},
 				},
 			})
-			job, err := buildDownloadJob(source, newScheme(), baseDir)
+			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(job.OwnerReferences).To(HaveLen(1))
 			Expect(job.OwnerReferences[0].Name).To(Equal("test-source"))
@@ -246,9 +246,9 @@ var _ = Describe("Job construction", func() {
 					Path: isobootv1alpha1.PathSource{Kernel: "/boot/vmlinuz", Initrd: "/boot/initrd.img"},
 				},
 			})
-			job, err := buildDownloadJob(source, newScheme(), baseDir)
+			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal("alpine:3.21"))
+			Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal(testDownloadImage))
 		})
 
 		It("should configure hostPath volume", func() {
@@ -261,7 +261,7 @@ var _ = Describe("Job construction", func() {
 					Path: isobootv1alpha1.PathSource{Kernel: "/boot/vmlinuz", Initrd: "/boot/initrd.img"},
 				},
 			})
-			job, err := buildDownloadJob(source, newScheme(), baseDir)
+			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
 			Expect(err).NotTo(HaveOccurred())
 
 			vols := job.Spec.Template.Spec.Volumes
@@ -280,7 +280,7 @@ var _ = Describe("Job construction", func() {
 					Path: isobootv1alpha1.PathSource{Kernel: "/boot/vmlinuz", Initrd: "/boot/initrd.img"},
 				},
 			})
-			job, err := buildDownloadJob(source, newScheme(), baseDir)
+			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*job.Spec.BackoffLimit).To(Equal(int32(2)))
 		})
@@ -295,7 +295,7 @@ var _ = Describe("Job construction", func() {
 					Path: isobootv1alpha1.PathSource{Kernel: "/boot/vmlinuz", Initrd: "/boot/initrd.img"},
 				},
 			})
-			job, err := buildDownloadJob(source, newScheme(), baseDir)
+			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(job.Labels).To(HaveKeyWithValue("isoboot.github.io/bootsource-name", "test-source"))
 			Expect(job.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "isoboot"))
@@ -312,7 +312,7 @@ var _ = Describe("Job construction", func() {
 					Path: isobootv1alpha1.PathSource{Kernel: "/boot/vmlinuz", Initrd: "/boot/initrd.img"},
 				},
 			})
-			job, err := buildDownloadJob(source, newScheme(), baseDir)
+			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(job.Name)).To(BeNumerically("<=", 63))
 		})

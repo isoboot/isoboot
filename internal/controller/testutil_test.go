@@ -22,6 +22,9 @@ import (
 	isobootv1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
+// testDownloadImage is the container image used by download Jobs in tests.
+const testDownloadImage = "alpine:3.23"
+
 // newTestBootSource creates a BootSource for testing with kernel+initrd
 func newTestBootSource(name, namespace string) *isobootv1alpha1.BootSource {
 	return &isobootv1alpha1.BootSource{
