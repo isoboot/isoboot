@@ -55,13 +55,5 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts:
-        - name: boot-artifacts
-          mountPath: {{ .Values.hostPathBaseDir }}
-      volumes:
-      - name: boot-artifacts
-        hostPath:
-          path: {{ .Values.hostPathBaseDir }}
-          type: DirectoryOrCreate
       serviceAccountName: {{ include "isoboot.serviceAccountName" . }}
       terminationGracePeriodSeconds: 10
