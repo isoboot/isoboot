@@ -146,8 +146,7 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 		if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
 			// Transition directly to Ready: the download script performs hash
 			// verification in-band and exits non-zero on failure (which the
-			// controller sees as JobFailed → PhaseFailed). A separate
-			// PhaseVerifying step is unnecessary.
+			// controller sees as JobFailed → PhaseFailed).
 			log.Info("Download job completed, transitioning to Ready")
 			bootSource.Status.Phase = isobootv1alpha1.PhaseReady
 			bootSource.Status.ArtifactPaths = buildArtifactPaths(ctx, bootSource.Spec, r.HostPathBaseDir, bootSource.Namespace, bootSource.Name)

@@ -293,7 +293,6 @@ spec:
                 enum:
                 - Pending
                 - Downloading
-                - Verifying
                 - Extracting
                 - Building
                 - Ready
