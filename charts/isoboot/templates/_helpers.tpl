@@ -41,6 +41,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Controller manager ServiceAccount name.
+*/}}
+{{- define "isoboot.serviceAccountName" -}}
+{{- include "isoboot.fullname" . }}-controller-manager
+{{- end }}
+
+{{/*
 Validate required values. Include this template to trigger errors
 when required values are missing. Assigns to $_ so no output is
 produced.
