@@ -196,7 +196,7 @@ var _ = Describe("Job construction", func() {
 			}
 			script := buildDownloadScript(tasks)
 			Expect(script).To(ContainSubstring("VERIFY_FAILED=0"))
-			Expect(script).To(ContainSubstring("grep"))
+			Expect(script).To(ContainSubstring("awk"))
 			Expect(script).To(ContainSubstring("sha256sum"))
 			Expect(script).To(ContainSubstring("PASS"))
 			Expect(script).To(ContainSubstring("FAIL"))
@@ -220,7 +220,7 @@ var _ = Describe("Job construction", func() {
 			Expect(script).NotTo(ContainSubstring("du -h '/data/SHA256SUMS'"))
 		})
 
-		It("should compute correct relative path for grep pattern", func() {
+		It("should use awk with exact match on second field", func() {
 			tasks := []downloadTask{
 				{
 					URL:        "https://example.com/images/netboot/amd64/linux",
@@ -232,7 +232,43 @@ var _ = Describe("Job construction", func() {
 				},
 			}
 			script := buildDownloadScript(tasks)
-			Expect(script).To(ContainSubstring("grep -F 'netboot/amd64/linux'"))
+			// awk matches $2 exactly, avoiding substring collisions (e.g. linux vs linux.old)
+			Expect(script).To(ContainSubstring(`awk -v path='netboot/amd64/linux'`))
+			Expect(script).To(ContainSubstring(`$2==path`))
+		})
+
+		It("should accept uppercase hex and normalize to lowercase", func() {
+			tasks := []downloadTask{
+				{
+					URL:        "https://example.com/dir/vmlinuz",
+					OutputPath: "/data/vmlinuz",
+				},
+				{
+					URL:        "https://example.com/dir/SHA256SUMS",
+					OutputPath: "/data/SHA256SUMS",
+				},
+			}
+			script := buildDownloadScript(tasks)
+			// case pattern accepts A-F alongside a-f
+			Expect(script).To(ContainSubstring("0-9a-fA-F"))
+			// normalize to lowercase before comparison
+			Expect(script).To(ContainSubstring("tr 'A-F' 'a-f'"))
+		})
+
+		It("should send error and fail messages to stderr", func() {
+			tasks := []downloadTask{
+				{
+					URL:        "https://example.com/dir/vmlinuz",
+					OutputPath: "/data/vmlinuz",
+				},
+				{
+					URL:        "https://example.com/dir/SHA256SUMS",
+					OutputPath: "/data/SHA256SUMS",
+				},
+			}
+			script := buildDownloadScript(tasks)
+			Expect(script).To(ContainSubstring("ERROR: no valid hash found for /data/vmlinuz\" >&2"))
+			Expect(script).To(ContainSubstring("FAIL: /data/vmlinuz\" >&2"))
 		})
 	})
 
@@ -251,6 +287,14 @@ var _ = Describe("Job construction", func() {
 				"https://example.com/a/SHA256SUMS",
 			)
 			Expect(result).To(Equal("b/c/file"))
+		})
+
+		It("should fall back to basename when shasum path has no slash", func() {
+			result := relativeURLPath(
+				"https://example.com/vmlinuz",
+				"nopath",
+			)
+			Expect(result).To(Equal("vmlinuz"))
 		})
 
 		It("should handle Debian-style nested paths", func() {

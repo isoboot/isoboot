@@ -101,9 +101,12 @@ func relativeURLPath(binaryURL, shasumURL string) string {
 	if err != nil {
 		return filepath.Base(binaryURL)
 	}
-	shasumDir := su.Path[:strings.LastIndex(su.Path, "/")+1]
+	lastSlash := strings.LastIndex(su.Path, "/")
+	if lastSlash == -1 {
+		return filepath.Base(bu.Path)
+	}
+	shasumDir := su.Path[:lastSlash+1]
 	rel := strings.TrimPrefix(bu.Path, shasumDir)
-	// Handle leading "./" in shasum files
 	return strings.TrimPrefix(rel, "./")
 }
 
@@ -135,6 +138,11 @@ var downloadScriptTmpl = template.Must(template.New("download").Funcs(templateFu
 // buildDownloadScript generates a shell script that downloads every task.
 // URLs are base64-encoded and decoded to a temporary file at runtime, so they
 // never enter a shell-interpreted context.
+//
+// Tasks must arrive in binary/shasum pairs: even indices are binaries,
+// odd indices are the corresponding shasum files. This invariant is
+// maintained by collectDownloadTasks which iterates {Binary, Shasum}
+// for each resource.
 func buildDownloadScript(tasks []downloadTask) string {
 	data := make([]scriptTask, len(tasks))
 	for i, t := range tasks {

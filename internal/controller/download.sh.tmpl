@@ -15,26 +15,26 @@ VERIFY_FAILED=0
 {{- range $i, $t := $tasks }}
 {{- if eq (mod $i 2) 1 }}
 {{- $bin := index $tasks (sub $i 1) }}
-HASH_LINE=$(grep -F '{{ relpath $bin.URL $t.URL }}' '{{ $t.OutputPath }}' | head -1)
+HASH_LINE=$(awk -v path='{{ relpath $bin.URL $t.URL }}' '$2==path || $2=="./"path || $2=="*"path || $2=="*./"path {print; exit}' '{{ $t.OutputPath }}')
 EXPECTED=""
 ALGO=""
 for word in $HASH_LINE; do
   case "$word" in
-    *[!0-9a-f]*) continue ;;
+    *[!0-9a-fA-F]*) continue ;;
   esac
   WORD_LEN=${#word}
   if [ "$WORD_LEN" -eq 64 ]; then
-    EXPECTED="$word"
+    EXPECTED=$(echo "$word" | tr 'A-F' 'a-f')
     ALGO=SHA256
     break
   elif [ "$WORD_LEN" -eq 128 ]; then
-    EXPECTED="$word"
+    EXPECTED=$(echo "$word" | tr 'A-F' 'a-f')
     ALGO=SHA512
     break
   fi
 done
 if [ -z "$ALGO" ]; then
-  echo "ERROR: no valid hash found for {{ $bin.OutputPath }}"
+  echo "ERROR: no valid hash found for {{ $bin.OutputPath }}" >&2
   rm -f '{{ $bin.OutputPath }}'
   VERIFY_FAILED=1
 else
@@ -48,7 +48,7 @@ else
   if [ "$EXPECTED" = "$ACTUAL" ]; then
     echo "PASS: {{ $bin.OutputPath }}"
   else
-    echo "FAIL: {{ $bin.OutputPath }}"
+    echo "FAIL: {{ $bin.OutputPath }}" >&2
     rm -f '{{ $bin.OutputPath }}'
     VERIFY_FAILED=1
   fi
