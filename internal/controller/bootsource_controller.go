@@ -144,7 +144,7 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 		if cond.Type == batchv1.JobComplete && cond.Status == "True" {
 			log.Info("Download job completed, transitioning to Verifying")
 			bootSource.Status.Phase = isobootv1alpha1.PhaseVerifying
-			bootSource.Status.ArtifactPaths = buildArtifactPaths(bootSource.Spec, r.HostPathBaseDir, bootSource.Namespace, bootSource.Name)
+			bootSource.Status.ArtifactPaths = buildArtifactPaths(ctx, bootSource.Spec, r.HostPathBaseDir, bootSource.Namespace, bootSource.Name)
 			if err := r.Status().Update(ctx, bootSource); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -166,7 +166,8 @@ func (r *BootSourceReconciler) reconcileDownloading(ctx context.Context, bootSou
 
 // buildArtifactPaths computes a map of resource type to host path for binary
 // files (not shasums) based on the BootSource spec.
-func buildArtifactPaths(spec isobootv1alpha1.BootSourceSpec, baseDir, namespace, name string) map[string]string {
+func buildArtifactPaths(ctx context.Context, spec isobootv1alpha1.BootSourceSpec, baseDir, namespace, name string) map[string]string {
+	log := logf.FromContext(ctx)
 	paths := make(map[string]string)
 
 	type entry struct {
@@ -191,7 +192,7 @@ func buildArtifactPaths(spec isobootv1alpha1.BootSourceSpec, baseDir, namespace,
 	for _, e := range entries {
 		p, err := DownloadPath(baseDir, namespace, name, e.rt, e.url)
 		if err != nil {
-			// Skip entries with invalid URLs; they would have failed during Job creation.
+			log.Error(err, "Skipping artifact path for resource type", "resourceType", e.rt, "url", e.url)
 			continue
 		}
 		paths[string(e.rt)] = p
