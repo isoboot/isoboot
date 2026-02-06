@@ -236,8 +236,11 @@ func buildDownloadJob(bootSource *isobootv1alpha1.BootSource, scheme *runtime.Sc
 		},
 	}
 	if iso != nil {
-		privileged := true
-		container.SecurityContext = &corev1.SecurityContext{Privileged: &privileged}
+		container.SecurityContext = &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{"SYS_ADMIN"},
+			},
+		}
 	}
 
 	job := &batchv1.Job{

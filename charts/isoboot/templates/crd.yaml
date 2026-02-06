@@ -138,6 +138,10 @@ spec:
                       rule: '!self.kernel.contains(''..'')'
                     - message: initrd path must not contain path traversal (..)
                       rule: '!self.initrd.contains(''..'')'
+                    - message: kernel path must be absolute (start with /)
+                      rule: self.kernel.startsWith('/')
+                    - message: initrd path must be absolute (start with /)
+                      rule: self.initrd.startsWith('/')
                   url:
                     description: URL contains the download URLs for the ISO
                     properties:

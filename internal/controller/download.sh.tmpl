@@ -61,13 +61,15 @@ fi
 {{- if .ISO }}
 echo "--- Extracting from ISO ---"
 MOUNT_DIR=$(mktemp -d)
-mount -o ro,loop '{{ .ISO.ISOPath }}' "$MOUNT_DIR"
+trap 'umount "$MOUNT_DIR" 2>/dev/null; rmdir "$MOUNT_DIR" 2>/dev/null' EXIT
+mount -o ro,loop '{{ .ISO.ISOPath }}' "$MOUNT_DIR" || { echo "ERROR: failed to mount ISO" >&2; exit 1; }
 mkdir -p '{{ .ISO.KernelDstDir }}'
-cp "$MOUNT_DIR"'{{ .ISO.KernelSrc }}' '{{ .ISO.KernelDst }}'
+cp "$MOUNT_DIR"/'{{ .ISO.KernelSrc }}' '{{ .ISO.KernelDst }}'
 mkdir -p '{{ .ISO.InitrdDstDir }}'
-cp "$MOUNT_DIR"'{{ .ISO.InitrdSrc }}' '{{ .ISO.InitrdDst }}'
+cp "$MOUNT_DIR"/'{{ .ISO.InitrdSrc }}' '{{ .ISO.InitrdDst }}'
 umount "$MOUNT_DIR"
 rmdir "$MOUNT_DIR"
+trap - EXIT
 echo "Extracted kernel: {{ .ISO.KernelDst }}"
 echo "Extracted initrd: {{ .ISO.InitrdDst }}"
 {{- end }}

@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -295,12 +296,18 @@ var _ = Describe("Job construction", func() {
 			Expect(script).To(ContainSubstring("Extracting from ISO"))
 			Expect(script).To(ContainSubstring("mount -o ro,loop '/data/iso/boot.iso'"))
 			Expect(script).To(ContainSubstring("mkdir -p '/data/kernel'"))
-			Expect(script).To(ContainSubstring("'/casper/vmlinuz'"))
+			// Verify / separator between mount dir and ISO path
+			Expect(script).To(ContainSubstring(`"$MOUNT_DIR"/'/casper/vmlinuz'`))
 			Expect(script).To(ContainSubstring("'/data/kernel/vmlinuz'"))
 			Expect(script).To(ContainSubstring("mkdir -p '/data/initrd'"))
-			Expect(script).To(ContainSubstring("'/casper/initrd'"))
+			Expect(script).To(ContainSubstring(`"$MOUNT_DIR"/'/casper/initrd'`))
 			Expect(script).To(ContainSubstring("'/data/initrd/initrd'"))
 			Expect(script).To(ContainSubstring("umount"))
+			// Verify trap-based cleanup
+			Expect(script).To(ContainSubstring("trap"))
+			Expect(script).To(ContainSubstring("trap - EXIT"))
+			// Verify error handling on mount
+			Expect(script).To(ContainSubstring("ERROR: failed to mount ISO"))
 			Expect(script).To(ContainSubstring("Extracted kernel: /data/kernel/vmlinuz"))
 			Expect(script).To(ContainSubstring("Extracted initrd: /data/initrd/initrd"))
 			// du -h should include extracted files
@@ -487,7 +494,7 @@ var _ = Describe("Job construction", func() {
 			Expect(downloadJobName("my-source")).To(Equal("my-source-download"))
 		})
 
-		It("should set privileged security context for ISO sources", func() {
+		It("should set SYS_ADMIN capability for ISO sources", func() {
 			source := newBootSource("iso-source", "default", isobootv1alpha1.BootSourceSpec{
 				ISO: &isobootv1alpha1.ISOSource{
 					URL: isobootv1alpha1.URLSource{
@@ -501,11 +508,11 @@ var _ = Describe("Job construction", func() {
 			Expect(err).NotTo(HaveOccurred())
 			sc := job.Spec.Template.Spec.Containers[0].SecurityContext
 			Expect(sc).NotTo(BeNil())
-			Expect(sc.Privileged).NotTo(BeNil())
-			Expect(*sc.Privileged).To(BeTrue())
+			Expect(sc.Capabilities).NotTo(BeNil())
+			Expect(sc.Capabilities.Add).To(ContainElement(corev1.Capability("SYS_ADMIN")))
 		})
 
-		It("should not set privileged security context for non-ISO sources", func() {
+		It("should not set security context for non-ISO sources", func() {
 			source := newBootSource("kernel-source", "default", isobootv1alpha1.BootSourceSpec{
 				Kernel: &isobootv1alpha1.KernelSource{
 					URL: isobootv1alpha1.URLSource{
