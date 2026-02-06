@@ -2,3 +2,18 @@
 
 # Image used by download Jobs to fetch boot artifacts
 downloadImage: alpine:3.23
+
+# Required: Kubernetes node this instance manages (triggers error if unset)
+# nodeName: worker-1
+
+# Required: host network interface for DHCP/TFTP/HTTP (triggers error if unset)
+# networkInterface: enp0s1
+
+# HTTP port for serving boot artifacts
+httpPort: 8080
+
+# Controller manager image
+controllerImage: controller:latest
+
+# Host path base directory for boot artifacts
+hostPathBaseDir: /var/lib/isoboot
