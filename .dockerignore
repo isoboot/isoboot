@@ -6,6 +6,9 @@
 !**/*.go
 **/*_test.go
 
+# Re-include embedded template files
+!**/*.tmpl
+
 # Re-include Go module files
 !go.mod
 !go.sum
