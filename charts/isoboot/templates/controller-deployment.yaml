@@ -13,10 +13,10 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        {{- include "isoboot.labels" . | nindent 8 }}
     spec:
       nodeSelector:
-        kubernetes.io/hostname: {{ .Values.nodeName }}
+        kubernetes.io/hostname: {{ .Values.nodeName | quote }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
