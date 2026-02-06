@@ -127,7 +127,7 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/var/lib/isoboot/default/my-source/kernel/vmlinuz",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			Expect(script).To(HavePrefix("set -eu\n"))
 			Expect(script).To(ContainSubstring("apk add --no-cache wget"))
 		})
@@ -139,7 +139,7 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/var/lib/isoboot/default/my-source/kernel/vmlinuz",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			encoded := base64.StdEncoding.EncodeToString([]byte("https://example.com/vmlinuz"))
 			Expect(script).To(ContainSubstring(encoded))
 		})
@@ -151,7 +151,7 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/var/lib/isoboot/default/my-source/kernel/vmlinuz",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			Expect(script).To(ContainSubstring("wget -q -i '/tmp/url_0.txt'"))
 		})
 
@@ -166,7 +166,7 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/data/b",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			Expect(script).To(ContainSubstring("url_0.txt"))
 			Expect(script).To(ContainSubstring("url_1.txt"))
 		})
@@ -178,7 +178,7 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/data/vmlinuz",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			Expect(script).To(ContainSubstring("! -f"))
 			Expect(script).To(ContainSubstring("SKIP"))
 		})
@@ -194,7 +194,7 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/data/SHA256SUMS",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			Expect(script).To(ContainSubstring("VERIFY_FAILED=0"))
 			Expect(script).To(ContainSubstring("awk"))
 			Expect(script).To(ContainSubstring("sha256sum"))
@@ -213,7 +213,7 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/data/SHA256SUMS",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			Expect(script).To(ContainSubstring("File sizes"))
 			Expect(script).To(ContainSubstring("du -h '/data/vmlinuz'"))
 			// Should not show du for shasum files (odd index)
@@ -231,7 +231,7 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/data/SHA256SUMS",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			// awk matches $2 exactly, avoiding substring collisions (e.g. linux vs linux.old)
 			Expect(script).To(ContainSubstring(`awk -v path='netboot/amd64/linux'`))
 			Expect(script).To(ContainSubstring(`$2==path`))
@@ -248,7 +248,7 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/data/SHA256SUMS",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			// case pattern accepts A-F alongside a-f
 			Expect(script).To(ContainSubstring("0-9a-fA-F"))
 			// normalize to lowercase before comparison
@@ -266,9 +266,62 @@ var _ = Describe("Job construction", func() {
 					OutputPath: "/data/SHA256SUMS",
 				},
 			}
-			script := buildDownloadScript(tasks)
+			script := buildDownloadScript(tasks, nil)
 			Expect(script).To(ContainSubstring("ERROR: no valid hash found for /data/vmlinuz\" >&2"))
 			Expect(script).To(ContainSubstring("FAIL: /data/vmlinuz\" >&2"))
+		})
+
+		It("should include ISO extraction commands when isoExtractInfo is provided", func() {
+			tasks := []downloadTask{
+				{
+					URL:        "https://example.com/boot.iso",
+					OutputPath: "/data/iso/boot.iso",
+				},
+				{
+					URL:        "https://example.com/boot.iso.sha256",
+					OutputPath: "/data/iso/boot.iso.sha256",
+				},
+			}
+			iso := &isoExtractInfo{
+				ISOPath:      "/data/iso/boot.iso",
+				KernelSrc:    "/casper/vmlinuz",
+				KernelDstDir: "/data/kernel",
+				KernelDst:    "/data/kernel/vmlinuz",
+				InitrdSrc:    "/casper/initrd",
+				InitrdDstDir: "/data/initrd",
+				InitrdDst:    "/data/initrd/initrd",
+			}
+			script := buildDownloadScript(tasks, iso)
+			Expect(script).To(ContainSubstring("Extracting from ISO"))
+			Expect(script).To(ContainSubstring("mount -o ro,loop '/data/iso/boot.iso'"))
+			Expect(script).To(ContainSubstring("mkdir -p '/data/kernel'"))
+			Expect(script).To(ContainSubstring("'/casper/vmlinuz'"))
+			Expect(script).To(ContainSubstring("'/data/kernel/vmlinuz'"))
+			Expect(script).To(ContainSubstring("mkdir -p '/data/initrd'"))
+			Expect(script).To(ContainSubstring("'/casper/initrd'"))
+			Expect(script).To(ContainSubstring("'/data/initrd/initrd'"))
+			Expect(script).To(ContainSubstring("umount"))
+			Expect(script).To(ContainSubstring("Extracted kernel: /data/kernel/vmlinuz"))
+			Expect(script).To(ContainSubstring("Extracted initrd: /data/initrd/initrd"))
+			// du -h should include extracted files
+			Expect(script).To(ContainSubstring("du -h '/data/kernel/vmlinuz'"))
+			Expect(script).To(ContainSubstring("du -h '/data/initrd/initrd'"))
+		})
+
+		It("should not include mount commands when isoExtractInfo is nil", func() {
+			tasks := []downloadTask{
+				{
+					URL:        "https://example.com/vmlinuz",
+					OutputPath: "/data/vmlinuz",
+				},
+				{
+					URL:        "https://example.com/SHA256SUMS",
+					OutputPath: "/data/SHA256SUMS",
+				},
+			}
+			script := buildDownloadScript(tasks, nil)
+			Expect(script).NotTo(ContainSubstring("mount"))
+			Expect(script).NotTo(ContainSubstring("Extracting from ISO"))
 		})
 	})
 
@@ -432,6 +485,44 @@ var _ = Describe("Job construction", func() {
 
 		It("should append -download suffix to name", func() {
 			Expect(downloadJobName("my-source")).To(Equal("my-source-download"))
+		})
+
+		It("should set privileged security context for ISO sources", func() {
+			source := newBootSource("iso-source", "default", isobootv1alpha1.BootSourceSpec{
+				ISO: &isobootv1alpha1.ISOSource{
+					URL: isobootv1alpha1.URLSource{
+						Binary: "https://example.com/boot.iso",
+						Shasum: "https://example.com/boot.iso.sha256",
+					},
+					Path: isobootv1alpha1.PathSource{Kernel: "/boot/vmlinuz", Initrd: "/boot/initrd.img"},
+				},
+			})
+			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
+			Expect(err).NotTo(HaveOccurred())
+			sc := job.Spec.Template.Spec.Containers[0].SecurityContext
+			Expect(sc).NotTo(BeNil())
+			Expect(sc.Privileged).NotTo(BeNil())
+			Expect(*sc.Privileged).To(BeTrue())
+		})
+
+		It("should not set privileged security context for non-ISO sources", func() {
+			source := newBootSource("kernel-source", "default", isobootv1alpha1.BootSourceSpec{
+				Kernel: &isobootv1alpha1.KernelSource{
+					URL: isobootv1alpha1.URLSource{
+						Binary: "https://example.com/vmlinuz",
+						Shasum: "https://example.com/vmlinuz.sha256",
+					},
+				},
+				Initrd: &isobootv1alpha1.InitrdSource{
+					URL: isobootv1alpha1.URLSource{
+						Binary: "https://example.com/initrd.img",
+						Shasum: "https://example.com/initrd.img.sha256",
+					},
+				},
+			})
+			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(job.Spec.Template.Spec.Containers[0].SecurityContext).To(BeNil())
 		})
 	})
 })

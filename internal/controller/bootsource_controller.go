@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"path/filepath"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -198,6 +199,13 @@ func buildArtifactPaths(ctx context.Context, spec isobootv1alpha1.BootSourceSpec
 		}
 		paths[string(e.rt)] = p
 	}
+
+	// For ISO sources, record the extracted kernel/initrd paths.
+	if spec.ISO != nil {
+		paths[string(ResourceKernel)] = filepath.Join(baseDir, namespace, name, string(ResourceKernel), filepath.Base(spec.ISO.Path.Kernel))
+		paths[string(ResourceInitrd)] = filepath.Join(baseDir, namespace, name, string(ResourceInitrd), filepath.Base(spec.ISO.Path.Initrd))
+	}
+
 	return paths
 }
 
