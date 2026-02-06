@@ -170,6 +170,96 @@ var _ = Describe("Job construction", func() {
 			Expect(script).To(ContainSubstring("url_0.txt"))
 			Expect(script).To(ContainSubstring("url_1.txt"))
 		})
+
+		It("should contain skip-if-exists check", func() {
+			tasks := []downloadTask{
+				{
+					URL:        "https://example.com/vmlinuz",
+					OutputPath: "/data/vmlinuz",
+				},
+			}
+			script := buildDownloadScript(tasks)
+			Expect(script).To(ContainSubstring("! -f"))
+			Expect(script).To(ContainSubstring("SKIP"))
+		})
+
+		It("should contain hash verification for binary/shasum pairs", func() {
+			tasks := []downloadTask{
+				{
+					URL:        "https://example.com/dir/vmlinuz",
+					OutputPath: "/data/vmlinuz",
+				},
+				{
+					URL:        "https://example.com/dir/SHA256SUMS",
+					OutputPath: "/data/SHA256SUMS",
+				},
+			}
+			script := buildDownloadScript(tasks)
+			Expect(script).To(ContainSubstring("VERIFY_FAILED=0"))
+			Expect(script).To(ContainSubstring("grep"))
+			Expect(script).To(ContainSubstring("sha256sum"))
+			Expect(script).To(ContainSubstring("PASS"))
+			Expect(script).To(ContainSubstring("FAIL"))
+		})
+
+		It("should contain file size summary using du -h for binary files", func() {
+			tasks := []downloadTask{
+				{
+					URL:        "https://example.com/dir/vmlinuz",
+					OutputPath: "/data/vmlinuz",
+				},
+				{
+					URL:        "https://example.com/dir/SHA256SUMS",
+					OutputPath: "/data/SHA256SUMS",
+				},
+			}
+			script := buildDownloadScript(tasks)
+			Expect(script).To(ContainSubstring("File sizes"))
+			Expect(script).To(ContainSubstring("du -h '/data/vmlinuz'"))
+			// Should not show du for shasum files (odd index)
+			Expect(script).NotTo(ContainSubstring("du -h '/data/SHA256SUMS'"))
+		})
+
+		It("should compute correct relative path for grep pattern", func() {
+			tasks := []downloadTask{
+				{
+					URL:        "https://example.com/images/netboot/amd64/linux",
+					OutputPath: "/data/linux",
+				},
+				{
+					URL:        "https://example.com/images/SHA256SUMS",
+					OutputPath: "/data/SHA256SUMS",
+				},
+			}
+			script := buildDownloadScript(tasks)
+			Expect(script).To(ContainSubstring("grep -F 'netboot/amd64/linux'"))
+		})
+	})
+
+	Describe("relativeURLPath", func() {
+		It("should return filename for same-directory URLs", func() {
+			result := relativeURLPath(
+				"https://example.com/dir/file",
+				"https://example.com/dir/SHA256SUMS",
+			)
+			Expect(result).To(Equal("file"))
+		})
+
+		It("should return nested relative path", func() {
+			result := relativeURLPath(
+				"https://example.com/a/b/c/file",
+				"https://example.com/a/SHA256SUMS",
+			)
+			Expect(result).To(Equal("b/c/file"))
+		})
+
+		It("should handle Debian-style nested paths", func() {
+			result := relativeURLPath(
+				"https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux",
+				"https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/SHA256SUMS",
+			)
+			Expect(result).To(Equal("netboot/debian-installer/amd64/linux"))
+		})
 	})
 
 	Describe("buildDownloadJob", func() {

@@ -21,7 +21,9 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -87,11 +89,36 @@ type scriptTask struct {
 	OutputPath string
 }
 
+// relativeURLPath computes the relative path of binaryURL from the directory
+// of shasumURL. For example, given binary ".../images/netboot/.../linux" and
+// shasum ".../images/SHA256SUMS", it returns "netboot/.../linux".
+func relativeURLPath(binaryURL, shasumURL string) string {
+	bu, err := url.Parse(binaryURL)
+	if err != nil {
+		return filepath.Base(binaryURL)
+	}
+	su, err := url.Parse(shasumURL)
+	if err != nil {
+		return filepath.Base(binaryURL)
+	}
+	shasumDir := su.Path[:strings.LastIndex(su.Path, "/")+1]
+	rel := strings.TrimPrefix(bu.Path, shasumDir)
+	// Handle leading "./" in shasum files
+	return strings.TrimPrefix(rel, "./")
+}
+
 // templateFuncs contains reusable template functions.
 var templateFuncs = template.FuncMap{
 	"b64enc": func(s string) string {
 		return base64.StdEncoding.EncodeToString([]byte(s))
 	},
+	"mod": func(a, b int) int {
+		return a % b
+	},
+	"sub": func(a, b int) int {
+		return a - b
+	},
+	"relpath": relativeURLPath,
 }
 
 // downloadScriptRaw is the raw shell template embedded from download.sh.tmpl.
