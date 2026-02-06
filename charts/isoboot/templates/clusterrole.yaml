@@ -1,0 +1,42 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "isoboot.fullname" . }}-manager-role
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootsources
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootsources/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootsources/status
+  verbs:
+  - get
+  - patch
+  - update
