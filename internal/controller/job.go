@@ -18,10 +18,8 @@ package controller
 
 import (
 	"bytes"
-	"crypto/sha256"
 	_ "embed"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"text/template"
@@ -128,25 +126,12 @@ func buildDownloadScript(tasks []downloadTask) string {
 	return buf.String()
 }
 
-const (
-	maxJobNameLen = 63
-	hashLen       = 5
-)
-
 // downloadJobName returns the Job name for a given BootSource name.
-// When the full name would exceed 63 characters, it truncates and appends
-// a stable hash suffix to avoid collisions between long names that share
-// a common prefix.
+// BootSource names are limited to 50 characters by CEL validation,
+// so the result is at most 59 characters (well within the 63-char
+// DNS label limit).
 func downloadJobName(bootSourceName string) string {
-	name := bootSourceName + "-download"
-	if len(name) <= maxJobNameLen {
-		return name
-	}
-	h := sha256.Sum256([]byte(name))
-	suffix := hex.EncodeToString(h[:3])[:hashLen]
-	// truncate-<hash>: leave room for dash + hash suffix
-	truncated := name[:maxJobNameLen-1-hashLen]
-	return truncated + "-" + suffix
+	return bootSourceName + "-download"
 }
 
 // buildDownloadJob constructs a batch/v1 Job that downloads all resources for

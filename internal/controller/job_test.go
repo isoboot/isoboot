@@ -18,7 +18,6 @@ package controller
 
 import (
 	"encoding/base64"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -282,7 +281,7 @@ var _ = Describe("Job construction", func() {
 		})
 
 		It("should set expected labels", func() {
-			source := newBootSource("test-source", "default", isobootv1alpha1.BootSourceSpec{
+			source := newBootSource("label-source", "default", isobootv1alpha1.BootSourceSpec{
 				ISO: &isobootv1alpha1.ISOSource{
 					URL: isobootv1alpha1.URLSource{
 						Binary: "https://example.com/boot.iso",
@@ -293,33 +292,12 @@ var _ = Describe("Job construction", func() {
 			})
 			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(job.Labels).To(HaveKeyWithValue("isoboot.github.io/bootsource-name", "test-source"))
+			Expect(job.Labels).To(HaveKeyWithValue("isoboot.github.io/bootsource-name", "label-source"))
 			Expect(job.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "isoboot"))
 		})
 
-		It("should truncate long names to 63 characters with hash suffix", func() {
-			longName := strings.Repeat("a", 80)
-			source := newBootSource(longName, "default", isobootv1alpha1.BootSourceSpec{
-				ISO: &isobootv1alpha1.ISOSource{
-					URL: isobootv1alpha1.URLSource{
-						Binary: "https://example.com/boot.iso",
-						Shasum: "https://example.com/boot.iso.sha256",
-					},
-					Path: isobootv1alpha1.PathSource{Kernel: "/boot/vmlinuz", Initrd: "/boot/initrd.img"},
-				},
-			})
-			job, err := buildDownloadJob(source, newScheme(), baseDir, testDownloadImage)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(len(job.Name)).To(BeNumerically("<=", 63))
-			// Should end with a hex hash suffix
-			Expect(job.Name).To(MatchRegexp(`-[0-9a-f]{5}$`))
-		})
-
-		It("should produce different names for long names with same prefix", func() {
-			prefix := strings.Repeat("a", 60)
-			name1 := downloadJobName(prefix + "-alpha")
-			name2 := downloadJobName(prefix + "-bravo")
-			Expect(name1).NotTo(Equal(name2))
+		It("should append -download suffix to name", func() {
+			Expect(downloadJobName("my-source")).To(Equal("my-source-download"))
 		})
 	})
 })
