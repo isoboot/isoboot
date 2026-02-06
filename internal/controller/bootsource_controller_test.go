@@ -300,7 +300,7 @@ var _ = Describe("BootSource Controller", func() {
 	})
 
 	Context("buildArtifactPaths", func() {
-		It("should point initrd to with-firmware path when firmware is present", func() {
+		It("should expose both initrd and initrd-firmware paths when firmware is present", func() {
 			ctx := context.Background()
 			spec := isobootv1alpha1.BootSourceSpec{
 				Kernel: &isobootv1alpha1.KernelSource{
@@ -324,7 +324,8 @@ var _ = Describe("BootSource Controller", func() {
 			}
 			paths := buildArtifactPaths(ctx, spec, "/var/lib/isoboot", "default", "my-source")
 			Expect(paths).To(HaveKeyWithValue("kernel", "/var/lib/isoboot/default/my-source/kernel/vmlinuz"))
-			Expect(paths).To(HaveKeyWithValue("initrd", "/var/lib/isoboot/default/my-source/initrd/with-firmware/initrd.img"))
+			Expect(paths).To(HaveKeyWithValue("initrd", "/var/lib/isoboot/default/my-source/initrd/initrd.img"))
+			Expect(paths).To(HaveKeyWithValue("initrd-firmware", "/var/lib/isoboot/default/my-source/initrd/with-firmware/initrd.img"))
 			Expect(paths).To(HaveKeyWithValue("firmware", "/var/lib/isoboot/default/my-source/firmware/firmware.cpio.gz"))
 		})
 

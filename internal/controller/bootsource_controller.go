@@ -209,10 +209,11 @@ func buildArtifactPaths(ctx context.Context, spec isobootv1alpha1.BootSourceSpec
 		paths[string(ResourceInitrd)] = filepath.Join(baseDir, namespace, name, string(ResourceInitrd), filepath.Base(spec.ISO.Path.Initrd))
 	}
 
-	// When firmware is present, the initrd path points to the combined file.
+	// When firmware is present, expose the combined initrd as a separate path.
+	// Clients choose "initrd" (plain) or "initrd-firmware" (with firmware).
 	if spec.Firmware != nil {
 		origInitrd := paths[string(ResourceInitrd)]
-		paths[string(ResourceInitrd)] = filepath.Join(
+		paths["initrd-firmware"] = filepath.Join(
 			filepath.Dir(origInitrd), "with-firmware", filepath.Base(origInitrd))
 	}
 
