@@ -91,12 +91,9 @@ jobs:
 
       - name: Push image to GHCR
         if: github.event_name == 'push'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: false
-          cache-from: type=gha
+        run: |
+          for tag in $TAGS; do
+            docker push "$tag"
+          done
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
