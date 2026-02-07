@@ -16,7 +16,7 @@ httpPort: 8080
 controllerImage: ghcr.io/isoboot/isoboot:test
 
 # Fileserver image (nginx + gettext + iproute2)
-fileserverImage: ghcr.io/isoboot/isoboot-nginx:latest
+fileserverImage: ghcr.io/isoboot/isoboot-nginx:0.0.1
 
 # Host path base directory for boot artifacts
 hostPathBaseDir: /var/lib/isoboot

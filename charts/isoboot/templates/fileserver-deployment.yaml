@@ -41,6 +41,12 @@ spec:
           capabilities:
             drop:
             - "ALL"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
         volumeMounts:
         - name: scripts
           mountPath: /scripts

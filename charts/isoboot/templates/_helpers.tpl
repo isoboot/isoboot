@@ -55,4 +55,7 @@ produced.
 {{- define "isoboot.validate" -}}
 {{- $_ := required "nodeName is required" .Values.nodeName }}
 {{- $_ := required "networkInterface is required" .Values.networkInterface }}
+{{- if lt (int .Values.httpPort) 1024 }}
+{{- fail "httpPort must be >= 1024 (container runs as non-root and drops all capabilities)" }}
+{{- end }}
 {{- end }}
