@@ -56,7 +56,7 @@ find_available_subnet() {
 kube_curl() {
     kubectl run curl-test --image="$CURL_IMAGE" --restart=Never --rm -i \
         --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"'"$NODE"'"}}}' \
-        -- "$@" 2>/dev/null
+        -- "$@" 2>/dev/null | grep -v '^pod "curl-test" deleted'
 }
 
 THIRD=$(find_available_subnet)
