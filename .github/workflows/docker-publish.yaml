@@ -35,16 +35,9 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build_isoboot:
+    name: Build (isoboot)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: isoboot
-            dockerfile: Dockerfile
-          - image: isoboot-nginx
-            dockerfile: Dockerfile.nginx
     steps:
       - uses: actions/checkout@v4
 
@@ -54,7 +47,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          images: ghcr.io/${{ github.repository_owner }}/isoboot
           tags: |
             type=sha,prefix=sha-
             type=ref,event=branch
@@ -66,7 +59,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: Dockerfile
           push: false
           load: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -78,7 +71,7 @@ jobs:
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@0.30.0
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.meta.outputs.version }}
+          image-ref: ghcr.io/${{ github.repository_owner }}/isoboot:${{ steps.meta.outputs.version }}
           severity: CRITICAL,HIGH
           exit-code: '1'
           format: 'sarif'
@@ -96,30 +89,86 @@ jobs:
         if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.image }}
+          name: isoboot
           path: |
             image.tar
             tags.txt
             trivy-results.sarif
           retention-days: 1
 
-  push:
+  build_isoboot_nginx:
+    name: Build (isoboot-nginx)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/isoboot-nginx
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=pr,prefix=pr-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.nginx
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/isoboot-nginx:${{ steps.meta.outputs.version }}
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Save image and scan results
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          echo "$TAGS" > tags.txt
+          xargs docker save -o image.tar < tags.txt
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+
+      - name: Upload artifacts
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: isoboot-nginx
+          path: |
+            image.tar
+            tags.txt
+            trivy-results.sarif
+          retention-days: 1
+
+  push_isoboot:
+    name: Push (isoboot)
     if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: build
+    needs: build_isoboot
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
       security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: isoboot
-          - image: isoboot-nginx
     steps:
       - name: Login to GHCR
-        if: needs.build.result == 'success' && (github.event_name == 'push' || inputs.publish)
+        if: needs.build_isoboot.result == 'success' && (github.event_name == 'push' || inputs.publish)
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -128,18 +177,25 @@ jobs:
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
-        continue-on-error: true
+        continue-on-error: ${{ needs.build_isoboot.result != 'success' }}
         with:
-          name: ${{ matrix.image }}
+          name: isoboot
+
+      - name: Verify required artifacts
+        if: needs.build_isoboot.result == 'success'
+        run: |
+          test -f image.tar
+          test -f tags.txt
+          test -f trivy-results.sarif
 
       - name: Push image to GHCR
-        if: needs.build.result == 'success' && (github.event_name == 'push' || inputs.publish) && hashFiles('image.tar') != '' && hashFiles('tags.txt') != ''
+        if: needs.build_isoboot.result == 'success' && (github.event_name == 'push' || inputs.publish)
         run: |
           docker load -i image.tar
           xargs -I{} docker push {} < tags.txt
 
       - name: Validate load path (no publish)
-        if: needs.build.result == 'success' && github.event_name == 'workflow_dispatch' && !inputs.publish && hashFiles('image.tar') != '' && hashFiles('tags.txt') != ''
+        if: needs.build_isoboot.result == 'success' && github.event_name == 'workflow_dispatch' && !inputs.publish
         run: |
           docker load -i image.tar
           xargs -I{} docker image inspect {} >/dev/null < tags.txt
@@ -149,4 +205,54 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
-          category: trivy/${{ matrix.image }}
+          category: trivy/isoboot
+
+  push_isoboot_nginx:
+    name: Push (isoboot-nginx)
+    if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: build_isoboot_nginx
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    steps:
+      - name: Login to GHCR
+        if: needs.build_isoboot_nginx.result == 'success' && (github.event_name == 'push' || inputs.publish)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: ${{ needs.build_isoboot_nginx.result != 'success' }}
+        with:
+          name: isoboot-nginx
+
+      - name: Verify required artifacts
+        if: needs.build_isoboot_nginx.result == 'success'
+        run: |
+          test -f image.tar
+          test -f tags.txt
+          test -f trivy-results.sarif
+
+      - name: Push image to GHCR
+        if: needs.build_isoboot_nginx.result == 'success' && (github.event_name == 'push' || inputs.publish)
+        run: |
+          docker load -i image.tar
+          xargs -I{} docker push {} < tags.txt
+
+      - name: Validate load path (no publish)
+        if: needs.build_isoboot_nginx.result == 'success' && github.event_name == 'workflow_dispatch' && !inputs.publish
+        run: |
+          docker load -i image.tar
+          xargs -I{} docker image inspect {} >/dev/null < tags.txt
+
+      - name: Upload Trivy results to GitHub Security tab
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy/isoboot-nginx
