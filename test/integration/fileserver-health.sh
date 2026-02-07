@@ -52,24 +52,26 @@ find_available_subnet() {
     return 1
 }
 
-# Run curl in a one-shot pod on the Kind node (hostNetwork for 127.0.0.1 access)
+# Run curl in a one-shot pod on the Kind node (hostNetwork for 127.0.0.1 access).
+# Each invocation gets a unique pod name to avoid AlreadyExists races.
+KUBE_CURL_SEQ=0
 kube_curl() {
-    local stderr_file
+    KUBE_CURL_SEQ=$((KUBE_CURL_SEQ + 1))
+    local pod_name="curl-test-${KUBE_CURL_SEQ}"
+    local stderr_file status=0
     stderr_file="$(mktemp)"
-    if ! kubectl run curl-test --image="$CURL_IMAGE" --restart=Never --rm -i \
+    kubectl run "$pod_name" --image="$CURL_IMAGE" --restart=Never --rm -i \
         --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"'"$NODE"'"}}}' \
-        -- "$@" 2>"$stderr_file" | grep -v '^pod "curl-test" deleted'; then
-        local status=$?
-        echo "ERROR: kubectl run curl-test failed with status $status" >&2
+        -- "$@" 2>"$stderr_file" | grep -v "^pod \"${pod_name}\" deleted" || status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "ERROR: kubectl run $pod_name failed with status $status" >&2
         if [ -s "$stderr_file" ]; then
             echo "--- kubectl stderr ---" >&2
             cat "$stderr_file" >&2
             echo "----------------------" >&2
         fi
         rm -f "$stderr_file"
-        if command -v debug_pods >/dev/null 2>&1; then
-            debug_pods || true
-        fi
+        debug_pods || true
         return "$status"
     fi
     rm -f "$stderr_file"
@@ -122,7 +124,11 @@ echo "=== Creating Kind cluster ${CLUSTER} ==="
 kind create cluster --name "$CLUSTER" --wait 60s
 
 echo "=== Loading images into Kind ==="
-kind load docker-image "$CONTROLLER_IMAGE" "$FILESERVER_IMAGE" "$CURL_IMAGE" --name "$CLUSTER"
+kind load docker-image "$CONTROLLER_IMAGE" "$FILESERVER_IMAGE" --name "$CLUSTER"
+# Load curl image via docker save/ctr import to avoid Kind's --all-platforms
+# flag which fails on some architectures (arm64) with multi-arch manifests.
+docker save "$CURL_IMAGE" | docker exec --privileged -i "$NODE" \
+    ctr --namespace=k8s.io images import --snapshotter=overlayfs -
 
 echo "=== Connecting Kind to test subnet via veth ==="
 sudo ip link add "$VETH_KIND" type veth peer name "$VETH_HOST"
@@ -174,7 +180,7 @@ else
 fi
 
 echo "=== Verifying main server ==="
-CODE=$(kube_curl -s -o /dev/null -w '%{http_code}' "http://${SRC_IP}:${HTTP_PORT}/" || true)
+CODE=$(kube_curl -s -o /dev/null -w '%{http_code}\n' "http://${SRC_IP}:${HTTP_PORT}/" || true)
 if [ "$CODE" = "200" ]; then
     echo "PASS: main server returned 200"
 else
