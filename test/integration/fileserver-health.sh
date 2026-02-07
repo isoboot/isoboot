@@ -6,9 +6,10 @@
 # becomes healthy (kubelet probes passing).
 #
 # Subnet auto-detection: scans 192.168.100.0/24 through 192.168.199.0/24
-# and picks the first /24 not covered by any local route. This handles
-# networks of any prefix length (/24, /22, /20, etc.) because it uses
-# the kernel's route lookup (ip route get) rather than string matching.
+# and picks the first /24 for which "ip -4 route show to match" returns
+# no non-default routes. This handles networks of any prefix length
+# (/24, /22, /20, etc.) by relying on the kernel's route lookup, not
+# naive string matching.
 #
 # Requires: sudo, Docker, Kind, Helm, kubectl
 set -euo pipefail
