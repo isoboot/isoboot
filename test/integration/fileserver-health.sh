@@ -54,9 +54,25 @@ find_available_subnet() {
 
 # Run curl in a one-shot pod on the Kind node (hostNetwork for 127.0.0.1 access)
 kube_curl() {
-    kubectl run curl-test --image="$CURL_IMAGE" --restart=Never --rm -i \
+    local stderr_file
+    stderr_file="$(mktemp)"
+    if ! kubectl run curl-test --image="$CURL_IMAGE" --restart=Never --rm -i \
         --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"'"$NODE"'"}}}' \
-        -- "$@" 2>/dev/null | grep -v '^pod "curl-test" deleted'
+        -- "$@" 2>"$stderr_file" | grep -v '^pod "curl-test" deleted'; then
+        local status=$?
+        echo "ERROR: kubectl run curl-test failed with status $status" >&2
+        if [ -s "$stderr_file" ]; then
+            echo "--- kubectl stderr ---" >&2
+            cat "$stderr_file" >&2
+            echo "----------------------" >&2
+        fi
+        rm -f "$stderr_file"
+        if command -v debug_pods >/dev/null 2>&1; then
+            debug_pods || true
+        fi
+        return "$status"
+    fi
+    rm -f "$stderr_file"
 }
 
 THIRD=$(find_available_subnet)
