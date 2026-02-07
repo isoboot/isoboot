@@ -6,8 +6,8 @@ downloadImage: alpine:3.23
 # Required: Kubernetes node this instance manages (triggers error if unset)
 # nodeName: worker-1
 
-# Required: host network interface for DHCP/TFTP/HTTP (triggers error if unset)
-# networkInterface: enp0s1
+# Required: subnet CIDR for DHCP/TFTP/HTTP bind address (triggers error if unset)
+# subnet: 192.168.100.0/24
 
 # HTTP port for serving boot artifacts
 httpPort: 8080
