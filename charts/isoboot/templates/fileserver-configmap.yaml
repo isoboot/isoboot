@@ -43,4 +43,12 @@ data:
             root /var/lib/isoboot;
             autoindex on;
         }
+
+        server {
+            listen 127.0.0.1:10256;
+            location /healthz {
+                return 200 "ok\n";
+                access_log off;
+            }
+        }
     }
