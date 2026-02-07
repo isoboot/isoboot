@@ -57,5 +57,6 @@ spec:
       - name: artifacts
         hostPath:
           path: {{ .Values.hostPathBaseDir }}
+          type: DirectoryOrCreate
       - name: tmp
         emptyDir: {}
