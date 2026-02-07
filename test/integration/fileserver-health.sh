@@ -61,7 +61,7 @@ kube_curl() {
     stderr_file="$(mktemp)"
     kubectl run "$pod_name" --image="$CURL_IMAGE" --restart=Never --rm -i \
         --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"'"$NODE"'"}}}' \
-        -- "$@" 2>"$stderr_file" | grep -v "^pod \"${pod_name}\" deleted" || status=$?
+        --command -- curl "$@" 2>"$stderr_file" | grep -v "^pod \"${pod_name}\" deleted" || status=$?
     if [ "$status" -ne 0 ]; then
         echo "ERROR: kubectl run $pod_name failed with status $status" >&2
         if [ -s "$stderr_file" ]; then
