@@ -77,24 +77,21 @@ jobs:
 
       - name: Save image and scan results
         if: github.event_name == 'push'
-        run: docker save $TAGS -o image.tar
+        run: |
+          echo "$TAGS" > tags.txt
+          xargs docker save -o image.tar < tags.txt
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
 
-      - name: Upload image artifact
+      - name: Upload artifacts
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.image }}
-          path: image.tar
-          retention-days: 1
-
-      - name: Upload Trivy SARIF artifact
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.image }}-trivy
-          path: trivy-results.sarif
+          path: |
+            image.tar
+            tags.txt
+            trivy-results.sarif
           retention-days: 1
 
   push:
@@ -114,8 +111,6 @@ jobs:
           - image: isoboot-nginx
             dockerfile: Dockerfile.nginx
     steps:
-      - uses: actions/checkout@v4
-
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -123,19 +118,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-          tags: |
-            type=sha,prefix=sha-
-            type=ref,event=branch
-            type=ref,event=pr,prefix=pr-
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Download image artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.image }}
@@ -143,16 +126,7 @@ jobs:
       - name: Push image to GHCR
         run: |
           docker load -i image.tar
-          for tag in $TAGS; do
-            docker push "$tag"
-          done
-        env:
-          TAGS: ${{ steps.meta.outputs.tags }}
-
-      - name: Download Trivy SARIF artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.image }}-trivy
+          xargs -I{} docker push {} < tags.txt
 
       - name: Upload Trivy results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
