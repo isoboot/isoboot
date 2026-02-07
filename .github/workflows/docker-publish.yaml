@@ -6,6 +6,7 @@ on:
     tags: ['v*']
     paths:
       - '**.go'
+      - '**.tmpl'
       - 'go.mod'
       - 'go.sum'
       - 'Dockerfile'
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - '**.go'
+      - '**.tmpl'
       - 'go.mod'
       - 'go.sum'
       - 'Dockerfile'
@@ -22,12 +24,14 @@ on:
 
 permissions:
   contents: read
-  packages: write
-  security-events: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
     strategy:
       fail-fast: false
       matrix:
