@@ -11,6 +11,10 @@ data:
     set -eu
 
     LISTEN_ADDR=$(ip -4 addr show dev "$NETWORK_INTERFACE" | grep inet | awk '{print $2}' | cut -d/ -f1 | head -1)
+    if [ -z "$LISTEN_ADDR" ]; then
+      echo "ERROR: No IPv4 address found on interface $NETWORK_INTERFACE" >&2
+      exit 1
+    fi
     export LISTEN_ADDR
     export HTTP_PORT
 
