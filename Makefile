@@ -106,6 +106,10 @@ test-e2e: setup-test-e2e $(if $(filter false,$(SKIP_CODEGEN)),manifests generate
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+.PHONY: test-fileserver-health
+test-fileserver-health: ## Run fileserver health endpoint integration test (requires Docker, Kind, Helm).
+	sudo test/integration/fileserver-health.sh
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	"$(GOLANGCI_LINT)" run

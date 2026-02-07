@@ -52,3 +52,30 @@ jobs:
           make test-e2e SKIP_CODEGEN=true
         env:
           BUILDX_CACHE: /tmp/.buildx-cache
+
+  fileserver-health:
+    name: Fileserver Health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Get latest Kind version
+        id: kind-version
+        run: |
+          KIND_VERSION=$(gh api repos/kubernetes-sigs/kind/releases/latest --jq '.tag_name')
+          echo "version=$KIND_VERSION" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install Kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ steps.kind-version.outputs.version }}/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Run fileserver health test
+        run: make test-fileserver-health
