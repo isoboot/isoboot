@@ -18,10 +18,10 @@
 # Requires: sudo, Docker, Kind, Helm, kubectl
 set -euo pipefail
 
-CLUSTER="isoboot-health-test"
-BRIDGE="br-isoboot"
-VETH_HOST="veth-ib-br"
-VETH_KIND="veth-ib"
+CLUSTER="ib-health-$$"
+BRIDGE="br-ib-$$"
+VETH_HOST="vib-br-$$"
+VETH_KIND="vib-kn-$$"
 HTTP_PORT=$(awk '/^httpPort:/{print $2}' charts/isoboot/values.yaml)
 HEALTH_PORT=$(awk '/^healthPort:/{print $2}' charts/isoboot/values.yaml)
 CONTROLLER_IMAGE=$(awk '/^controllerImage:/{print $2}' charts/isoboot/values.yaml)
