@@ -21,24 +21,34 @@ spec:
       nodeSelector:
         kubernetes.io/hostname: {{ .Values.nodeName | quote }}
       hostNetwork: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: fileserver
-        image: {{ .Values.downloadImage }}
+        image: {{ .Values.fileserverImage }}
         command:
-        - /bin/sh
-        - -c
-        - apk add --no-cache nginx gettext && /scripts/entrypoint.sh
+        - /scripts/entrypoint.sh
         env:
         - name: NETWORK_INTERFACE
           value: {{ .Values.networkInterface | quote }}
         - name: HTTP_PORT
           value: {{ .Values.httpPort | quote }}
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
         volumeMounts:
         - name: scripts
           mountPath: /scripts
         - name: artifacts
           mountPath: /var/lib/isoboot
           readOnly: true
+        - name: tmp
+          mountPath: /tmp
       volumes:
       - name: scripts
         configMap:
@@ -47,3 +57,5 @@ spec:
       - name: artifacts
         hostPath:
           path: {{ .Values.hostPathBaseDir }}
+      - name: tmp
+        emptyDir: {}
