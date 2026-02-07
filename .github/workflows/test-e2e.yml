@@ -53,8 +53,8 @@ jobs:
         env:
           BUILDX_CACHE: /tmp/.buildx-cache
 
-  fileserver-health:
-    name: Fileserver Health
+  chart-health:
+    name: Chart Health
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -77,5 +77,5 @@ jobs:
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
-      - name: Run fileserver health test
-        run: make test-fileserver-health
+      - name: Deploy chart and verify all pods healthy
+        run: make test-chart-health

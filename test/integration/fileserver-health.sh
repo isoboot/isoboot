@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # test/integration/fileserver-health.sh
 #
-# Integration test for the fileserver health endpoint.
-# Creates a Kind cluster with a veth-attached test subnet,
-# deploys the fileserver chart, and verifies kubelet probes pass.
+# Integration test: deploy the full isoboot Helm chart into a Kind
+# cluster with a veth-attached test subnet and verify every pod
+# becomes healthy (kubelet probes passing).
 #
 # Subnet auto-detection: scans 192.168.100.0/24 through 192.168.199.0/24
 # and picks the first /24 not covered by any local route. This handles
@@ -18,6 +18,7 @@ BRIDGE="br-isoboot"
 VETH_HOST="veth-ib-br"
 VETH_KIND="veth-ib"
 HEALTH_PORT=10261
+CONTROLLER_IMAGE=$(awk '/^controllerImage:/{print $2}' charts/isoboot/values.yaml)
 FILESERVER_IMAGE=$(awk '/^fileserverImage:/{print $2}' charts/isoboot/values.yaml)
 
 # find_available_subnet scans 192.168.{100..199}.0/24 and returns the
@@ -55,14 +56,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-debug_pod() {
-    echo "--- debug: pod description ---"
-    kubectl describe pod -l app.kubernetes.io/component=fileserver || true
-    echo "--- debug: pod logs ---"
+debug_pods() {
+    echo "--- debug: pod descriptions ---"
+    kubectl describe pods || true
+    echo "--- debug: pod logs (controller-manager) ---"
+    kubectl logs -l app.kubernetes.io/component=controller-manager || true
+    echo "--- debug: pod logs (fileserver) ---"
     kubectl logs -l app.kubernetes.io/component=fileserver || true
     echo "--- debug: events ---"
     kubectl get events --sort-by=.lastTimestamp || true
 }
+
+echo "=== Building controller image ==="
+docker build -t "$CONTROLLER_IMAGE" -f Dockerfile .
 
 echo "=== Building fileserver image ==="
 docker build -t "$FILESERVER_IMAGE" -f Dockerfile.nginx .
@@ -75,8 +81,8 @@ ip link set "$BRIDGE" up
 echo "=== Creating Kind cluster ${CLUSTER} ==="
 kind create cluster --name "$CLUSTER" --wait 60s
 
-echo "=== Loading fileserver image into Kind ==="
-kind load docker-image "$FILESERVER_IMAGE" --name "$CLUSTER"
+echo "=== Loading images into Kind ==="
+kind load docker-image "$CONTROLLER_IMAGE" "$FILESERVER_IMAGE" --name "$CLUSTER"
 
 echo "=== Connecting Kind to test subnet via veth ==="
 ip link add "$VETH_KIND" type veth peer name "$VETH_HOST"
@@ -98,24 +104,33 @@ helm install isoboot ./charts/isoboot \
     --set subnet="$SUBNET" \
     --set healthPort="$HEALTH_PORT"
 
+echo "=== Waiting for controller-manager pod to be Ready ==="
+if ! kubectl wait --for=condition=Ready pod \
+    -l app.kubernetes.io/component=controller-manager \
+    --timeout=90s; then
+    echo "FAIL: controller-manager pod did not become Ready"
+    debug_pods
+    exit 1
+fi
+echo "PASS: controller-manager pod is Ready (probes passing)"
+
 echo "=== Waiting for fileserver pod to be Ready ==="
 if ! kubectl wait --for=condition=Ready pod \
     -l app.kubernetes.io/component=fileserver \
     --timeout=90s; then
     echo "FAIL: fileserver pod did not become Ready"
-    debug_pod
+    debug_pods
     exit 1
 fi
-
 echo "PASS: fileserver pod is Ready (probes passing)"
 
-echo "=== Verifying health endpoint directly ==="
+echo "=== Verifying fileserver health endpoint directly ==="
 RESP=$(docker exec "$NODE" curl -sf http://127.0.0.1:${HEALTH_PORT}/healthz)
 if [ "$RESP" = "ok" ]; then
     echo "PASS: /healthz returned 'ok'"
 else
     echo "FAIL: /healthz returned '$RESP'"
-    debug_pod
+    debug_pods
     exit 1
 fi
 
