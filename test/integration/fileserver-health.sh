@@ -27,6 +27,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
+debug_pod() {
+    echo "--- debug: pod description ---"
+    kubectl describe pod -l app.kubernetes.io/component=fileserver || true
+    echo "--- debug: pod logs ---"
+    kubectl logs -l app.kubernetes.io/component=fileserver || true
+    echo "--- debug: events ---"
+    kubectl get events --sort-by=.lastTimestamp || true
+}
+
 echo "=== Creating bridge ${BRIDGE} ==="
 ip link add "$BRIDGE" type bridge
 ip addr add "${BRIDGE_IP}/24" dev "$BRIDGE"
@@ -56,19 +65,15 @@ helm install isoboot ./charts/isoboot \
     --set healthPort="$HEALTH_PORT"
 
 echo "=== Waiting for fileserver pod to be Ready ==="
-kubectl wait --for=condition=Ready pod \
+if ! kubectl wait --for=condition=Ready pod \
     -l app.kubernetes.io/component=fileserver \
-    --timeout=60s
-
-READY=$(kubectl get pod -l app.kubernetes.io/component=fileserver \
-    -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
-if [ "$READY" = "true" ]; then
-    echo "PASS: fileserver pod is Ready (probes passing)"
-else
-    echo "FAIL: fileserver pod not Ready (ready=$READY)"
-    kubectl describe pod -l app.kubernetes.io/component=fileserver
+    --timeout=90s; then
+    echo "FAIL: fileserver pod did not become Ready"
+    debug_pod
     exit 1
 fi
+
+echo "PASS: fileserver pod is Ready (probes passing)"
 
 echo "=== Verifying health endpoint directly ==="
 RESP=$(docker exec "$NODE" curl -sf http://127.0.0.1:${HEALTH_PORT}/healthz)
@@ -76,6 +81,7 @@ if [ "$RESP" = "ok" ]; then
     echo "PASS: /healthz returned 'ok'"
 else
     echo "FAIL: /healthz returned '$RESP'"
+    debug_pod
     exit 1
 fi
 
