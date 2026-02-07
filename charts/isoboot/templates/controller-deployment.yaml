@@ -5,15 +5,18 @@ metadata:
   name: {{ include "isoboot.fullname" . }}-controller-manager
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller-manager
 spec:
   replicas: 1
   selector:
     matchLabels:
       {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller-manager
   template:
     metadata:
       labels:
         {{- include "isoboot.labels" . | nindent 8 }}
+        app.kubernetes.io/component: controller-manager
     spec:
       nodeSelector:
         kubernetes.io/hostname: {{ .Values.nodeName | quote }}

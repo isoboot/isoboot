@@ -55,4 +55,12 @@ produced.
 {{- define "isoboot.validate" -}}
 {{- $_ := required "nodeName is required" .Values.nodeName }}
 {{- $_ := required "networkInterface is required" .Values.networkInterface }}
+{{- $httpPortStr := printf "%v" .Values.httpPort }}
+{{- if not (regexMatch "^[0-9]+$" $httpPortStr) }}
+{{- fail "httpPort must be a numeric value" }}
+{{- end }}
+{{- $httpPort := int $httpPortStr }}
+{{- if or (lt $httpPort 1024) (gt $httpPort 65535) }}
+{{- fail "httpPort must be an integer between 1024 and 65535" }}
+{{- end }}
 {{- end }}

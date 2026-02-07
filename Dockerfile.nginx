@@ -1,0 +1,4 @@
+FROM alpine:3.23
+RUN apk add --no-cache nginx gettext iproute2 \
+    && ln -sf /dev/stderr /var/lib/nginx/logs/error.log
+USER 100:101

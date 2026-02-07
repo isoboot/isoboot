@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "isoboot.fullname" . }}-fileserver
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fileserver
+data:
+  entrypoint.sh: |
+    #!/bin/sh
+    set -eu
+
+    LISTEN_ADDR=$(ip -4 addr show dev "$NETWORK_INTERFACE" | grep inet | awk '{print $2}' | cut -d/ -f1 | head -1)
+    if [ -z "$LISTEN_ADDR" ]; then
+      echo "ERROR: No IPv4 address found on interface $NETWORK_INTERFACE" >&2
+      exit 1
+    fi
+    export LISTEN_ADDR
+    export HTTP_PORT
+
+    envsubst '${LISTEN_ADDR} ${HTTP_PORT}' < /scripts/nginx.conf.template > /tmp/nginx.conf
+    exec nginx -c /tmp/nginx.conf -g 'daemon off;'
+
+  nginx.conf.template: |
+    worker_processes auto;
+    pid /tmp/nginx.pid;
+    error_log /dev/stderr;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        access_log /dev/stdout;
+        client_body_temp_path /tmp/client_body;
+        proxy_temp_path /tmp/proxy;
+        fastcgi_temp_path /tmp/fastcgi;
+        uwsgi_temp_path /tmp/uwsgi;
+        scgi_temp_path /tmp/scgi;
+
+        server {
+            listen ${LISTEN_ADDR}:${HTTP_PORT};
+            root /var/lib/isoboot;
+            autoindex on;
+        }
+    }
