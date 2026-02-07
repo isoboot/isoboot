@@ -186,7 +186,7 @@ fi
 
 echo "=== Verifying main server ==="
 CODE=$(kube_curl -s -o /dev/null -w '%{http_code}\n' "http://${SRC_IP}:${HTTP_PORT}/" || true)
-if [ -z "$CODE" ] || ! echo "$CODE" | grep -qE '^[0-9]{3}$'; then
+if [ -z "$CODE" ] || ! echo "$CODE" | grep -qE '^[1-9][0-9]{2}$'; then
     echo "FAIL: main server check failed (no valid HTTP status code returned)"
     debug_pods
     exit 1
