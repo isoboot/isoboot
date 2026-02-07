@@ -53,11 +53,10 @@ find_available_subnet() {
 }
 
 # Run curl in a one-shot pod on the Kind node (hostNetwork for 127.0.0.1 access).
-# Each invocation gets a unique pod name to avoid AlreadyExists races.
-KUBE_CURL_SEQ=0
+# Each invocation gets a unique pod name via $RANDOM to avoid AlreadyExists races
+# (a sequential counter would reset in subshells created by command substitution).
 kube_curl() {
-    KUBE_CURL_SEQ=$((KUBE_CURL_SEQ + 1))
-    local pod_name="curl-test-${KUBE_CURL_SEQ}"
+    local pod_name="curl-test-${RANDOM}"
     local stderr_file status=0
     stderr_file="$(mktemp)"
     kubectl run "$pod_name" --image="$CURL_IMAGE" --restart=Never --rm -i \
@@ -181,7 +180,11 @@ fi
 
 echo "=== Verifying main server ==="
 CODE=$(kube_curl -s -o /dev/null -w '%{http_code}\n' "http://${SRC_IP}:${HTTP_PORT}/" || true)
-if [ "$CODE" = "200" ]; then
+if [ -z "$CODE" ] || ! echo "$CODE" | grep -qE '^[0-9]{3}$'; then
+    echo "FAIL: main server check failed (no valid HTTP status code returned)"
+    debug_pods
+    exit 1
+elif [ "$CODE" = "200" ]; then
     echo "PASS: main server returned 200"
 else
     echo "PASS (expected): main server returned $CODE (no artifacts to serve)"
