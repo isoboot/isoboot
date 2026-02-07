@@ -55,7 +55,7 @@ produced.
 {{- define "isoboot.validate" -}}
 {{- $_ := required "nodeName is required" .Values.nodeName }}
 {{- $_ := required "subnet is required (CIDR format, e.g. 192.168.100.0/24)" .Values.subnet }}
-{{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$" .Values.subnet) }}
+{{- if not (regexMatch "^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/([0-9]|[12][0-9]|3[0-2])$" .Values.subnet) }}
 {{- fail "subnet must be in CIDR format (e.g. 192.168.100.0/24)" }}
 {{- end }}
 {{- $httpPortStr := printf "%v" .Values.httpPort }}
