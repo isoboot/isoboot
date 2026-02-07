@@ -29,7 +29,7 @@ FILESERVER_IMAGE=$(awk '/^fileserverImage:/{print $2}' charts/isoboot/values.yam
 # route. After filtering out "default", an empty result means only the
 # default route covers this /24, so it is safe to use.
 find_available_subnet() {
-    for third in $(seq 100 199); do
+    for third in {100..199}; do
         local routes
         routes=$(ip -4 route show to match "192.168.${third}.0/24" 2>/dev/null \
             | grep -v "^default") || true
