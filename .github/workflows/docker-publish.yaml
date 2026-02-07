@@ -3,6 +3,7 @@ name: Docker Build & Publish
 on:
   push:
     branches: [main]
+    tags: ['v*']
     paths:
       - '**.go'
       - 'go.mod'
@@ -22,6 +23,7 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write
 
 jobs:
   build:
@@ -56,6 +58,8 @@ jobs:
             type=sha,prefix=sha-
             type=ref,event=branch
             type=ref,event=pr,prefix=pr-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -66,6 +70,7 @@ jobs:
           load: ${{ github.event_name != 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,3 +80,11 @@ jobs:
           image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.meta.outputs.version }}
           severity: CRITICAL,HIGH
           exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
