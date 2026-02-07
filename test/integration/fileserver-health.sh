@@ -18,7 +18,7 @@ BRIDGE="br-isoboot"
 VETH_HOST="veth-ib-br"
 VETH_KIND="veth-ib"
 HEALTH_PORT=10261
-FILESERVER_IMAGE="ghcr.io/isoboot/isoboot-nginx:0.0.1"
+FILESERVER_IMAGE=$(awk '/^fileserverImage:/{print $2}' charts/isoboot/values.yaml)
 
 # find_available_subnet scans 192.168.{100..199}.0/24 and returns the
 # third octet of the first /24 that has no direct (non-gateway) route.
