@@ -22,15 +22,17 @@ CONTROLLER_IMAGE=$(awk '/^controllerImage:/{print $2}' charts/isoboot/values.yam
 FILESERVER_IMAGE=$(awk '/^fileserverImage:/{print $2}' charts/isoboot/values.yaml)
 
 # find_available_subnet scans 192.168.{100..199}.0/24 and returns the
-# third octet of the first /24 that has no direct (non-gateway) route.
-# Works correctly with any prefix length: a /22 on 192.168.100.0 will
-# cause 100-103 to be skipped; a /20 on 192.168.96.0 will skip 96-111.
+# third octet of the first /24 with no explicit route (connected, VPN,
+# or otherwise). Uses "ip route show to match" which returns all routes
+# covering the prefix — connected, static, VPN — but also the default
+# route. After filtering out "default", an empty result means only the
+# default route covers this /24, so it is safe to use.
 find_available_subnet() {
     for third in $(seq 100 199); do
-        local result
-        result=$(ip route get "192.168.${third}.1" 2>/dev/null) || true
-        # No route or only reachable via gateway → subnet is available
-        if [ -z "$result" ] || echo "$result" | grep -qw "via"; then
+        local routes
+        routes=$(ip -4 route show to match "192.168.${third}.0/24" 2>/dev/null \
+            | grep -v "^default") || true
+        if [ -z "$routes" ]; then
             echo "$third"
             return 0
         fi
