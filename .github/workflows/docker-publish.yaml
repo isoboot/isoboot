@@ -23,6 +23,13 @@ on:
       - 'Dockerfile'
       - 'Dockerfile.nginx'
       - '.github/workflows/docker-publish.yaml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Push images to GHCR (set true for full pre-merge validation)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -78,7 +85,7 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Save image and scan results
-        if: always() && github.event_name == 'push'
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
           echo "$TAGS" > tags.txt
           xargs docker save -o image.tar < tags.txt
@@ -86,7 +93,7 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
 
       - name: Upload artifacts
-        if: always() && github.event_name == 'push'
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.image }}
@@ -97,7 +104,7 @@ jobs:
           retention-days: 1
 
   push:
-    if: always() && github.event_name == 'push'
+    if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -112,7 +119,7 @@ jobs:
           - image: isoboot-nginx
     steps:
       - name: Login to GHCR
-        if: needs.build.result == 'success'
+        if: needs.build.result == 'success' && (github.event_name == 'push' || inputs.publish)
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -126,10 +133,16 @@ jobs:
           name: ${{ matrix.image }}
 
       - name: Push image to GHCR
-        if: needs.build.result == 'success' && hashFiles('image.tar') != '' && hashFiles('tags.txt') != ''
+        if: needs.build.result == 'success' && (github.event_name == 'push' || inputs.publish) && hashFiles('image.tar') != '' && hashFiles('tags.txt') != ''
         run: |
           docker load -i image.tar
           xargs -I{} docker push {} < tags.txt
+
+      - name: Validate load path (no publish)
+        if: needs.build.result == 'success' && github.event_name == 'workflow_dispatch' && !inputs.publish && hashFiles('image.tar') != '' && hashFiles('tags.txt') != ''
+        run: |
+          docker load -i image.tar
+          xargs -I{} docker image inspect {} >/dev/null < tags.txt
 
       - name: Upload Trivy results to GitHub Security tab
         if: always() && hashFiles('trivy-results.sarif') != ''
