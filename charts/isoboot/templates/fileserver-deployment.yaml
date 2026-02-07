@@ -55,7 +55,7 @@ spec:
             scheme: HTTP
             path: /healthz
             host: 127.0.0.1
-            port: 10261
+            port: {{ .Values.healthPort }}
           initialDelaySeconds: 5
           periodSeconds: 10
           failureThreshold: 3
@@ -65,7 +65,7 @@ spec:
             scheme: HTTP
             path: /healthz
             host: 127.0.0.1
-            port: 10261
+            port: {{ .Values.healthPort }}
           initialDelaySeconds: 2
           periodSeconds: 5
           failureThreshold: 3

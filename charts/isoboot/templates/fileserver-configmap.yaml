@@ -45,7 +45,7 @@ data:
         }
 
         server {
-            listen 127.0.0.1:10261;
+            listen 127.0.0.1:{{ .Values.healthPort }};
             location /healthz {
                 default_type text/plain;
                 return 200 "ok\n";

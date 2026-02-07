@@ -66,4 +66,15 @@ produced.
 {{- if or (lt $httpPort 1024) (gt $httpPort 65535) }}
 {{- fail "httpPort must be an integer between 1024 and 65535" }}
 {{- end }}
+{{- $healthPortStr := printf "%v" .Values.healthPort }}
+{{- if not (regexMatch "^[0-9]+$" $healthPortStr) }}
+{{- fail "healthPort must be a numeric value" }}
+{{- end }}
+{{- $healthPort := int $healthPortStr }}
+{{- if or (lt $healthPort 1024) (gt $healthPort 65535) }}
+{{- fail "healthPort must be an integer between 1024 and 65535" }}
+{{- end }}
+{{- if and (ge $healthPort 10248) (le $healthPort 10260) }}
+{{- fail "healthPort must not be in the Kubernetes reserved range 10248-10260" }}
+{{- end }}
 {{- end }}
