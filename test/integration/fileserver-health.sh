@@ -22,9 +22,11 @@ CLUSTER="isoboot-health-test"
 BRIDGE="br-isoboot"
 VETH_HOST="veth-ib-br"
 VETH_KIND="veth-ib"
+HTTP_PORT=$(awk '/^httpPort:/{print $2}' charts/isoboot/values.yaml)
 HEALTH_PORT=$(awk '/^healthPort:/{print $2}' charts/isoboot/values.yaml)
 CONTROLLER_IMAGE=$(awk '/^controllerImage:/{print $2}' charts/isoboot/values.yaml)
 FILESERVER_IMAGE=$(awk '/^fileserverImage:/{print $2}' charts/isoboot/values.yaml)
+CURL_IMAGE="alpine/curl:8.17.0"
 
 # Use a dedicated kubeconfig so we never touch the user's ~/.kube/config
 export KUBECONFIG
@@ -48,6 +50,13 @@ find_available_subnet() {
     done
     echo "ERROR: No available /24 in 192.168.100.0/24 - 192.168.199.0/24" >&2
     return 1
+}
+
+# Run curl in a one-shot pod on the Kind node (hostNetwork for 127.0.0.1 access)
+kube_curl() {
+    kubectl run curl-test --image="$CURL_IMAGE" --restart=Never --rm -i \
+        --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"'"$NODE"'"}}}' \
+        -- "$@" 2>/dev/null
 }
 
 THIRD=$(find_available_subnet)
@@ -85,6 +94,9 @@ docker build -t "$CONTROLLER_IMAGE" -f Dockerfile .
 echo "=== Building fileserver image ==="
 docker build -t "$FILESERVER_IMAGE" -f Dockerfile.nginx .
 
+echo "=== Pulling curl image ==="
+docker pull "$CURL_IMAGE"
+
 echo "=== Creating bridge ${BRIDGE} (${BRIDGE_IP}/24) ==="
 sudo ip link add "$BRIDGE" type bridge
 sudo ip addr add "${BRIDGE_IP}/24" dev "$BRIDGE"
@@ -94,7 +106,7 @@ echo "=== Creating Kind cluster ${CLUSTER} ==="
 kind create cluster --name "$CLUSTER" --wait 60s
 
 echo "=== Loading images into Kind ==="
-kind load docker-image "$CONTROLLER_IMAGE" "$FILESERVER_IMAGE" --name "$CLUSTER"
+kind load docker-image "$CONTROLLER_IMAGE" "$FILESERVER_IMAGE" "$CURL_IMAGE" --name "$CLUSTER"
 
 echo "=== Connecting Kind to test subnet via veth ==="
 sudo ip link add "$VETH_KIND" type veth peer name "$VETH_HOST"
@@ -136,7 +148,7 @@ fi
 echo "PASS: fileserver pod is Ready (probes passing)"
 
 echo "=== Verifying fileserver health endpoint directly ==="
-RESP=$(docker exec "$NODE" curl -sf "http://127.0.0.1:${HEALTH_PORT}/healthz")
+RESP=$(kube_curl -sf "http://127.0.0.1:${HEALTH_PORT}/healthz")
 if [ "$RESP" = "ok" ]; then
     echo "PASS: /healthz returned 'ok'"
 else
@@ -146,7 +158,7 @@ else
 fi
 
 echo "=== Verifying main server ==="
-CODE=$(docker exec "$NODE" curl -s -o /dev/null -w '%{http_code}' "http://${SRC_IP}:8080/" || true)
+CODE=$(kube_curl -s -o /dev/null -w '%{http_code}' "http://${SRC_IP}:${HTTP_PORT}/" || true)
 if [ "$CODE" = "200" ]; then
     echo "PASS: main server returned 200"
 else
