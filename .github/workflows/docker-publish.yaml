@@ -5,8 +5,8 @@ on:
     branches: [main]
     tags: ['v*']
     paths:
-      - '**.go'
-      - '**.tmpl'
+      - '**/*.go'
+      - '**/*.tmpl'
       - '.dockerignore'
       - 'go.mod'
       - 'go.sum'
@@ -15,8 +15,8 @@ on:
       - '.github/workflows/docker-publish.yaml'
   pull_request:
     paths:
-      - '**.go'
-      - '**.tmpl'
+      - '**/*.go'
+      - '**/*.tmpl'
       - '.dockerignore'
       - 'go.mod'
       - 'go.sum'
