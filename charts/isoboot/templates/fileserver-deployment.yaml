@@ -21,6 +21,7 @@ spec:
       nodeSelector:
         kubernetes.io/hostname: {{ .Values.nodeName | quote }}
       hostNetwork: true
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
