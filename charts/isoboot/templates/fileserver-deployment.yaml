@@ -34,8 +34,8 @@ spec:
         command:
         - /scripts/entrypoint.sh
         env:
-        - name: NETWORK_INTERFACE
-          value: {{ .Values.networkInterface | quote }}
+        - name: SUBNET
+          value: {{ .Values.subnet | quote }}
         - name: HTTP_PORT
           value: {{ .Values.httpPort | quote }}
         securityContext:
