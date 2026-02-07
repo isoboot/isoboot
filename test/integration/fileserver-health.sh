@@ -5,17 +5,45 @@
 # Creates a Kind cluster with a veth-attached test subnet,
 # deploys the fileserver chart, and verifies kubelet probes pass.
 #
-# Requires: sudo, Docker, Kind, Helm, kubectl, curl
+# Subnet auto-detection: scans 192.168.100.0/24 through 192.168.199.0/24
+# and picks the first /24 not covered by any local route. This handles
+# networks of any prefix length (/24, /22, /20, etc.) because it uses
+# the kernel's route lookup (ip route get) rather than string matching.
+#
+# Requires: sudo, Docker, Kind, Helm, kubectl
 set -euo pipefail
 
 CLUSTER="isoboot-health-test"
 BRIDGE="br-isoboot"
-BRIDGE_IP="192.168.200.1"
-SUBNET="192.168.200.0/24"
-SRC_IP="192.168.200.10"
 VETH_HOST="veth-ib-br"
 VETH_KIND="veth-ib"
 HEALTH_PORT=10261
+FILESERVER_IMAGE="ghcr.io/isoboot/isoboot-nginx:0.0.1"
+
+# find_available_subnet scans 192.168.{100..199}.0/24 and returns the
+# third octet of the first /24 that has no direct (non-gateway) route.
+# Works correctly with any prefix length: a /22 on 192.168.100.0 will
+# cause 100-103 to be skipped; a /20 on 192.168.96.0 will skip 96-111.
+find_available_subnet() {
+    for third in $(seq 100 199); do
+        local result
+        result=$(ip route get "192.168.${third}.1" 2>/dev/null) || true
+        # No route or only reachable via gateway → subnet is available
+        if [ -z "$result" ] || echo "$result" | grep -qw "via"; then
+            echo "$third"
+            return 0
+        fi
+    done
+    echo "ERROR: No available /24 in 192.168.100.0/24 - 192.168.199.0/24" >&2
+    return 1
+}
+
+THIRD=$(find_available_subnet)
+SUBNET="192.168.${THIRD}.0/24"
+BRIDGE_IP="192.168.${THIRD}.1"
+SRC_IP="192.168.${THIRD}.10"
+echo "=== Selected subnet ${SUBNET} (192.168.${THIRD}.0/24 is available) ==="
+
 NODE="${CLUSTER}-control-plane"
 
 cleanup() {
@@ -36,13 +64,19 @@ debug_pod() {
     kubectl get events --sort-by=.lastTimestamp || true
 }
 
-echo "=== Creating bridge ${BRIDGE} ==="
+echo "=== Building fileserver image ==="
+docker build -t "$FILESERVER_IMAGE" -f Dockerfile.nginx .
+
+echo "=== Creating bridge ${BRIDGE} (${BRIDGE_IP}/24) ==="
 ip link add "$BRIDGE" type bridge
 ip addr add "${BRIDGE_IP}/24" dev "$BRIDGE"
 ip link set "$BRIDGE" up
 
 echo "=== Creating Kind cluster ${CLUSTER} ==="
 kind create cluster --name "$CLUSTER" --wait 60s
+
+echo "=== Loading fileserver image into Kind ==="
+kind load docker-image "$FILESERVER_IMAGE" --name "$CLUSTER"
 
 echo "=== Connecting Kind to test subnet via veth ==="
 ip link add "$VETH_KIND" type veth peer name "$VETH_HOST"
