@@ -11,6 +11,10 @@
 # (/24, /22, /20, etc.) by relying on the kernel's route lookup, not
 # naive string matching.
 #
+# Only network operations (ip link/addr) require sudo; cluster tooling
+# (kind, helm, kubectl, docker) runs as the invoking user to avoid
+# leaving root-owned kubeconfig or state on developer machines.
+#
 # Requires: sudo, Docker, Kind, Helm, kubectl
 set -euo pipefail
 
@@ -18,9 +22,13 @@ CLUSTER="isoboot-health-test"
 BRIDGE="br-isoboot"
 VETH_HOST="veth-ib-br"
 VETH_KIND="veth-ib"
-HEALTH_PORT=10261
+HEALTH_PORT=$(awk '/^healthPort:/{print $2}' charts/isoboot/values.yaml)
 CONTROLLER_IMAGE=$(awk '/^controllerImage:/{print $2}' charts/isoboot/values.yaml)
 FILESERVER_IMAGE=$(awk '/^fileserverImage:/{print $2}' charts/isoboot/values.yaml)
+
+# Use a dedicated kubeconfig so we never touch the user's ~/.kube/config
+export KUBECONFIG
+KUBECONFIG=$(mktemp)
 
 # find_available_subnet scans 192.168.{100..199}.0/24 and returns the
 # third octet of the first /24 with no explicit route (connected, VPN,
@@ -53,9 +61,10 @@ NODE="${CLUSTER}-control-plane"
 cleanup() {
     echo "--- cleanup ---"
     kind delete cluster --name "$CLUSTER" 2>/dev/null || true
-    ip link del "$VETH_HOST" 2>/dev/null || true
-    ip link set "$BRIDGE" down 2>/dev/null || true
-    ip link del "$BRIDGE" 2>/dev/null || true
+    sudo ip link del "$VETH_HOST" 2>/dev/null || true
+    sudo ip link set "$BRIDGE" down 2>/dev/null || true
+    sudo ip link del "$BRIDGE" 2>/dev/null || true
+    rm -f "$KUBECONFIG"
 }
 trap cleanup EXIT
 
@@ -77,9 +86,9 @@ echo "=== Building fileserver image ==="
 docker build -t "$FILESERVER_IMAGE" -f Dockerfile.nginx .
 
 echo "=== Creating bridge ${BRIDGE} (${BRIDGE_IP}/24) ==="
-ip link add "$BRIDGE" type bridge
-ip addr add "${BRIDGE_IP}/24" dev "$BRIDGE"
-ip link set "$BRIDGE" up
+sudo ip link add "$BRIDGE" type bridge
+sudo ip addr add "${BRIDGE_IP}/24" dev "$BRIDGE"
+sudo ip link set "$BRIDGE" up
 
 echo "=== Creating Kind cluster ${CLUSTER} ==="
 kind create cluster --name "$CLUSTER" --wait 60s
@@ -88,12 +97,12 @@ echo "=== Loading images into Kind ==="
 kind load docker-image "$CONTROLLER_IMAGE" "$FILESERVER_IMAGE" --name "$CLUSTER"
 
 echo "=== Connecting Kind to test subnet via veth ==="
-ip link add "$VETH_KIND" type veth peer name "$VETH_HOST"
-ip link set "$VETH_HOST" master "$BRIDGE"
-ip link set "$VETH_HOST" up
+sudo ip link add "$VETH_KIND" type veth peer name "$VETH_HOST"
+sudo ip link set "$VETH_HOST" master "$BRIDGE"
+sudo ip link set "$VETH_HOST" up
 
 KIND_PID=$(docker inspect -f '{{.State.Pid}}' "$NODE")
-ip link set "$VETH_KIND" netns "$KIND_PID"
+sudo ip link set "$VETH_KIND" netns "$KIND_PID"
 
 docker exec "$NODE" ip addr add "${SRC_IP}/24" dev "$VETH_KIND"
 docker exec "$NODE" ip link set "$VETH_KIND" up
@@ -104,8 +113,7 @@ docker exec "$NODE" ip -4 -o route show "$SUBNET"
 echo "=== Installing chart ==="
 helm install isoboot ./charts/isoboot \
     --set nodeName="$NODE" \
-    --set subnet="$SUBNET" \
-    --set healthPort="$HEALTH_PORT"
+    --set subnet="$SUBNET"
 
 echo "=== Waiting for controller-manager pod to be Ready ==="
 if ! kubectl wait --for=condition=Ready pod \
@@ -128,7 +136,7 @@ fi
 echo "PASS: fileserver pod is Ready (probes passing)"
 
 echo "=== Verifying fileserver health endpoint directly ==="
-RESP=$(docker exec "$NODE" curl -sf http://127.0.0.1:${HEALTH_PORT}/healthz)
+RESP=$(docker exec "$NODE" curl -sf "http://127.0.0.1:${HEALTH_PORT}/healthz")
 if [ "$RESP" = "ok" ]; then
     echo "PASS: /healthz returned 'ok'"
 else

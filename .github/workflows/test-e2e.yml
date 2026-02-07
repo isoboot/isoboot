@@ -71,7 +71,11 @@ jobs:
       - name: Install Kind
         run: |
           ARCH=$(uname -m)
-          case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
+          case "$ARCH" in
+            x86_64) ARCH=amd64;;
+            aarch64|arm64) ARCH=arm64;;
+            *) echo "Unsupported architecture: $ARCH" >&2; exit 1;;
+          esac
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ steps.kind-version.outputs.version }}/kind-linux-${ARCH}
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind

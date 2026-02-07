@@ -108,7 +108,7 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 
 .PHONY: test-chart-health
 test-chart-health: ## Deploy chart to Kind and verify all pods are healthy (requires Docker, Kind, Helm).
-	sudo test/integration/fileserver-health.sh
+	test/integration/fileserver-health.sh
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
