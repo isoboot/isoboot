@@ -77,4 +77,6 @@ produced.
 {{- if and (ge $healthPort 10248) (le $healthPort 10260) }}
 {{- fail "healthPort must not be in the Kubernetes reserved range 10248-10260" }}
 {{- end }}
+{{/* httpPort and healthPort may be equal — they bind to different IPs
+     (httpPort on the subnet address, healthPort on 127.0.0.1). */}}
 {{- end }}

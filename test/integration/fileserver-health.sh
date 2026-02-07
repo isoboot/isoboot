@@ -72,7 +72,7 @@ kube_curl() {
             echo "----------------------" >&2
         fi
         rm -f "$stderr_file"
-        debug_pods || true
+        debug_pods >&2 || true
         return "$status"
     fi
     rm -f "$stderr_file"
@@ -171,7 +171,11 @@ fi
 echo "PASS: fileserver pod is Ready (probes passing)"
 
 echo "=== Verifying fileserver health endpoint directly ==="
-RESP=$(kube_curl -sf "http://127.0.0.1:${HEALTH_PORT}/healthz")
+if ! RESP=$(kube_curl -sf "http://127.0.0.1:${HEALTH_PORT}/healthz"); then
+    echo "FAIL: /healthz request failed"
+    debug_pods
+    exit 1
+fi
 if [ "$RESP" = "ok" ]; then
     echo "PASS: /healthz returned 'ok'"
 else
