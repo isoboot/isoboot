@@ -52,18 +52,24 @@ spec:
             memory: 128Mi
         livenessProbe:
           httpGet:
+            scheme: HTTP
             path: /healthz
             host: 127.0.0.1
             port: 10256
           initialDelaySeconds: 5
           periodSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
         readinessProbe:
           httpGet:
+            scheme: HTTP
             path: /healthz
             host: 127.0.0.1
             port: 10256
           initialDelaySeconds: 2
           periodSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
         volumeMounts:
         - name: scripts
           mountPath: /scripts
