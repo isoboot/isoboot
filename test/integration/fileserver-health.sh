@@ -137,7 +137,7 @@ else
 fi
 
 echo "=== Verifying main server ==="
-CODE=$(docker exec "$NODE" curl -sf -o /dev/null -w '%{http_code}' "http://${SRC_IP}:8080/" || true)
+CODE=$(docker exec "$NODE" curl -s -o /dev/null -w '%{http_code}' "http://${SRC_IP}:8080/" || true)
 if [ "$CODE" = "200" ]; then
     echo "PASS: main server returned 200"
 else
