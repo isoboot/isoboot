@@ -57,12 +57,13 @@ find_available_subnet() {
 # (a sequential counter would reset in subshells created by command substitution).
 kube_curl() {
     local pod_name="curl-test-${RANDOM}"
-    local stderr_file status=0
+    local stderr_file status=0 output
     stderr_file="$(mktemp)"
-    kubectl run "$pod_name" --image="$CURL_IMAGE" --restart=Never --rm -i \
+    output=$(kubectl run "$pod_name" --image="$CURL_IMAGE" --restart=Never --rm -i \
         --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"'"$NODE"'"}}}' \
-        --command -- curl "$@" 2>"$stderr_file" | grep -v "^pod \"${pod_name}\" deleted" || true
-    status=${PIPESTATUS[0]}
+        --command -- curl "$@" 2>"$stderr_file") || status=$?
+    # Filter kubectl's pod deletion message from stdout
+    echo "$output" | grep -v "^pod \"${pod_name}\" deleted" || true
     if [ "$status" -ne 0 ]; then
         echo "ERROR: kubectl run $pod_name failed with status $status" >&2
         if [ -s "$stderr_file" ]; then
