@@ -1,6 +1,0 @@
-# Build artifacts
-bin/
-cover.out
-
-# IDE/editor
-.devcontainer/
