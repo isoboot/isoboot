@@ -3,7 +3,8 @@
 ## Pre-Planning
 - Always pull latest main before starting a new branch/PR: `git fetch origin && git checkout main && git pull`
 
-## Pre-PR Checklist
+## Pre-Push Checklist
+- Always test changes locally before pushing — run relevant tests/scripts (e.g. `make test-chart-health` for integration test changes) to catch issues early instead of relying on CI
 - Always run `gofmt -w .` on changed files before committing
 - Always run `make lint` before pushing (CI runs a Lint job that will fail otherwise)
 - Always run `make helm-sync` and `make verify` before creating a PR
