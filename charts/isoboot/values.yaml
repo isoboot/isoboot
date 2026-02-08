@@ -12,6 +12,9 @@ downloadImage: alpine:3.23
 # HTTP port for serving boot artifacts
 httpPort: 8080
 
+# Fileserver health-check port (localhost-only, must not collide with K8s ports 10248-10260)
+healthPort: 10261
+
 # Controller manager image
 controllerImage: ghcr.io/isoboot/isoboot:test
 

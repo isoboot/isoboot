@@ -52,3 +52,36 @@ jobs:
           make test-e2e SKIP_CODEGEN=true
         env:
           BUILDX_CACHE: /tmp/.buildx-cache
+
+  chart-health:
+    name: Chart Health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Get latest Kind version
+        id: kind-version
+        run: |
+          KIND_VERSION=$(gh api repos/kubernetes-sigs/kind/releases/latest --jq '.tag_name')
+          echo "version=$KIND_VERSION" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install Kind
+        run: |
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH=amd64;;
+            aarch64|arm64) ARCH=arm64;;
+            *) echo "Unsupported architecture: $ARCH" >&2; exit 1;;
+          esac
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ steps.kind-version.outputs.version }}/kind-linux-${ARCH}
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy chart and verify all pods healthy
+        run: make test-chart-health

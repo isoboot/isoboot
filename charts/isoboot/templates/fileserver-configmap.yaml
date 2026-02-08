@@ -43,4 +43,13 @@ data:
             root /var/lib/isoboot;
             autoindex on;
         }
+
+        server {
+            listen 127.0.0.1:{{ int .Values.healthPort }};
+            location /healthz {
+                default_type text/plain;
+                return 200 "ok\n";
+                access_log off;
+            }
+        }
     }
