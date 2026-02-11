@@ -38,23 +38,23 @@ type BinaryHashPair struct {
 	Hash URL `json:"hash"`
 }
 
+// ISOPath is an absolute path within an ISO image.
+// +kubebuilder:validation:MaxLength=1024
+// +kubebuilder:validation:Pattern=`^/.*$`
+// +kubebuilder:validation:XValidation:rule="!self.contains('/../') && !self.endsWith('/..')",message="must not contain path traversal"
+type ISOPath string
+
 // ISOSpec defines an ISO image and paths within it.
 type ISOSpec struct {
 	BinaryHashPair `json:",inline"`
 
 	// kernel is the absolute path to the kernel within the ISO.
 	// +required
-	// +kubebuilder:validation:MaxLength=1024
-	// +kubebuilder:validation:Pattern=`^/.*$`
-	// +kubebuilder:validation:XValidation:rule="!self.contains('/../') && !self.endsWith('/..')",message="must not contain path traversal"
-	Kernel string `json:"kernel"`
+	Kernel ISOPath `json:"kernel"`
 
 	// initrd is the absolute path to the initrd within the ISO.
 	// +required
-	// +kubebuilder:validation:MaxLength=1024
-	// +kubebuilder:validation:Pattern=`^/.*$`
-	// +kubebuilder:validation:XValidation:rule="!self.contains('/../') && !self.endsWith('/..')",message="must not contain path traversal"
-	Initrd string `json:"initrd"`
+	Initrd ISOPath `json:"initrd"`
 }
 
 // FirmwareSpec defines firmware binary/hash and an optional path prefix.

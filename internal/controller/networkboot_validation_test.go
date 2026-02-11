@@ -48,7 +48,7 @@ func directBootSpec(kernel, initrd bootv1alpha1.BinaryHashPair) bootv1alpha1.Net
 	}
 }
 
-func isoBootSpec(isoPair bootv1alpha1.BinaryHashPair, kernel, initrd string) bootv1alpha1.NetworkBootSpec {
+func isoBootSpec(isoPair bootv1alpha1.BinaryHashPair, kernel, initrd bootv1alpha1.ISOPath) bootv1alpha1.NetworkBootSpec {
 	return bootv1alpha1.NetworkBootSpec{
 		ISO: &bootv1alpha1.ISOSpec{
 			BinaryHashPair: isoPair,
@@ -139,13 +139,19 @@ var _ = Describe("NetworkBoot Validation", func() {
 	})
 
 	Describe("URL validation", func() {
-		DescribeTable("should reject invalid URLs",
+		DescribeTable("should reject invalid kernel URLs",
 			func(binary, hash bootv1alpha1.URL) {
 				spec := directBootSpec(pair(binary, hash), validPair)
 				Expect(createNetworkBoot("url-test", spec)).NotTo(Succeed())
 			},
-			Entry("http instead of https",
+			Entry("http binary and http hash",
 				bootv1alpha1.URL("http://example.com/vmlinuz"),
+				bootv1alpha1.URL("http://example.com/vmlinuz.sha256")),
+			Entry("http binary with https hash",
+				bootv1alpha1.URL("http://example.com/vmlinuz"),
+				bootv1alpha1.URL("https://example.com/vmlinuz.sha256")),
+			Entry("https binary with http hash",
+				bootv1alpha1.URL("https://example.com/vmlinuz"),
 				bootv1alpha1.URL("http://example.com/vmlinuz.sha256")),
 			Entry("no path after host",
 				bootv1alpha1.URL("https://example.com"),
@@ -167,12 +173,37 @@ var _ = Describe("NetworkBoot Validation", func() {
 				bootv1alpha1.URL("https://example.com/"+strings.Repeat("a", 2048))),
 		)
 
-		It("should reject invalid URL in ISO position", func() {
-			spec := isoBootSpec(
-				pair("http://example.com/noble.iso", "http://example.com/noble.iso.sha256"),
-				"/casper/vmlinuz", "/casper/initrd")
-			Expect(createNetworkBoot("url-iso-test", spec)).NotTo(Succeed())
-		})
+		DescribeTable("should reject invalid ISO URLs",
+			func(binary, hash bootv1alpha1.URL) {
+				spec := isoBootSpec(pair(binary, hash), "/casper/vmlinuz", "/casper/initrd")
+				Expect(createNetworkBoot("url-iso-test", spec)).NotTo(Succeed())
+			},
+			Entry("http binary and http hash",
+				bootv1alpha1.URL("http://example.com/noble.iso"),
+				bootv1alpha1.URL("http://example.com/noble.iso.sha256")),
+			Entry("http binary with https hash",
+				bootv1alpha1.URL("http://example.com/noble.iso"),
+				bootv1alpha1.URL("https://example.com/noble.iso.sha256")),
+			Entry("https binary with http hash",
+				bootv1alpha1.URL("https://example.com/noble.iso"),
+				bootv1alpha1.URL("http://example.com/noble.iso.sha256")),
+		)
+
+		DescribeTable("should reject invalid firmware URLs",
+			func(binary, hash bootv1alpha1.URL) {
+				spec := withFirmware(directBootSpec(validPair, validPair), pair(binary, hash), nil)
+				Expect(createNetworkBoot("url-fw-test", spec)).NotTo(Succeed())
+			},
+			Entry("http binary and http hash",
+				bootv1alpha1.URL("http://fw.example.com/fw.bin"),
+				bootv1alpha1.URL("http://fw.example.com/fw.bin.sha256")),
+			Entry("http binary with https hash",
+				bootv1alpha1.URL("http://fw.example.com/fw.bin"),
+				bootv1alpha1.URL("https://fw.example.com/fw.bin.sha256")),
+			Entry("https binary with http hash",
+				bootv1alpha1.URL("https://fw.example.com/fw.bin"),
+				bootv1alpha1.URL("http://fw.example.com/fw.bin.sha256")),
+		)
 	})
 
 	Describe("hostname matching", func() {
@@ -206,17 +237,23 @@ var _ = Describe("NetworkBoot Validation", func() {
 		DescribeTable("should reject invalid ISO paths",
 			func(kernel, initrd string) {
 				Expect(createNetworkBoot("iso-test",
-					isoBootSpec(validISOPair, kernel, initrd))).NotTo(Succeed())
+					isoBootSpec(validISOPair, bootv1alpha1.ISOPath(kernel), bootv1alpha1.ISOPath(initrd)))).NotTo(Succeed())
 			},
 			Entry("kernel without leading slash", "casper/vmlinuz", "/casper/initrd"),
 			Entry("initrd without leading slash", "/casper/vmlinuz", "casper/initrd"),
+			Entry("both without leading slash", "casper/vmlinuz", "casper/initrd"),
 			Entry("kernel path traversal mid-path", "/casper/../etc/passwd", "/casper/initrd"),
 			Entry("initrd path traversal mid-path", "/casper/vmlinuz", "/casper/../etc/passwd"),
+			Entry("both path traversal mid-path", "/casper/../etc/passwd", "/casper/../etc/shadow"),
 			Entry("kernel path traversal at end", "/casper/..", "/casper/initrd"),
 			Entry("initrd path traversal at end", "/casper/vmlinuz", "/casper/.."),
+			Entry("both path traversal at end", "/casper/..", "/casper/.."),
 			Entry("kernel is bare /..", "/..", "/casper/initrd"),
 			Entry("initrd is bare /..", "/casper/vmlinuz", "/.."),
+			Entry("both are bare /..", "/..", "/.."),
 			Entry("kernel exceeding max length", "/"+strings.Repeat("a", 1024), "/casper/initrd"),
+			Entry("initrd exceeding max length", "/casper/vmlinuz", "/"+strings.Repeat("a", 1024)),
+			Entry("both exceeding max length", "/"+strings.Repeat("a", 1024), "/"+strings.Repeat("a", 1024)),
 		)
 	})
 

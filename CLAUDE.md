@@ -60,6 +60,11 @@ Optional: `spec.firmware` (BinaryHashPair + prefix, defaults to `/with-firmware`
 
 Validation layers: `URL` custom type (HTTPS-only, no `@`, MaxLength=2048), CEL hostname matching between binary and hash, path traversal protection on ISO paths and firmware prefix.
 
+## PR Workflow
+
+- After pushing new commits to a PR, always update the PR description to reflect the full scope of changes. Do not wait to be asked.
+- Always run `gofmt -w .`, `make lint`, and `make test` locally before pushing.
+
 ## Key Patterns
 
 - **Never edit** auto-generated files: `config/crd/bases/`, `config/rbac/role.yaml`, `zz_generated.*.go`, `PROJECT`
