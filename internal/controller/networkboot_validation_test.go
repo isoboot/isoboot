@@ -236,6 +236,8 @@ var _ = Describe("NetworkBoot Validation", func() {
 			Entry("initrd is bare /..", "/casper/vmlinuz", "/.."),
 			Entry("both are bare /..", "/..", "/.."),
 			Entry("kernel exceeding max length", "/"+strings.Repeat("a", 1024), "/casper/initrd"),
+			Entry("initrd exceeding max length", "/casper/vmlinuz", "/"+strings.Repeat("a", 1024)),
+			Entry("both exceeding max length", "/"+strings.Repeat("a", 1024), "/"+strings.Repeat("a", 1024)),
 		)
 	})
 
