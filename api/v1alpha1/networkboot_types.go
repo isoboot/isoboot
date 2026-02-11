@@ -20,19 +20,77 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// URL is an HTTPS URL with no userinfo (@) allowed in the hostname.
+// +kubebuilder:validation:MaxLength=2048
+// +kubebuilder:validation:Pattern=`^https://[^/@]+/[^/].*$`
+type URL string
 
-// NetworkBootSpec defines the desired state of NetworkBoot
-type NetworkBootSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+// BinaryHashPair holds a binary URL and its corresponding hash URL.
+// The hostnames of binary and hash must match.
+// +kubebuilder:validation:XValidation:rule="self.binary.split('/')[2] == self.hash.split('/')[2]",message="binary and hash hostnames must match"
+type BinaryHashPair struct {
+	// binary is the HTTPS URL of the artifact.
+	// +required
+	Binary URL `json:"binary"`
 
-	// foo is an example field of NetworkBoot. Edit networkboot_types.go to remove/update
+	// hash is the HTTPS URL of the hash for the artifact.
+	// +required
+	Hash URL `json:"hash"`
+}
+
+// ISOSpec defines an ISO image and paths within it.
+type ISOSpec struct {
+	BinaryHashPair `json:",inline"`
+
+	// kernel is the absolute path to the kernel within the ISO.
+	// +required
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:Pattern=`^/.*$`
+	// +kubebuilder:validation:XValidation:rule="!self.contains('/../') && !self.endsWith('/..')",message="must not contain path traversal"
+	Kernel string `json:"kernel"`
+
+	// initrd is the absolute path to the initrd within the ISO.
+	// +required
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:Pattern=`^/.*$`
+	// +kubebuilder:validation:XValidation:rule="!self.contains('/../') && !self.endsWith('/..')",message="must not contain path traversal"
+	Initrd string `json:"initrd"`
+}
+
+// FirmwareSpec defines firmware binary/hash and an optional path prefix.
+type FirmwareSpec struct {
+	BinaryHashPair `json:",inline"`
+
+	// prefix is the path prefix for firmware serving.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// +kubebuilder:default="/with-firmware"
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:Pattern=`^/[^/](.*[^/])?$`
+	// +kubebuilder:validation:XValidation:rule="!self.contains('/../') && !self.endsWith('/..')",message="must not contain path traversal"
+	Prefix *string `json:"prefix,omitempty"`
+}
+
+// NetworkBootSpec defines the desired state of NetworkBoot.
+// Exactly one boot mode must be specified: either (kernel + initrd) for direct boot,
+// or iso for ISO-based boot.
+// +kubebuilder:validation:XValidation:rule="has(self.kernel) == has(self.initrd)",message="kernel and initrd must both be set or both be unset"
+// +kubebuilder:validation:XValidation:rule="has(self.iso) != has(self.kernel)",message="must specify either (kernel and initrd) or iso, not both and not neither"
+type NetworkBootSpec struct {
+	// kernel defines the kernel binary and hash URLs (direct boot mode).
+	// +optional
+	Kernel *BinaryHashPair `json:"kernel,omitempty"`
+
+	// initrd defines the initrd binary and hash URLs (direct boot mode).
+	// +optional
+	Initrd *BinaryHashPair `json:"initrd,omitempty"`
+
+	// iso defines an ISO image and paths to kernel/initrd within it (ISO boot mode).
+	// +optional
+	ISO *ISOSpec `json:"iso,omitempty"`
+
+	// firmware defines firmware binary, hash, and optional path prefix.
+	// +optional
+	Firmware *FirmwareSpec `json:"firmware,omitempty"`
 }
 
 // NetworkBootStatus defines the observed state of NetworkBoot.
