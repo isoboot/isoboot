@@ -133,6 +133,8 @@ var _ = Describe("NetworkBoot Validation", func() {
 			Entry("initrd without kernel",
 				bootv1alpha1.NetworkBootSpec{Initrd: &bootv1alpha1.BinaryHashPair{
 					Binary: "https://example.com/initrd", Hash: "https://example.com/initrd.sha256"}}),
+			Entry("firmware only without boot mode",
+				withFirmware(bootv1alpha1.NetworkBootSpec{}, validFWPair, nil)),
 		)
 	})
 
@@ -164,6 +166,13 @@ var _ = Describe("NetworkBoot Validation", func() {
 				bootv1alpha1.URL("https://example.com/"+strings.Repeat("a", 2048)),
 				bootv1alpha1.URL("https://example.com/"+strings.Repeat("a", 2048))),
 		)
+
+		It("should reject invalid URL in ISO position", func() {
+			spec := isoBootSpec(
+				pair("http://example.com/noble.iso", "http://example.com/noble.iso.sha256"),
+				"/casper/vmlinuz", "/casper/initrd")
+			Expect(createNetworkBoot("url-iso-test", spec)).NotTo(Succeed())
+		})
 	})
 
 	Describe("hostname matching", func() {
