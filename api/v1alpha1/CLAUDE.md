@@ -29,6 +29,7 @@ NetworkBootSpec                  # XOR: (kernel+initrd) or iso
 - **Type-level markers** on `ISOPath`: propagate to all fields of that type (MaxLength, Pattern, CEL path traversal)
 - **Struct-level CEL** on `BinaryHashPair`: `self.binary.split('/')[2] == self.hash.split('/')[2]` — propagates through `json:",inline"` embedding
 - **Spec-level CEL** on `NetworkBootSpec`: XOR via two rules (`has(self.kernel) == has(self.initrd)` and `has(self.iso) != has(self.kernel)`)
+- **Field-level CEL** on `FirmwareSpec.Prefix`: path traversal check (not a named type — different MaxLength/Pattern from `ISOPath`)
 
 ## Adding a New Field
 

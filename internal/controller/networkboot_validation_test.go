@@ -188,6 +188,22 @@ var _ = Describe("NetworkBoot Validation", func() {
 				bootv1alpha1.URL("https://example.com/noble.iso"),
 				bootv1alpha1.URL("http://example.com/noble.iso.sha256")),
 		)
+
+		DescribeTable("should reject invalid firmware URLs",
+			func(binary, hash bootv1alpha1.URL) {
+				spec := withFirmware(directBootSpec(validPair, validPair), pair(binary, hash), nil)
+				Expect(createNetworkBoot("url-fw-test", spec)).NotTo(Succeed())
+			},
+			Entry("http binary and http hash",
+				bootv1alpha1.URL("http://fw.example.com/fw.bin"),
+				bootv1alpha1.URL("http://fw.example.com/fw.bin.sha256")),
+			Entry("http binary with https hash",
+				bootv1alpha1.URL("http://fw.example.com/fw.bin"),
+				bootv1alpha1.URL("https://fw.example.com/fw.bin.sha256")),
+			Entry("https binary with http hash",
+				bootv1alpha1.URL("https://fw.example.com/fw.bin"),
+				bootv1alpha1.URL("http://fw.example.com/fw.bin.sha256")),
+		)
 	})
 
 	Describe("hostname matching", func() {
