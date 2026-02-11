@@ -228,10 +228,13 @@ var _ = Describe("NetworkBoot Validation", func() {
 			Entry("both without leading slash", "casper/vmlinuz", "casper/initrd"),
 			Entry("kernel path traversal mid-path", "/casper/../etc/passwd", "/casper/initrd"),
 			Entry("initrd path traversal mid-path", "/casper/vmlinuz", "/casper/../etc/passwd"),
+			Entry("both path traversal mid-path", "/casper/../etc/passwd", "/casper/../etc/shadow"),
 			Entry("kernel path traversal at end", "/casper/..", "/casper/initrd"),
 			Entry("initrd path traversal at end", "/casper/vmlinuz", "/casper/.."),
+			Entry("both path traversal at end", "/casper/..", "/casper/.."),
 			Entry("kernel is bare /..", "/..", "/casper/initrd"),
 			Entry("initrd is bare /..", "/casper/vmlinuz", "/.."),
+			Entry("both are bare /..", "/..", "/.."),
 			Entry("kernel exceeding max length", "/"+strings.Repeat("a", 1024), "/casper/initrd"),
 		)
 	})
