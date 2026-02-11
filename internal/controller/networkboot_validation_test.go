@@ -225,6 +225,7 @@ var _ = Describe("NetworkBoot Validation", func() {
 			},
 			Entry("kernel without leading slash", "casper/vmlinuz", "/casper/initrd"),
 			Entry("initrd without leading slash", "/casper/vmlinuz", "casper/initrd"),
+			Entry("both without leading slash", "casper/vmlinuz", "casper/initrd"),
 			Entry("kernel path traversal mid-path", "/casper/../etc/passwd", "/casper/initrd"),
 			Entry("initrd path traversal mid-path", "/casper/vmlinuz", "/casper/../etc/passwd"),
 			Entry("kernel path traversal at end", "/casper/..", "/casper/initrd"),
