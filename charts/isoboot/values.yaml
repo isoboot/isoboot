@@ -1,0 +1,27 @@
+isoboot:
+  http:
+    # nodeName is the Kubernetes node where the HTTP file server runs.
+    # Required. The controller pins download Jobs and nginx to this node.
+    # Example: "node01"
+    nodeName: ""
+
+    # cidr is the subnet CIDR for the PXE network.
+    # Required. The controller resolves the node's IP within this subnet.
+    # Example: "192.168.88.0/24"
+    cidr: ""
+
+manager:
+  image:
+    repository: controller
+    tag: latest
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+  leaderElect: true
+  metricsBindAddress: ":8443"
+  healthProbeBindAddress: ":8081"

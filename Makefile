@@ -147,6 +147,19 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 
+##@ Helm
+
+.PHONY: helm-sync
+helm-sync: manifests ## Sync generated CRD into the Helm chart.
+	cp config/crd/bases/boot.isoboot.github.io_networkboots.yaml charts/isoboot/templates/crd.yaml
+
+.PHONY: verify
+verify: helm-sync ## Verify that generated files are up to date.
+	@if [ -n "$$(git diff --name-only charts/isoboot/templates/crd.yaml)" ]; then \
+		echo "ERROR: Helm chart CRD is out of date. Run 'make helm-sync' and commit the result."; \
+		exit 1; \
+	fi
+
 ##@ Deployment
 
 ifndef ignore-not-found

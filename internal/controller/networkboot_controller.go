@@ -30,7 +30,9 @@ import (
 // NetworkBootReconciler reconciles a NetworkBoot object
 type NetworkBootReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme     *runtime.Scheme
+	NodeName   string
+	SubnetCIDR string
 }
 
 // +kubebuilder:rbac:groups=boot.isoboot.github.io,resources=networkboots,verbs=get;list;watch;create;update;patch;delete
