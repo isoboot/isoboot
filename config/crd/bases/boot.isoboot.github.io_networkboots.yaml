@@ -1,0 +1,241 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: networkboots.boot.isoboot.github.io
+spec:
+  group: boot.isoboot.github.io
+  names:
+    kind: NetworkBoot
+    listKind: NetworkBootList
+    plural: networkboots
+    singular: networkboot
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NetworkBoot is the Schema for the networkboots API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of NetworkBoot
+            properties:
+              firmware:
+                description: firmware defines firmware binary, hash, and optional
+                  path prefix.
+                properties:
+                  binary:
+                    description: binary is the HTTPS URL of the artifact.
+                    maxLength: 2048
+                    pattern: ^https://[^/@]+/[^/].*$
+                    type: string
+                  hash:
+                    description: hash is the HTTPS URL of the hash for the artifact.
+                    maxLength: 2048
+                    pattern: ^https://[^/@]+/[^/].*$
+                    type: string
+                  prefix:
+                    default: /with-firmware
+                    description: prefix is the path prefix for firmware serving.
+                    maxLength: 256
+                    pattern: ^/[^/](.*[^/])?$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must not contain path traversal
+                      rule: '!self.contains(''/../'') && !self.endsWith(''/..'')'
+                required:
+                - binary
+                - hash
+                type: object
+                x-kubernetes-validations:
+                - message: binary and hash hostnames must match
+                  rule: self.binary.split('/')[2] == self.hash.split('/')[2]
+              initrd:
+                description: initrd defines the initrd binary and hash URLs (direct
+                  boot mode).
+                properties:
+                  binary:
+                    description: binary is the HTTPS URL of the artifact.
+                    maxLength: 2048
+                    pattern: ^https://[^/@]+/[^/].*$
+                    type: string
+                  hash:
+                    description: hash is the HTTPS URL of the hash for the artifact.
+                    maxLength: 2048
+                    pattern: ^https://[^/@]+/[^/].*$
+                    type: string
+                required:
+                - binary
+                - hash
+                type: object
+                x-kubernetes-validations:
+                - message: binary and hash hostnames must match
+                  rule: self.binary.split('/')[2] == self.hash.split('/')[2]
+              iso:
+                description: iso defines an ISO image and paths to kernel/initrd within
+                  it (ISO boot mode).
+                properties:
+                  binary:
+                    description: binary is the HTTPS URL of the artifact.
+                    maxLength: 2048
+                    pattern: ^https://[^/@]+/[^/].*$
+                    type: string
+                  hash:
+                    description: hash is the HTTPS URL of the hash for the artifact.
+                    maxLength: 2048
+                    pattern: ^https://[^/@]+/[^/].*$
+                    type: string
+                  initrd:
+                    description: initrd is the absolute path to the initrd within
+                      the ISO.
+                    maxLength: 1024
+                    pattern: ^/.*$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must not contain path traversal
+                      rule: '!self.contains(''/../'') && !self.endsWith(''/..'')'
+                  kernel:
+                    description: kernel is the absolute path to the kernel within
+                      the ISO.
+                    maxLength: 1024
+                    pattern: ^/.*$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must not contain path traversal
+                      rule: '!self.contains(''/../'') && !self.endsWith(''/..'')'
+                required:
+                - binary
+                - hash
+                - initrd
+                - kernel
+                type: object
+                x-kubernetes-validations:
+                - message: binary and hash hostnames must match
+                  rule: self.binary.split('/')[2] == self.hash.split('/')[2]
+              kernel:
+                description: kernel defines the kernel binary and hash URLs (direct
+                  boot mode).
+                properties:
+                  binary:
+                    description: binary is the HTTPS URL of the artifact.
+                    maxLength: 2048
+                    pattern: ^https://[^/@]+/[^/].*$
+                    type: string
+                  hash:
+                    description: hash is the HTTPS URL of the hash for the artifact.
+                    maxLength: 2048
+                    pattern: ^https://[^/@]+/[^/].*$
+                    type: string
+                required:
+                - binary
+                - hash
+                type: object
+                x-kubernetes-validations:
+                - message: binary and hash hostnames must match
+                  rule: self.binary.split('/')[2] == self.hash.split('/')[2]
+            type: object
+            x-kubernetes-validations:
+            - message: kernel and initrd must both be set or both be unset
+              rule: has(self.kernel) == has(self.initrd)
+            - message: must specify either (kernel and initrd) or iso, not both and
+                not neither
+              rule: has(self.iso) != has(self.kernel)
+          status:
+            description: status defines the observed state of NetworkBoot
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the NetworkBoot resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
+
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
