@@ -12,6 +12,10 @@ URL (string)                    # HTTPS-only, no @, MaxLength=2048
        ├─ ISOSpec (embedded inline) + kernel/initrd paths
        └─ FirmwareSpec (embedded inline) + prefix
 
+ISOPath (string)                # absolute path, no traversal, MaxLength=1024
+  ├─ ISOSpec.Kernel
+  └─ ISOSpec.Initrd
+
 NetworkBootSpec                  # XOR: (kernel+initrd) or iso
   ├─ Kernel *BinaryHashPair     # optional (required with initrd)
   ├─ Initrd *BinaryHashPair     # optional (required with kernel)
@@ -22,9 +26,9 @@ NetworkBootSpec                  # XOR: (kernel+initrd) or iso
 ## Validation Patterns Used
 
 - **Type-level markers** on `URL`: propagate to all fields of that type (MaxLength, Pattern)
+- **Type-level markers** on `ISOPath`: propagate to all fields of that type (MaxLength, Pattern, CEL path traversal)
 - **Struct-level CEL** on `BinaryHashPair`: `self.binary.split('/')[2] == self.hash.split('/')[2]` — propagates through `json:",inline"` embedding
 - **Spec-level CEL** on `NetworkBootSpec`: XOR via two rules (`has(self.kernel) == has(self.initrd)` and `has(self.iso) != has(self.kernel)`)
-- **Field-level CEL** for path traversal: `!self.contains('/../') && !self.endsWith('/..')`
 
 ## Adding a New Field
 

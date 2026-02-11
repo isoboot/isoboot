@@ -48,7 +48,7 @@ func directBootSpec(kernel, initrd bootv1alpha1.BinaryHashPair) bootv1alpha1.Net
 	}
 }
 
-func isoBootSpec(isoPair bootv1alpha1.BinaryHashPair, kernel, initrd string) bootv1alpha1.NetworkBootSpec {
+func isoBootSpec(isoPair bootv1alpha1.BinaryHashPair, kernel, initrd bootv1alpha1.ISOPath) bootv1alpha1.NetworkBootSpec {
 	return bootv1alpha1.NetworkBootSpec{
 		ISO: &bootv1alpha1.ISOSpec{
 			BinaryHashPair: isoPair,
@@ -221,7 +221,7 @@ var _ = Describe("NetworkBoot Validation", func() {
 		DescribeTable("should reject invalid ISO paths",
 			func(kernel, initrd string) {
 				Expect(createNetworkBoot("iso-test",
-					isoBootSpec(validISOPair, kernel, initrd))).NotTo(Succeed())
+					isoBootSpec(validISOPair, bootv1alpha1.ISOPath(kernel), bootv1alpha1.ISOPath(initrd)))).NotTo(Succeed())
 			},
 			Entry("kernel without leading slash", "casper/vmlinuz", "/casper/initrd"),
 			Entry("initrd without leading slash", "/casper/vmlinuz", "casper/initrd"),
