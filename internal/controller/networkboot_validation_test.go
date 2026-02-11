@@ -139,13 +139,19 @@ var _ = Describe("NetworkBoot Validation", func() {
 	})
 
 	Describe("URL validation", func() {
-		DescribeTable("should reject invalid URLs",
+		DescribeTable("should reject invalid kernel URLs",
 			func(binary, hash bootv1alpha1.URL) {
 				spec := directBootSpec(pair(binary, hash), validPair)
 				Expect(createNetworkBoot("url-test", spec)).NotTo(Succeed())
 			},
-			Entry("http instead of https",
+			Entry("http binary and http hash",
 				bootv1alpha1.URL("http://example.com/vmlinuz"),
+				bootv1alpha1.URL("http://example.com/vmlinuz.sha256")),
+			Entry("http binary with https hash",
+				bootv1alpha1.URL("http://example.com/vmlinuz"),
+				bootv1alpha1.URL("https://example.com/vmlinuz.sha256")),
+			Entry("https binary with http hash",
+				bootv1alpha1.URL("https://example.com/vmlinuz"),
 				bootv1alpha1.URL("http://example.com/vmlinuz.sha256")),
 			Entry("no path after host",
 				bootv1alpha1.URL("https://example.com"),
@@ -167,12 +173,21 @@ var _ = Describe("NetworkBoot Validation", func() {
 				bootv1alpha1.URL("https://example.com/"+strings.Repeat("a", 2048))),
 		)
 
-		It("should reject invalid URL in ISO position", func() {
-			spec := isoBootSpec(
-				pair("http://example.com/noble.iso", "http://example.com/noble.iso.sha256"),
-				"/casper/vmlinuz", "/casper/initrd")
-			Expect(createNetworkBoot("url-iso-test", spec)).NotTo(Succeed())
-		})
+		DescribeTable("should reject invalid ISO URLs",
+			func(binary, hash bootv1alpha1.URL) {
+				spec := isoBootSpec(pair(binary, hash), "/casper/vmlinuz", "/casper/initrd")
+				Expect(createNetworkBoot("url-iso-test", spec)).NotTo(Succeed())
+			},
+			Entry("http binary and http hash",
+				bootv1alpha1.URL("http://example.com/noble.iso"),
+				bootv1alpha1.URL("http://example.com/noble.iso.sha256")),
+			Entry("http binary with https hash",
+				bootv1alpha1.URL("http://example.com/noble.iso"),
+				bootv1alpha1.URL("https://example.com/noble.iso.sha256")),
+			Entry("https binary with http hash",
+				bootv1alpha1.URL("https://example.com/noble.iso"),
+				bootv1alpha1.URL("http://example.com/noble.iso.sha256")),
+		)
 	})
 
 	Describe("hostname matching", func() {
