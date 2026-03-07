@@ -1,4 +1,0 @@
-## Append samples of your project ##
-resources:
-- boot_v1alpha1_networkboot.yaml
-# +kubebuilder:scaffold:manifestskustomizesamples

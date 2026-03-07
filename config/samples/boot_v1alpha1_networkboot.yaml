@@ -1,9 +1,0 @@
-apiVersion: boot.isoboot.github.io/v1alpha1
-kind: NetworkBoot
-metadata:
-  labels:
-    app.kubernetes.io/name: isoboot
-    app.kubernetes.io/managed-by: kustomize
-  name: networkboot-sample
-spec:
-  # TODO(user): Add fields here
