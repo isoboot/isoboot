@@ -71,6 +71,8 @@ func (r *BootArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, nil
 		}
 		// Hash mismatch — file was removed, fall through to download
+	} else if !os.IsNotExist(err) {
+		return r.setFailure(ctx, &artifact, fmt.Sprintf("stat file: %v", err))
 	}
 
 	return r.download(ctx, &artifact, filePath)
@@ -231,7 +233,7 @@ func filenameFromURL(rawURL string) string {
 		return "artifact"
 	}
 	name := filepath.Base(u.Path)
-	if name == "" || name == "." || name == "/" {
+	if name == "" || name == "." || name == "/" || name == ".." {
 		return "artifact"
 	}
 	return name
