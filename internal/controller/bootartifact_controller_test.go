@@ -90,6 +90,8 @@ var _ = Describe("BootArtifact Controller", func() {
 			Entry("non-hex sha512", "nonhex512", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA512: ptr.To("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")}),
 			Entry("http url", "http", isobootgithubiov1alpha1.BootArtifactSpec{URL: "http://example.com/f", SHA256: ptr.To(validSHA256)}),
 			Entry("empty url", "empty", isobootgithubiov1alpha1.BootArtifactSpec{URL: "", SHA256: ptr.To(validSHA256)}),
+			Entry("path traversal", "traversal", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/foo/../bar", SHA256: ptr.To(validSHA256)}),
+			Entry("path traversal at end", "traversal-end", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/..", SHA256: ptr.To(validSHA256)}),
 		)
 	})
 

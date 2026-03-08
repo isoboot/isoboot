@@ -32,6 +32,7 @@ type BootArtifactSpec struct {
 	// url is the download URL for the artifact. Must use HTTPS.
 	// +required
 	// +kubebuilder:validation:Pattern="^https://"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('/..')",message="url must not contain path traversal"
 	URL string `json:"url"`
 
 	// sha256 is the expected SHA-256 hex digest of the downloaded file.
