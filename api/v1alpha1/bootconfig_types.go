@@ -20,48 +20,53 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// BootConfigSpec defines the desired state of BootConfig
+// BootConfigSpec defines the desired state of BootConfig.
+// A BootConfig groups BootArtifacts into a servable PXE boot directory.
+// The directory name is metadata.name.
 type BootConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// kernelRef is the name of the BootArtifact for the kernel.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	KernelRef string `json:"kernelRef"`
 
-	// foo is an example field of BootConfig. Edit bootconfig_types.go to remove/update
+	// initrdRef is the name of the BootArtifact for the initrd.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	InitrdRef string `json:"initrdRef"`
+
+	// firmwareRef is the name of the BootArtifact for the firmware archive.
+	// When set, the controller creates no-firmware/ and with-firmware/ subdirectories.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	FirmwareRef *string `json:"firmwareRef,omitempty"`
 }
+
+// BootConfigPhase describes the current phase of a BootConfig.
+// +kubebuilder:validation:Enum=Pending;Ready;Error
+type BootConfigPhase string
+
+const (
+	BootConfigPhasePending BootConfigPhase = "Pending"
+	BootConfigPhaseReady   BootConfigPhase = "Ready"
+	BootConfigPhaseError   BootConfigPhase = "Error"
+)
 
 // BootConfigStatus defines the observed state of BootConfig.
 type BootConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the BootConfig resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
+	// phase is the current phase of the boot config.
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Phase BootConfigPhase `json:"phase,omitempty"`
+
+	// message provides human-readable details about the current phase.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// BootConfig is the Schema for the bootconfigs API
+// BootConfig is the Schema for the bootconfigs API.
 type BootConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
