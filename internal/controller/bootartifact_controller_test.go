@@ -46,12 +46,16 @@ var _ = Describe("BootArtifact Controller", func() {
 			By("creating the custom resource for the Kind BootArtifact")
 			err := k8sClient.Get(ctx, typeNamespacedName, bootartifact)
 			if err != nil && errors.IsNotFound(err) {
+				sha256 := "0000000000000000000000000000000000000000000000000000000000000000"
 				resource := &isobootgithubiov1alpha1.BootArtifact{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: isobootgithubiov1alpha1.BootArtifactSpec{
+						URL:    "https://example.com/vmlinuz",
+						SHA256: &sha256,
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
