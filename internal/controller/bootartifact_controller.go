@@ -61,20 +61,30 @@ func (r *BootArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	filePath := r.filePath(&artifact)
 
-	// Check if file exists on disk
+	// Check if file exists on disk and verify hash
 	if _, err := os.Stat(filePath); err == nil {
-		return r.verifyExisting(ctx, &artifact, filePath)
+		ok, err := r.verifyExisting(ctx, &artifact, filePath)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if ok {
+			return ctrl.Result{}, nil
+		}
+		// Hash mismatch — file was removed, fall through to download
 	}
 
 	return r.download(ctx, &artifact, filePath)
 }
 
-func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *isobootgithubiov1alpha1.BootArtifact, filePath string) (ctrl.Result, error) {
+// verifyExisting checks the hash of an existing file. Returns (true, nil) if
+// the file is valid, or (false, nil) if the hash mismatched and the file was
+// removed (caller should proceed to download).
+func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *isobootgithubiov1alpha1.BootArtifact, filePath string) (bool, error) {
 	log := logf.FromContext(ctx)
 
 	computedHash, err := hashFile(filePath, artifact.Spec.SHA256 != nil)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("hashing file: %w", err)
+		return false, fmt.Errorf("hashing file: %w", err)
 	}
 
 	expectedHash := expectedHash(artifact)
@@ -83,7 +93,7 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 		if err := os.Remove(filePath); err != nil {
 			log.Error(err, "Failed to remove file with mismatched hash", "path", filePath)
 		}
-		return r.setFailure(ctx, artifact, fmt.Sprintf("hash mismatch: expected %s got %s", expectedHash, computedHash))
+		return false, nil
 	}
 
 	now := metav1.Now()
@@ -93,10 +103,10 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 	artifact.Status.LastFailureTime = nil
 	artifact.Status.LastChecked = &now
 	if err := r.Status().Update(ctx, artifact); err != nil {
-		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
+		return false, fmt.Errorf("updating status: %w", err)
 	}
 
-	return ctrl.Result{}, nil
+	return true, nil
 }
 
 func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isobootgithubiov1alpha1.BootArtifact, filePath string) (ctrl.Result, error) {
@@ -133,7 +143,7 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 		return r.setFailure(ctx, artifact, fmt.Sprintf("creating request: %v", err))
 	}
 
-	resp, err := r.httpClient().Do(req)
+	resp, err := r.HTTPClient.Do(req)
 	if err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("download failed: %v", err))
 	}
@@ -255,13 +265,6 @@ func hashFile(path string, useSHA256 bool) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-func (r *BootArtifactReconciler) httpClient() *http.Client {
-	if r.HTTPClient != nil {
-		return r.HTTPClient
-	}
-	return &http.Client{Timeout: 30 * time.Minute}
 }
 
 // SetupWithManager sets up the controller with the Manager.

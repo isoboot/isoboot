@@ -19,7 +19,9 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"net/http"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -181,9 +183,10 @@ func main() {
 	}
 
 	if err := (&controller.BootArtifactReconciler{
-		Client:  mgr.GetClient(),
-		Scheme:  mgr.GetScheme(),
-		DataDir: dataDir,
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		DataDir:    dataDir,
+		HTTPClient: &http.Client{Timeout: 30 * time.Minute},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "BootArtifact")
 		os.Exit(1)
