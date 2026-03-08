@@ -44,8 +44,9 @@ import (
 // BootArtifactReconciler reconciles a BootArtifact object
 type BootArtifactReconciler struct {
 	client.Client
-	Scheme  *runtime.Scheme
-	DataDir string
+	Scheme     *runtime.Scheme
+	DataDir    string
+	HTTPClient *http.Client
 }
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootartifacts,verbs=get;list;watch;create;update;patch;delete
@@ -132,7 +133,7 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 		return r.setFailure(ctx, artifact, fmt.Sprintf("creating request: %v", err))
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := r.httpClient().Do(req)
 	if err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("download failed: %v", err))
 	}
@@ -204,7 +205,7 @@ func (r *BootArtifactReconciler) setFailure(ctx context.Context, artifact *isobo
 		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
 	}
 
-	// Exponential backoff: 5s, 10s, 20s, ... capped at 5 minutes
+	// Exponential backoff: 10s, 20s, 40s, ... capped at ~5 minutes
 	backoff := time.Duration(1<<min(artifact.Status.FailureCount, 6)) * 5 * time.Second
 	return ctrl.Result{RequeueAfter: backoff}, nil
 }
@@ -230,7 +231,10 @@ func expectedHash(artifact *isobootgithubiov1alpha1.BootArtifact) string {
 	if artifact.Spec.SHA256 != nil {
 		return *artifact.Spec.SHA256
 	}
-	return *artifact.Spec.SHA512
+	if artifact.Spec.SHA512 != nil {
+		return *artifact.Spec.SHA512
+	}
+	return ""
 }
 
 func hashFile(path string, useSHA256 bool) (string, error) {
@@ -251,6 +255,13 @@ func hashFile(path string, useSHA256 bool) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func (r *BootArtifactReconciler) httpClient() *http.Client {
+	if r.HTTPClient != nil {
+		return r.HTTPClient
+	}
+	return &http.Client{Timeout: 30 * time.Minute}
 }
 
 // SetupWithManager sets up the controller with the Manager.

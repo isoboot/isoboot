@@ -48,13 +48,10 @@ func sha256Hex(data []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
-// withTestServer starts a TLS test server, swaps http.DefaultTransport, and returns a cleanup func.
-func withTestServer(handler http.HandlerFunc) (serverURL string, cleanup func()) {
+// withTestServer starts a TLS test server and returns the server URL, its HTTP client, and a cleanup func.
+func withTestServer(handler http.HandlerFunc) (serverURL string, httpClient *http.Client, cleanup func()) {
 	server := httptest.NewTLSServer(handler)
-	orig := http.DefaultTransport
-	http.DefaultTransport = server.Client().Transport
-	return server.URL, func() {
-		http.DefaultTransport = orig
+	return server.URL, server.Client(), func() {
 		server.Close()
 	}
 }
@@ -160,8 +157,9 @@ var _ = Describe("BootArtifact Controller", func() {
 
 		It("should download and verify a valid artifact", func() {
 			content := []byte("test kernel content")
-			serverURL, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(content) })
+			serverURL, httpClient, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(content) })
 			defer cleanup()
+			reconciler.HTTPClient = httpClient
 
 			name := "dl-valid"
 			createArtifact(name, serverURL+"/vmlinuz", sha256Hex(content))
@@ -181,8 +179,9 @@ var _ = Describe("BootArtifact Controller", func() {
 		})
 
 		It("should set Error on hash mismatch after download", func() {
-			serverURL, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("content")) })
+			serverURL, httpClient, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("content")) })
 			defer cleanup()
+			reconciler.HTTPClient = httpClient
 
 			name := "dl-bad-hash"
 			createArtifact(name, serverURL+"/vmlinuz", wrongSHA256)
@@ -199,8 +198,9 @@ var _ = Describe("BootArtifact Controller", func() {
 		})
 
 		It("should set Error on HTTP 404", func() {
-			serverURL, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
+			serverURL, httpClient, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
 			defer cleanup()
+			reconciler.HTTPClient = httpClient
 
 			name := "dl-404"
 			createArtifact(name, serverURL+"/vmlinuz", validSHA256)
@@ -253,8 +253,9 @@ var _ = Describe("BootArtifact Controller", func() {
 		})
 
 		It("should increment failureCount on repeated failures", func() {
-			serverURL, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) })
+			serverURL, httpClient, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) })
 			defer cleanup()
+			reconciler.HTTPClient = httpClient
 
 			name := "dl-repeat"
 			createArtifact(name, serverURL+"/vmlinuz", validSHA256)
