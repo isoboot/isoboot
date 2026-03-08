@@ -62,12 +62,17 @@ spec:
                 pattern: ^[a-fA-F0-9]{128}$
                 type: string
               url:
-                description: url is the download URL for the artifact.
-                minLength: 1
+                description: url is the download URL for the artifact. Must use HTTPS.
+                pattern: ^https://
                 type: string
             required:
             - url
             type: object
+            x-kubernetes-validations:
+            - message: one of sha256 or sha512 is required
+              rule: has(self.sha256) || has(self.sha512)
+            - message: sha256 and sha512 are mutually exclusive
+              rule: '!(has(self.sha256) && has(self.sha512))'
           status:
             description: status defines the observed state of BootArtifact
             properties:

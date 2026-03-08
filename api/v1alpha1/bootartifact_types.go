@@ -26,10 +26,12 @@ import (
 // BootArtifactSpec defines the desired state of BootArtifact.
 // A BootArtifact represents a single downloadable file (kernel, initrd, or firmware)
 // with integrity verification via SHA-256 or SHA-512.
+// +kubebuilder:validation:XValidation:rule="has(self.sha256) || has(self.sha512)",message="one of sha256 or sha512 is required"
+// +kubebuilder:validation:XValidation:rule="!(has(self.sha256) && has(self.sha512))",message="sha256 and sha512 are mutually exclusive"
 type BootArtifactSpec struct {
-	// url is the download URL for the artifact.
+	// url is the download URL for the artifact. Must use HTTPS.
 	// +required
-	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern="^https://"
 	URL string `json:"url"`
 
 	// sha256 is the expected SHA-256 hex digest of the downloaded file.
