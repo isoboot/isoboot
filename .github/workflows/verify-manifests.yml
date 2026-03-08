@@ -1,0 +1,28 @@
+name: Verify Manifests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    name: Generated files are up to date
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Generate manifests
+        run: make manifests generate
+
+      - name: Check for uncommitted changes
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Generated files are out of date. Run 'make manifests generate' and commit the result."
+            exit 1
+          fi
