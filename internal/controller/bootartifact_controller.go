@@ -79,7 +79,9 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 	expectedHash := expectedHash(artifact)
 	if !strings.EqualFold(computedHash, expectedHash) {
 		log.Info("Hash mismatch for existing file, removing", "expected", expectedHash, "got", computedHash)
-		os.Remove(filePath)
+		if err := os.Remove(filePath); err != nil {
+			log.Error(err, "Failed to remove file with mismatched hash", "path", filePath)
+		}
 		return r.setFailure(ctx, artifact, fmt.Sprintf("hash mismatch: expected %s got %s", expectedHash, computedHash))
 	}
 
@@ -117,7 +119,11 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 	}
 
 	tmpPath := filePath + ".tmp"
-	defer os.Remove(tmpPath)
+	defer func() {
+		if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+			log.Error(err, "Failed to clean up temp file", "path", tmpPath)
+		}
+	}()
 
 	log.Info("Downloading artifact", "url", artifact.Spec.URL)
 
@@ -130,7 +136,7 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 	if err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("download failed: %v", err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("download failed: HTTP %d", resp.StatusCode))
@@ -141,7 +147,7 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 	if err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("creating temp file: %v", err))
 	}
-	defer tmpFile.Close()
+	defer func() { _ = tmpFile.Close() }()
 
 	useSHA256 := artifact.Spec.SHA256 != nil
 	var h hash.Hash
@@ -154,7 +160,9 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 	if _, err := io.Copy(tmpFile, io.TeeReader(resp.Body, h)); err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("writing file: %v", err))
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return r.setFailure(ctx, artifact, fmt.Sprintf("closing temp file: %v", err))
+	}
 
 	computedHash := hex.EncodeToString(h.Sum(nil))
 	expectedHash := expectedHash(artifact)
@@ -230,7 +238,7 @@ func hashFile(path string, useSHA256 bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var h hash.Hash
 	if useSHA256 {
