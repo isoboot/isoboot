@@ -8,4 +8,13 @@ layout:
 - go.kubebuilder.io/v4
 projectName: isoboot
 repo: github.com/isoboot/isoboot
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: isoboot.github.io
+  kind: BootArtifact
+  path: github.com/isoboot/isoboot/api/v1alpha1
+  version: v1alpha1
 version: "3"
