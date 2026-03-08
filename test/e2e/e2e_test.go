@@ -297,7 +297,9 @@ var _ = Describe("Manager", Ordered, func() {
 
 		It("should download and reach Ready phase", func() {
 			By("computing sha256 of the test file")
-			resp, err := http.Get(testURL) // nolint:noctx,gosec
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, testURL, nil)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := http.DefaultClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
 			body, err := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
