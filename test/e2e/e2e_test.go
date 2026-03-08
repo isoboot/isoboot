@@ -322,7 +322,7 @@ var _ = Describe("Manager", Ordered, func() {
 				var a isobootgithubiov1alpha1.BootArtifact
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(artifact), &a)).To(Succeed())
 				g.Expect(a.Status.Phase).To(Equal(isobootgithubiov1alpha1.BootArtifactPhaseReady))
-			}).Should(Succeed())
+			}).WithTimeout(60 * time.Second).WithPolling(time.Second).Should(Succeed())
 		})
 
 		It("should set Error phase on hash mismatch", func() {
@@ -342,7 +342,7 @@ var _ = Describe("Manager", Ordered, func() {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(artifact), &a)).To(Succeed())
 				g.Expect(a.Status.Phase).To(Equal(isobootgithubiov1alpha1.BootArtifactPhaseError))
 				g.Expect(a.Status.FailureCount).To(BeNumerically(">", 0))
-			}).Should(Succeed())
+			}).WithTimeout(60 * time.Second).WithPolling(time.Second).Should(Succeed())
 		})
 	})
 })

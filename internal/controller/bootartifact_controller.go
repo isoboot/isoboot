@@ -220,7 +220,7 @@ func (r *BootArtifactReconciler) setFailure(ctx context.Context, artifact *isobo
 		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
 	}
 
-	// Exponential backoff: 10s, 20s, 40s, ... capped at ~5 minutes
+	// Exponential backoff: 10s, 20s, 40s, ... capped at ~5-6 minutes
 	backoff := time.Duration(1<<min(artifact.Status.FailureCount, 6)) * 5 * time.Second
 	return ctrl.Result{RequeueAfter: backoff}, nil
 }
