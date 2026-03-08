@@ -20,48 +20,76 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// BootConfigISOSpec defines the ISO extraction configuration.
+type BootConfigISOSpec struct {
+	// artifactRef is the name of the BootArtifact for the ISO file.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	ArtifactRef string `json:"artifactRef"`
 
-// BootConfigSpec defines the desired state of BootConfig
-type BootConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// kernelPath is the path to the kernel within the ISO.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	KernelPath string `json:"kernelPath"`
 
-	// foo is an example field of BootConfig. Edit bootconfig_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// initrdPath is the path to the initrd within the ISO.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	InitrdPath string `json:"initrdPath"`
 }
+
+// BootConfigSpec defines the desired state of BootConfig.
+// A BootConfig groups BootArtifacts into a servable PXE boot directory.
+// The directory name is metadata.name.
+// Two mutually exclusive modes: direct refs (kernelRef + initrdRef) or ISO extraction (iso).
+// +kubebuilder:validation:XValidation:rule="(has(self.kernelRef) && has(self.initrdRef) && !has(self.iso)) || (!has(self.kernelRef) && !has(self.initrdRef) && has(self.iso))",message="must use either kernelRef+initrdRef or iso, not both"
+// +kubebuilder:validation:XValidation:rule="!has(self.iso) || !has(self.firmwareRef)",message="firmwareRef is not supported with iso mode"
+type BootConfigSpec struct {
+	// kernelRef is the name of the BootArtifact for the kernel (mode A).
+	// +optional
+	KernelRef *string `json:"kernelRef,omitempty"`
+
+	// initrdRef is the name of the BootArtifact for the initrd (mode A).
+	// +optional
+	InitrdRef *string `json:"initrdRef,omitempty"`
+
+	// firmwareRef is the name of the BootArtifact for the firmware archive (mode A only).
+	// When set, the controller creates no-firmware/ and with-firmware/ subdirectories.
+	// +optional
+	FirmwareRef *string `json:"firmwareRef,omitempty"`
+
+	// iso defines ISO extraction configuration (mode B).
+	// +optional
+	ISO *BootConfigISOSpec `json:"iso,omitempty"`
+}
+
+// BootConfigPhase describes the current phase of a BootConfig.
+// +kubebuilder:validation:Enum=Pending;Ready;Error
+type BootConfigPhase string
+
+const (
+	BootConfigPhasePending BootConfigPhase = "Pending"
+	BootConfigPhaseReady   BootConfigPhase = "Ready"
+	BootConfigPhaseError   BootConfigPhase = "Error"
+)
 
 // BootConfigStatus defines the observed state of BootConfig.
 type BootConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the BootConfig resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
+	// phase is the current phase of the boot config.
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Phase BootConfigPhase `json:"phase,omitempty"`
+
+	// message provides human-readable details about the current phase.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// BootConfig is the Schema for the bootconfigs API
+// BootConfig is the Schema for the bootconfigs API.
 type BootConfig struct {
 	metav1.TypeMeta `json:",inline"`
 

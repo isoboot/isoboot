@@ -4,6 +4,13 @@ metadata:
   labels:
     app.kubernetes.io/name: isoboot
     app.kubernetes.io/managed-by: kustomize
-  name: bootconfig-sample
+  name: rocky-9
 spec:
-  # TODO(user): Add fields here
+  # Mode A: direct refs
+  kernelRef: rocky-9-kernel
+  initrdRef: rocky-9-initrd
+  # Mode B: ISO extraction (mutually exclusive with kernelRef/initrdRef)
+  # iso:
+  #   artifactRef: ubuntu-24-iso
+  #   kernelPath: casper/vmlinuz
+  #   initrdPath: casper/initrd
