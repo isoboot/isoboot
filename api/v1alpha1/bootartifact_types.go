@@ -68,6 +68,14 @@ type BootArtifactStatus struct {
 	// +optional
 	Message string `json:"message,omitempty"`
 
+	// failureCount is the number of consecutive download or verification failures.
+	// +optional
+	FailureCount int32 `json:"failureCount,omitempty"`
+
+	// lastFailureTime is the time of the last failure.
+	// +optional
+	LastFailureTime *metav1.Time `json:"lastFailureTime,omitempty"`
+
 	// lastChecked is the last time the artifact file was verified.
 	// +optional
 	LastChecked *metav1.Time `json:"lastChecked,omitempty"`
@@ -76,6 +84,7 @@ type BootArtifactStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Failures",type=integer,JSONPath=".status.failureCount"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // BootArtifact is the Schema for the bootartifacts API.
