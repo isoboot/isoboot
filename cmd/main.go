@@ -185,6 +185,13 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "BootArtifact")
 		os.Exit(1)
 	}
+	if err := (&controller.BootConfigReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "BootConfig")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

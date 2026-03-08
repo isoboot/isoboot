@@ -1,4 +1,5 @@
 ## Append samples of your project ##
 resources:
 - v1alpha1_bootartifact.yaml
+- v1alpha1_bootconfig.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

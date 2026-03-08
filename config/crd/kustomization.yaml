@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/isoboot.github.io_bootartifacts.yaml
+- bases/isoboot.github.io_bootconfigs.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

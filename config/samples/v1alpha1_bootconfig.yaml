@@ -1,0 +1,9 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  labels:
+    app.kubernetes.io/name: isoboot
+    app.kubernetes.io/managed-by: kustomize
+  name: bootconfig-sample
+spec:
+  # TODO(user): Add fields here
