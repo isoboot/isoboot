@@ -4,6 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/name: isoboot
     app.kubernetes.io/managed-by: kustomize
-  name: bootartifact-sample
+  name: rocky-9-kernel
 spec:
-  # TODO(user): Add fields here
+  url: https://download.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/images/pxeboot/vmlinuz
+  sha256: "0000000000000000000000000000000000000000000000000000000000000000"

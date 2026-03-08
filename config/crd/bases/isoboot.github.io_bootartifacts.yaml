@@ -1,0 +1,100 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: bootartifacts.isoboot.github.io
+spec:
+  group: isoboot.github.io
+  names:
+    kind: BootArtifact
+    listKind: BootArtifactList
+    plural: bootartifacts
+    singular: bootartifact
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.url
+      name: URL
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: BootArtifact is the Schema for the bootartifacts API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of BootArtifact
+            properties:
+              sha256:
+                description: |-
+                  sha256 is the expected SHA-256 hex digest of the downloaded file.
+                  Exactly one of sha256 or sha512 must be specified.
+                pattern: ^[a-fA-F0-9]{64}$
+                type: string
+              sha512:
+                description: |-
+                  sha512 is the expected SHA-512 hex digest of the downloaded file.
+                  Exactly one of sha256 or sha512 must be specified.
+                pattern: ^[a-fA-F0-9]{128}$
+                type: string
+              url:
+                description: url is the download URL for the artifact.
+                minLength: 1
+                type: string
+            required:
+            - url
+            type: object
+          status:
+            description: status defines the observed state of BootArtifact
+            properties:
+              filePath:
+                description: filePath is the local path where the artifact is stored.
+                type: string
+              lastChecked:
+                description: lastChecked is the last time the artifact file was verified.
+                format: date-time
+                type: string
+              message:
+                description: message provides human-readable details about the current
+                  phase.
+                type: string
+              phase:
+                description: phase is the current phase of the artifact.
+                enum:
+                - Pending
+                - Downloading
+                - Ready
+                - Error
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
