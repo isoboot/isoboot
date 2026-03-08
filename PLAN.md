@@ -11,7 +11,7 @@ A Kubernetes controller that manages PXE boot artifacts — downloads kernel, in
 A single downloadable file with integrity verification.
 
 ```yaml
-apiVersion: boot.isoboot.io/v1alpha1
+apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
 metadata:
   name: debian-13-kernel
@@ -36,27 +36,54 @@ spec:
 ### BootConfig
 
 Groups artifacts into a servable boot directory. Directory name = `metadata.name`.
+Two mutually exclusive modes: direct refs or ISO extraction.
+
+#### Mode A — Direct refs (Rocky, Debian)
 
 ```yaml
-apiVersion: boot.isoboot.io/v1alpha1
+apiVersion: isoboot.github.io/v1alpha1
 kind: BootConfig
 metadata:
   name: debian-13
 spec:
   kernelRef: debian-13-kernel
   initrdRef: debian-13-initrd
-  firmwareRef: debian-13-firmware   # optional
+  firmwareRef: debian-13-firmware   # optional, mode A only
 ```
+
+#### Mode B — ISO extraction (Ubuntu)
+
+```yaml
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: ubuntu-24
+spec:
+  iso:
+    artifactRef: ubuntu-24-iso
+    kernelPath: casper/vmlinuz
+    initrdPath: casper/initrd
+```
+
+**CEL validation rules:**
+- Mode A: `kernelRef` and `initrdRef` required, `iso` must not be set
+- Mode B: `iso` required (with `artifactRef`, `kernelPath`, `initrdPath`), `kernelRef`, `initrdRef`, and `firmwareRef` must not be set
+- Exactly one mode must be used
 
 **Status phases:** Pending → Ready / Error
 
 **Controller logic:**
 - Watches referenced BootArtifacts
-- All artifacts Ready → assemble directory → Ready
-- Any artifact Pending/Downloading → Pending
-- Any artifact Error → Error
+- Mode A:
+  - All artifacts Ready → assemble directory → Ready
+  - Any artifact Pending/Downloading → Pending
+  - Any artifact Error → Error
+- Mode B:
+  - ISO artifact Ready → extract kernel and initrd from ISO → Ready
+  - ISO artifact not Ready → Pending
+  - Extraction failure → Error
 
-**Directory layout — with firmwareRef:**
+**Directory layout — Mode A with firmwareRef:**
 ```
 /data/boot/debian-13/
   vmlinuz
@@ -64,11 +91,18 @@ spec:
   with-firmware/initrd.gz          # cat initrd.gz firmware.cpio.gz
 ```
 
-**Directory layout — without firmwareRef (e.g. Rocky):**
+**Directory layout — Mode A without firmwareRef (e.g. Rocky):**
 ```
 /data/boot/rocky-9/
   vmlinuz
   initrd.img
+```
+
+**Directory layout — Mode B (ISO):**
+```
+/data/boot/ubuntu-24/
+  vmlinuz                          # extracted from ISO at kernelPath
+  initrd                           # extracted from ISO at initrdPath
 ```
 
 No hash validation on the concatenated with-firmware/initrd.gz — individual artifacts are already verified.
@@ -76,23 +110,24 @@ No hash validation on the concatenated with-firmware/initrd.gz — individual ar
 ## Project Setup
 
 - **Framework:** kubebuilder v4
-- **Domain:** isoboot.io
-- **Group:** boot
+- **Domain:** isoboot.github.io
+- **Group:** (none, flat API group)
 - **Version:** v1alpha1
 - **Repo:** github.com/isoboot/isoboot
 
 ## Implementation Steps
 
-### Step 1: Scaffold
-- `kubebuilder init`
-- `kubebuilder create api` for BootArtifact (with controller)
-- `kubebuilder create api` for BootConfig (with controller)
+### Step 1: Scaffold ✅
+- `kubebuilder init --domain isoboot.github.io --repo github.com/isoboot/isoboot`
+- `kubebuilder create api --version v1alpha1 --kind BootArtifact --controller --resource`
+- `kubebuilder create api --version v1alpha1 --kind BootConfig --controller --resource`
 
-### Step 2: Define Types
-- BootArtifact spec: `URL`, `SHA256`, `SHA512`
-- BootArtifact status: `Phase`, `Message`, `LastChecked`, `FilePath`
-- BootConfig spec: `KernelRef`, `InitrdRef`, `FirmwareRef`
+### Step 2: Define Types ✅ (BootArtifact) / In Progress (BootConfig)
+- BootArtifact spec: `URL`, `SHA256`, `SHA512` with CEL validation
+- BootArtifact status: `Phase`, `Message`, `LastChecked`
+- BootConfig spec: Mode A (`KernelRef`, `InitrdRef`, `FirmwareRef`) or Mode B (`ISO`)
 - BootConfig status: `Phase`, `Message`
+- CEL rules to enforce exactly one mode
 
 ### Step 3: BootArtifact Controller
 - Reconcile loop: check file on disk, download if missing, verify hash
@@ -101,13 +136,15 @@ No hash validation on the concatenated with-firmware/initrd.gz — individual ar
 
 ### Step 4: BootConfig Controller
 - Reconcile loop: look up referenced BootArtifacts
-- If all Ready, assemble directory (copy/symlink files, concatenate firmware)
+- Mode A: assemble directory (copy/symlink files, concatenate firmware)
+- Mode B: extract kernel and initrd from ISO
 - If any not Ready, set Pending and requeue
 - Watch BootArtifacts so changes trigger reconciliation
 
 ### Step 5: Tests
 - Unit tests for hash verification
 - Unit tests for firmware concatenation logic
+- Unit tests for ISO extraction logic
 - Controller tests with envtest
 
 ## v0.0.1 Scope
@@ -115,7 +152,8 @@ No hash validation on the concatenated with-firmware/initrd.gz — individual ar
 **In scope:**
 - BootArtifact and BootConfig CRDs
 - Download + hash verification
-- Firmware concatenation
+- Firmware concatenation (Mode A)
+- ISO extraction (Mode B)
 - Status reporting
 - Exponential backoff on failures
 
