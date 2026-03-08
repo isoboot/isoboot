@@ -1,0 +1,14 @@
+# This patch adds the --data-dir flag and an emptyDir volume for artifact storage.
+- op: add
+  path: /spec/template/spec/containers/0/args/-
+  value: --data-dir=/data/isoboot
+- op: replace
+  path: /spec/template/spec/containers/0/volumeMounts
+  value:
+    - name: data
+      mountPath: /data/isoboot
+- op: replace
+  path: /spec/template/spec/volumes
+  value:
+    - name: data
+      emptyDir: {}
