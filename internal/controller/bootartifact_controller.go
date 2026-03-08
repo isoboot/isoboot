@@ -98,14 +98,8 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 		return false, nil
 	}
 
-	now := metav1.Now()
-	artifact.Status.Phase = isobootgithubiov1alpha1.BootArtifactPhaseReady
-	artifact.Status.Message = ""
-	artifact.Status.FailureCount = 0
-	artifact.Status.LastFailureTime = nil
-	artifact.Status.LastChecked = &now
-	if err := r.Status().Update(ctx, artifact); err != nil {
-		return false, fmt.Errorf("updating status: %w", err)
+	if err := r.setReady(ctx, artifact); err != nil {
+		return false, err
 	}
 
 	return true, nil
@@ -152,6 +146,8 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		// Drain body so the connection can be reused for keep-alive.
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return r.setFailure(ctx, artifact, fmt.Sprintf("download failed: HTTP %d", resp.StatusCode))
 	}
 
@@ -190,6 +186,15 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 		return r.setFailure(ctx, artifact, fmt.Sprintf("renaming file: %v", err))
 	}
 
+	if err := r.setReady(ctx, artifact); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	log.Info("Artifact downloaded and verified", "path", filePath)
+	return ctrl.Result{}, nil
+}
+
+func (r *BootArtifactReconciler) setReady(ctx context.Context, artifact *isobootgithubiov1alpha1.BootArtifact) error {
 	now := metav1.Now()
 	artifact.Status.Phase = isobootgithubiov1alpha1.BootArtifactPhaseReady
 	artifact.Status.Message = ""
@@ -197,11 +202,9 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 	artifact.Status.LastFailureTime = nil
 	artifact.Status.LastChecked = &now
 	if err := r.Status().Update(ctx, artifact); err != nil {
-		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
+		return fmt.Errorf("updating status: %w", err)
 	}
-
-	log.Info("Artifact downloaded and verified", "path", filePath)
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *BootArtifactReconciler) setFailure(ctx context.Context, artifact *isobootgithubiov1alpha1.BootArtifact, message string) (ctrl.Result, error) {
@@ -271,6 +274,9 @@ func hashFile(path string, useSHA256 bool) (string, error) {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *BootArtifactReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.HTTPClient == nil {
+		r.HTTPClient = &http.Client{Timeout: 30 * time.Minute}
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&isobootgithubiov1alpha1.BootArtifact{}).
 		Named("bootartifact").
