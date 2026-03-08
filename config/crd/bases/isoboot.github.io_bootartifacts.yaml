@@ -18,6 +18,9 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .status.failureCount
+      name: Failures
+      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -73,8 +76,17 @@ spec:
           status:
             description: status defines the observed state of BootArtifact
             properties:
+              failureCount:
+                description: failureCount is the number of consecutive download or
+                  verification failures.
+                format: int32
+                type: integer
               lastChecked:
                 description: lastChecked is the last time the artifact file was verified.
+                format: date-time
+                type: string
+              lastFailureTime:
+                description: lastFailureTime is the time of the last failure.
                 format: date-time
                 type: string
               message:
