@@ -64,10 +64,6 @@ type BootArtifactStatus struct {
 	// +optional
 	Phase BootArtifactPhase `json:"phase,omitempty"`
 
-	// filePath is the local path where the artifact is stored.
-	// +optional
-	FilePath string `json:"filePath,omitempty"`
-
 	// message provides human-readable details about the current phase.
 	// +optional
 	Message string `json:"message,omitempty"`

@@ -76,9 +76,6 @@ spec:
           status:
             description: status defines the observed state of BootArtifact
             properties:
-              filePath:
-                description: filePath is the local path where the artifact is stored.
-                type: string
               lastChecked:
                 description: lastChecked is the last time the artifact file was verified.
                 format: date-time
