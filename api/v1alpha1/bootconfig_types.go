@@ -20,24 +20,47 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// BootConfigISOSpec defines the ISO extraction configuration.
+type BootConfigISOSpec struct {
+	// artifactRef is the name of the BootArtifact for the ISO file.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	ArtifactRef string `json:"artifactRef"`
+
+	// kernelPath is the path to the kernel within the ISO.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	KernelPath string `json:"kernelPath"`
+
+	// initrdPath is the path to the initrd within the ISO.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	InitrdPath string `json:"initrdPath"`
+}
+
 // BootConfigSpec defines the desired state of BootConfig.
 // A BootConfig groups BootArtifacts into a servable PXE boot directory.
 // The directory name is metadata.name.
+// Two mutually exclusive modes: direct refs (kernelRef + initrdRef) or ISO extraction (iso).
+// +kubebuilder:validation:XValidation:rule="(has(self.kernelRef) && has(self.initrdRef) && !has(self.iso)) || (!has(self.kernelRef) && !has(self.initrdRef) && has(self.iso))",message="must use either kernelRef+initrdRef or iso, not both"
+// +kubebuilder:validation:XValidation:rule="!has(self.iso) || !has(self.firmwareRef)",message="firmwareRef is not supported with iso mode"
 type BootConfigSpec struct {
-	// kernelRef is the name of the BootArtifact for the kernel.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	KernelRef string `json:"kernelRef"`
+	// kernelRef is the name of the BootArtifact for the kernel (mode A).
+	// +optional
+	KernelRef *string `json:"kernelRef,omitempty"`
 
-	// initrdRef is the name of the BootArtifact for the initrd.
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	InitrdRef string `json:"initrdRef"`
+	// initrdRef is the name of the BootArtifact for the initrd (mode A).
+	// +optional
+	InitrdRef *string `json:"initrdRef,omitempty"`
 
-	// firmwareRef is the name of the BootArtifact for the firmware archive.
+	// firmwareRef is the name of the BootArtifact for the firmware archive (mode A only).
 	// When set, the controller creates no-firmware/ and with-firmware/ subdirectories.
 	// +optional
 	FirmwareRef *string `json:"firmwareRef,omitempty"`
+
+	// iso defines ISO extraction configuration (mode B).
+	// +optional
+	ISO *BootConfigISOSpec `json:"iso,omitempty"`
 }
 
 // BootConfigPhase describes the current phase of a BootConfig.

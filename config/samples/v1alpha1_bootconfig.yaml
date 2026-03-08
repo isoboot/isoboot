@@ -6,5 +6,11 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: rocky-9
 spec:
+  # Mode A: direct refs
   kernelRef: rocky-9-kernel
   initrdRef: rocky-9-initrd
+  # Mode B: ISO extraction (mutually exclusive with kernelRef/initrdRef)
+  # iso:
+  #   artifactRef: ubuntu-24-iso
+  #   kernelPath: casper/vmlinuz
+  #   initrdPath: casper/initrd
