@@ -3,7 +3,32 @@ name: E2E HostPath Tests
 on:
   push:
     branches: [main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'Dockerfile'
+      - 'config/**'
+      - 'test/e2e/**'
+      - '.github/workflows/test-e2e-hostpath.yml'
   pull_request:
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'Dockerfile'
+      - 'config/**'
+      - 'test/e2e/**'
+      - '.github/workflows/test-e2e-hostpath.yml'
+
+env:
+  KIND_VERSION: v0.31.0
+  VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
+  VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
+  ARTIFACT_NAME: rocky-10.1-vmlinuz
+  ARTIFACT_PATH: /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
 
 jobs:
   test-e2e-hostpath:
@@ -18,12 +43,13 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install the latest version of kind
+      - name: Install kind ${{ env.KIND_VERSION }}
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VERSION }}/kind-linux-$(go env GOARCH)
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
+      # Controller runs as UID 65532 (nonroot) — needs world-writable dir on CI runner
       - name: Create host data directory
         run: mkdir -p /tmp/isoboot-data && chmod 777 /tmp/isoboot-data
 
@@ -45,64 +71,37 @@ jobs:
 
       - name: Create BootArtifact for Rocky 10 vmlinuz
         run: |
-          kubectl apply -f - <<'EOF'
+          kubectl apply -f - <<EOF
           apiVersion: isoboot.github.io/v1alpha1
           kind: BootArtifact
           metadata:
-            name: rocky-10.1-vmlinuz
+            name: ${{ env.ARTIFACT_NAME }}
           spec:
-            url: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
-            sha256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
+            url: "${{ env.VMLINUZ_URL }}"
+            sha256: "${{ env.VMLINUZ_SHA256 }}"
           EOF
 
       - name: Wait for Ready phase
-        run: |
-          error_count=0
-          for i in $(seq 1 60); do
-            phase=$(kubectl get bootartifact rocky-10.1-vmlinuz -o jsonpath='{.status.phase}' 2>/dev/null || true)
-            echo "Attempt $i: phase=$phase"
-            if [ "$phase" = "Ready" ]; then
-              echo "BootArtifact reached Ready phase"
-              exit 0
-            fi
-            if [ "$phase" = "Error" ]; then
-              error_count=$((error_count + 1))
-              msg=$(kubectl get bootartifact rocky-10.1-vmlinuz -o jsonpath='{.status.message}')
-              echo "BootArtifact is in Error phase (count=$error_count): $msg"
-              if [ "$error_count" -ge 3 ]; then
-                echo "Failing fast after $error_count consecutive errors"
-                kubectl get bootartifact rocky-10.1-vmlinuz -o yaml
-                kubectl -n isoboot-system logs deployment/isoboot-controller-manager
-                exit 1
-              fi
-            else
-              error_count=0
-            fi
-            sleep 10
-          done
-          echo "Timed out waiting for Ready phase"
-          kubectl get bootartifact rocky-10.1-vmlinuz -o yaml
-          kubectl -n isoboot-system logs deployment/isoboot-controller-manager
-          exit 1
+        run: ./test/e2e/wait-for-bootartifact.sh "${{ env.ARTIFACT_NAME }}"
 
       - name: Verify file and SHA-256 on host disk
         run: |
-          echo "Checking file at /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz"
-          ls -la /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
-          echo "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607  /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz" | sha256sum -c
+          echo "Checking file at ${{ env.ARTIFACT_PATH }}"
+          ls -la "${{ env.ARTIFACT_PATH }}"
+          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
 
       - name: Delete Kind cluster and verify file persists
         run: |
           kind delete cluster --name isoboot-hostpath
           echo "Cluster deleted — verifying file still exists on host"
-          ls -la /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
-          echo "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607  /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz" | sha256sum -c
+          ls -la "${{ env.ARTIFACT_PATH }}"
+          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
           echo "File persists after cluster deletion"
 
       # --- Second cluster: verify controller recognises existing file without downloading ---
 
       - name: Record file modification time
-        run: stat -c '%Y' /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz > /tmp/mtime-before
+        run: stat -c '%Y' "${{ env.ARTIFACT_PATH }}" > /tmp/mtime-before
 
       - name: Create second Kind cluster with same hostPath
         run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
@@ -120,50 +119,23 @@ jobs:
 
       - name: Create same BootArtifact (file already exists on host)
         run: |
-          kubectl apply -f - <<'EOF'
+          kubectl apply -f - <<EOF
           apiVersion: isoboot.github.io/v1alpha1
           kind: BootArtifact
           metadata:
-            name: rocky-10.1-vmlinuz
+            name: ${{ env.ARTIFACT_NAME }}
           spec:
-            url: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
-            sha256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
+            url: "${{ env.VMLINUZ_URL }}"
+            sha256: "${{ env.VMLINUZ_SHA256 }}"
           EOF
 
       - name: Wait for Ready phase (second cluster)
-        run: |
-          error_count=0
-          for i in $(seq 1 60); do
-            phase=$(kubectl get bootartifact rocky-10.1-vmlinuz -o jsonpath='{.status.phase}' 2>/dev/null || true)
-            echo "Attempt $i: phase=$phase"
-            if [ "$phase" = "Ready" ]; then
-              echo "BootArtifact reached Ready phase"
-              exit 0
-            fi
-            if [ "$phase" = "Error" ]; then
-              error_count=$((error_count + 1))
-              msg=$(kubectl get bootartifact rocky-10.1-vmlinuz -o jsonpath='{.status.message}')
-              echo "BootArtifact is in Error phase (count=$error_count): $msg"
-              if [ "$error_count" -ge 3 ]; then
-                echo "Failing fast after $error_count consecutive errors"
-                kubectl get bootartifact rocky-10.1-vmlinuz -o yaml
-                kubectl -n isoboot-system logs deployment/isoboot-controller-manager
-                exit 1
-              fi
-            else
-              error_count=0
-            fi
-            sleep 10
-          done
-          echo "Timed out waiting for Ready phase"
-          kubectl get bootartifact rocky-10.1-vmlinuz -o yaml
-          kubectl -n isoboot-system logs deployment/isoboot-controller-manager
-          exit 1
+        run: ./test/e2e/wait-for-bootartifact.sh "${{ env.ARTIFACT_NAME }}"
 
       - name: Verify file was not re-downloaded
         run: |
           mtime_before=$(cat /tmp/mtime-before)
-          mtime_after=$(stat -c '%Y' /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz)
+          mtime_after=$(stat -c '%Y' "${{ env.ARTIFACT_PATH }}")
           echo "mtime before: $mtime_before"
           echo "mtime after:  $mtime_after"
           if [ "$mtime_before" != "$mtime_after" ]; then
@@ -171,9 +143,9 @@ jobs:
             exit 1
           fi
           echo "File was not re-downloaded — mtime unchanged"
-          echo "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607  /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz" | sha256sum -c
+          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
 
-      - name: Clean up second cluster
+      - name: Clean up clusters
         if: always()
         run: kind delete cluster --name isoboot-hostpath 2>/dev/null || true
 
@@ -181,7 +153,7 @@ jobs:
         if: failure()
         run: |
           echo "=== BootArtifact status ==="
-          kubectl get bootartifact rocky-10.1-vmlinuz -o yaml 2>/dev/null || true
+          kubectl get bootartifact "${{ env.ARTIFACT_NAME }}" -o yaml 2>/dev/null || true
           echo "=== Controller logs ==="
           kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
           echo "=== Host data directory ==="
