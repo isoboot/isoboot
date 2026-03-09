@@ -187,7 +187,7 @@ func main() {
 		Scheme:     mgr.GetScheme(),
 		DataDir:    dataDir,
 		HTTPClient: &http.Client{Timeout: 30 * time.Minute},
-		Recorder:   mgr.GetEventRecorderFor("bootartifact-controller"),
+		Recorder:   mgr.GetEventRecorder("bootartifact-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "BootArtifact")
 		os.Exit(1)

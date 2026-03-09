@@ -11,6 +11,4 @@
   path: /spec/template/spec/volumes/-
   value:
     name: data
-    hostPath:
-      path: /data/isoboot
-      type: DirectoryOrCreate
+    emptyDir: {}

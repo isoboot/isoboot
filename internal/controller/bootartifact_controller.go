@@ -33,7 +33,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -47,7 +47,7 @@ type BootArtifactReconciler struct {
 	Scheme     *runtime.Scheme
 	DataDir    string
 	HTTPClient *http.Client
-	Recorder   record.EventRecorder
+	Recorder   events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootartifacts,verbs=get;list;watch;create;update;patch;delete
@@ -99,7 +99,7 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 	if !strings.EqualFold(computedHash, expectedHash) {
 		log.Info("Hash mismatch for existing file, removing", "expected", expectedHash, "got", computedHash)
 		if r.Recorder != nil {
-			r.Recorder.Eventf(artifact, "Warning", "HashMismatch",
+			r.Recorder.Eventf(artifact, nil, "Warning", "HashMismatch", "VerifyExisting",
 				"Existing file hash mismatch: expected %s got %s, re-downloading", expectedHash, computedHash)
 		}
 		if err := os.Remove(filePath); err != nil {
