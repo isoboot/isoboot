@@ -95,24 +95,7 @@ jobs:
           kubectl -n isoboot-system get pods
 
       - name: Create BootArtifacts for Debian 13 kernel and initrd
-        run: |
-          kubectl apply -f - <<EOF
-          apiVersion: isoboot.github.io/v1alpha1
-          kind: BootArtifact
-          metadata:
-            name: ${{ env.VMLINUZ_NAME }}
-          spec:
-            url: "${{ env.VMLINUZ_URL }}"
-            sha256: "${{ env.VMLINUZ_SHA256 }}"
-          ---
-          apiVersion: isoboot.github.io/v1alpha1
-          kind: BootArtifact
-          metadata:
-            name: ${{ env.INITRD_NAME }}
-          spec:
-            url: "${{ env.INITRD_URL }}"
-            sha256: "${{ env.INITRD_SHA256 }}"
-          EOF
+        run: envsubst < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
       # Sequential waits for both artifacts: parallel would be faster but adds
       # complexity for little gain given the small download sizes (~51 MB total).
@@ -179,24 +162,7 @@ jobs:
           kubectl -n isoboot-system get pods
 
       - name: Create same BootArtifacts (files already exist on host)
-        run: |
-          kubectl apply -f - <<EOF
-          apiVersion: isoboot.github.io/v1alpha1
-          kind: BootArtifact
-          metadata:
-            name: ${{ env.VMLINUZ_NAME }}
-          spec:
-            url: "${{ env.VMLINUZ_URL }}"
-            sha256: "${{ env.VMLINUZ_SHA256 }}"
-          ---
-          apiVersion: isoboot.github.io/v1alpha1
-          kind: BootArtifact
-          metadata:
-            name: ${{ env.INITRD_NAME }}
-          spec:
-            url: "${{ env.INITRD_URL }}"
-            sha256: "${{ env.INITRD_SHA256 }}"
-          EOF
+        run: envsubst < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
       - name: Wait for Ready phase (second cluster)
         run: |
@@ -231,6 +197,7 @@ jobs:
           # Note: no race here — wait-for-bootartifact.sh above ensures both
           # artifacts reached Ready phase, so the skip-download log lines have
           # already been written by the time we grep.
+          # || true: grep -c exits 1 on zero matches, which would fail under set -e
           skip_count=$(kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -c "Artifact already on disk, skipping download" || true)
           if [ "$skip_count" -lt 2 ]; then
             echo "FAIL: expected at least 2 skip-download log lines, got $skip_count"
