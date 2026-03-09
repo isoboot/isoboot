@@ -191,9 +191,12 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 		return r.setFailure(ctx, artifact, fmt.Sprintf("hash mismatch: expected %s got %s", expectedHash, computedHash))
 	}
 
-	// Atomic rename
+	// Atomic rename + directory fsync for crash durability
 	if err := os.Rename(tmpPath, filePath); err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("renaming file: %v", err))
+	}
+	if err := syncDir(filepath.Dir(filePath)); err != nil {
+		return r.setFailure(ctx, artifact, fmt.Sprintf("syncing directory: %v", err))
 	}
 
 	if err := r.setReady(ctx, artifact); err != nil {
@@ -260,6 +263,15 @@ func expectedHash(artifact *isobootgithubiov1alpha1.BootArtifact) string {
 		return *artifact.Spec.SHA512
 	}
 	return ""
+}
+
+func syncDir(path string) error {
+	d, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	return d.Sync()
 }
 
 func hashFile(path string, useSHA256 bool) (string, error) {
