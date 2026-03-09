@@ -49,6 +49,9 @@ jobs:
     name: Run on Ubuntu
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -95,7 +98,10 @@ jobs:
           kubectl -n isoboot-system get pods
 
       - name: Create BootArtifacts for Debian 13 kernel and initrd
-        run: envsubst < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
+        # Restrict envsubst to only template variables — prevents accidental
+        # substitution of unrelated env vars (e.g. $HOME, $PATH).
+        # envsubst is from the gettext package, pre-installed on Ubuntu runners.
+        run: envsubst '${VMLINUZ_NAME} ${VMLINUZ_URL} ${VMLINUZ_SHA256} ${INITRD_NAME} ${INITRD_URL} ${INITRD_SHA256}' < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
       # Sequential waits for both artifacts: parallel would be faster but adds
       # complexity for little gain given the small download sizes (~51 MB total).
@@ -104,9 +110,13 @@ jobs:
           ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
           ./test/e2e/wait-for-bootartifact.sh "${{ env.INITRD_NAME }}"
 
-      # SHA verification is intentionally written out per-artifact (not looped)
-      # in these steps for CI log readability. The mtime check step below uses
-      # a loop because it also checks counts — different trade-off.
+      # INTENTIONAL: SHA-256 is verified 3× per artifact (after download, after
+      # cluster deletion, after second-cluster reconciliation). Each check covers
+      # a different failure mode — this is by design, not duplication. Do not
+      # consolidate or remove any of these checks.
+      # The checks are written out per-artifact (not looped) for CI log
+      # readability. The mtime step below uses a loop because it also checks
+      # counts — different trade-off.
       - name: Verify files and SHA-256 on host disk
         run: |
           echo "Checking vmlinuz at ${{ env.VMLINUZ_PATH }}"
@@ -162,7 +172,7 @@ jobs:
           kubectl -n isoboot-system get pods
 
       - name: Create same BootArtifacts (files already exist on host)
-        run: envsubst < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
+        run: envsubst '${VMLINUZ_NAME} ${VMLINUZ_URL} ${VMLINUZ_SHA256} ${INITRD_NAME} ${INITRD_URL} ${INITRD_SHA256}' < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
       - name: Wait for Ready phase (second cluster)
         run: |
@@ -170,7 +180,6 @@ jobs:
           ./test/e2e/wait-for-bootartifact.sh "${{ env.INITRD_NAME }}"
 
       - name: Verify files were not re-downloaded
-        shell: bash
         run: |
           # Use shell arrays so the loop body uses only shell variables.
           # Iteration order doesn't matter here — the explicit 'for' list below
@@ -199,8 +208,8 @@ jobs:
           # already been written by the time we grep.
           # || true: grep -c exits 1 on zero matches, which would fail under set -e
           skip_count=$(kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -c "Artifact already on disk, skipping download" || true)
-          if [ "$skip_count" -lt 2 ]; then
-            echo "FAIL: expected at least 2 skip-download log lines, got $skip_count"
+          if [ "$skip_count" -ne 2 ]; then
+            echo "FAIL: expected exactly 2 skip-download log lines, got $skip_count"
             kubectl -n isoboot-system logs deployment/isoboot-controller-manager
             exit 1
           fi
