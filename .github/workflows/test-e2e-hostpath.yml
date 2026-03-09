@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - '**.go'
+      - '**/*.go'
       - 'go.mod'
       - 'go.sum'
       - 'Makefile'
@@ -14,7 +14,7 @@ on:
       - '.github/workflows/test-e2e-hostpath.yml'
   pull_request:
     paths:
-      - '**.go'
+      - '**/*.go'
       - 'go.mod'
       - 'go.sum'
       - 'Makefile'
