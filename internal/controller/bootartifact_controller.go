@@ -108,8 +108,12 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 		return false, nil
 	}
 
-	if err := r.setReady(ctx, artifact); err != nil {
-		return false, err
+	// Skip status write if already Ready — avoids a no-op update on
+	// every controller restart for stable artifacts.
+	if artifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
+		if err := r.setReady(ctx, artifact); err != nil {
+			return false, err
+		}
 	}
 
 	return true, nil
