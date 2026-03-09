@@ -4,6 +4,7 @@ resources:
 patches:
 - target:
     kind: Deployment
+    name: isoboot-controller-manager
   patch: |-
     - op: test
       path: /spec/template/spec/volumes/0/name
