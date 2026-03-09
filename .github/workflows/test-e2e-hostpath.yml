@@ -161,10 +161,6 @@ jobs:
           fi
           echo "Controller logs confirm no download occurred"
 
-      - name: Clean up clusters
-        if: always()
-        run: kind delete cluster --name isoboot-hostpath 2>/dev/null || true
-
       - name: Collect logs on failure
         if: failure()
         run: |
@@ -174,3 +170,7 @@ jobs:
           kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
           echo "=== Host data directory ==="
           find /tmp/isoboot-data -type f 2>/dev/null || true
+
+      - name: Clean up clusters
+        if: always()
+        run: kind delete cluster --name isoboot-hostpath 2>/dev/null || true
