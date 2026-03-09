@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -45,6 +46,11 @@ const (
 
 func sha256Hex(data []byte) string {
 	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
+}
+
+func sha512Hex(data []byte) string {
+	h := sha512.Sum512(data)
 	return hex.EncodeToString(h[:])
 }
 
@@ -178,6 +184,29 @@ var _ = Describe("BootArtifact Controller", func() {
 			data, err := os.ReadFile(filepath.Join(dataDir, "artifacts", name, "vmlinuz"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(data).To(Equal(content))
+		})
+
+		It("should download and verify with SHA-512", func() {
+			content := []byte("sha512 content")
+			serverURL, httpClient, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(content) })
+			defer cleanup()
+			reconciler.HTTPClient = httpClient
+
+			name := "dl-sha512"
+			resource := &isobootgithubiov1alpha1.BootArtifact{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: serverURL + "/vmlinuz", SHA512: ptr.To(sha512Hex(content))},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			defer deleteArtifact(name)
+
+			result, err := doReconcile(name)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			status := getStatus(name)
+			Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootArtifactPhaseReady))
+			Expect(status.FailureCount).To(Equal(int32(0)))
 		})
 
 		It("should set Error on hash mismatch after download", func() {
