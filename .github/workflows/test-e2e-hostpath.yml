@@ -74,7 +74,7 @@ jobs:
           kubectl -n isoboot-system logs deployment/isoboot-controller-manager
           exit 1
 
-      - name: Verify file exists on host disk
+      - name: Verify file and SHA-256 on host disk
         run: |
           echo "Checking file at /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz"
           ls -la /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
