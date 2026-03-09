@@ -25,7 +25,7 @@ jobs:
           sudo mv ./kind /usr/local/bin/kind
 
       - name: Create host data directory
-        run: mkdir -p /tmp/isoboot-data && chmod 755 /tmp/isoboot-data
+        run: mkdir -p /tmp/isoboot-data && chmod 777 /tmp/isoboot-data
 
       - name: Create Kind cluster with hostPath mount
         run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
