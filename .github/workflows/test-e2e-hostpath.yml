@@ -34,6 +34,7 @@ jobs:
   test-e2e-hostpath:
     name: Run on Ubuntu
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -100,6 +101,16 @@ jobs:
           ls -la "${{ env.ARTIFACT_PATH }}"
           echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
 
+      - name: Collect phase-1 logs on failure
+        if: failure()
+        run: |
+          echo "=== BootArtifact status ==="
+          kubectl get bootartifact "${{ env.ARTIFACT_NAME }}" -o yaml 2>/dev/null || true
+          echo "=== Controller logs ==="
+          kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
+          echo "=== Host data directory ==="
+          find /tmp/isoboot-data -type f 2>/dev/null || true
+
       - name: Delete Kind cluster and verify file persists
         run: |
           kind delete cluster --name isoboot-hostpath
@@ -154,12 +165,13 @@ jobs:
           fi
           echo "File was not re-downloaded — mtime unchanged"
           echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
-          # Belt-and-suspenders: confirm controller did not log a download
-          if kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -q "Downloading artifact"; then
-            echo "FAIL: controller logged 'Downloading artifact' — file was re-downloaded"
+          # Belt-and-suspenders: confirm controller recognised existing file
+          if ! kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -q "Artifact already on disk, skipping download"; then
+            echo "FAIL: controller did not log 'Artifact already on disk, skipping download'"
+            kubectl -n isoboot-system logs deployment/isoboot-controller-manager
             exit 1
           fi
-          echo "Controller logs confirm no download occurred"
+          echo "Controller logs confirm existing file was recognised"
 
       - name: Collect logs on failure
         if: failure()
