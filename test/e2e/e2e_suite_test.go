@@ -27,7 +27,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/test/utils"
 )
 
@@ -36,6 +41,8 @@ var (
 	managerImage = "example.com/isoboot:v0.0.1"
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
+	// k8sClient is a controller-runtime client for creating/reading test resources.
+	k8sClient client.Client
 )
 
 // TestE2E runs the e2e test suite to validate the solution in an isolated environment.
@@ -61,6 +68,14 @@ var _ = BeforeSuite(func() {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
 
 	setupCertManager()
+
+	By("setting up Go client")
+	cfg, err := ctrl.GetConfig()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to get kubeconfig")
+	sch := runtime.NewScheme()
+	utilruntime.Must(isobootgithubiov1alpha1.AddToScheme(sch))
+	k8sClient, err = client.New(cfg, client.Options{Scheme: sch})
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create client")
 })
 
 var _ = AfterSuite(func() {

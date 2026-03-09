@@ -65,6 +65,9 @@ spec:
                 description: url is the download URL for the artifact. Must use HTTPS.
                 pattern: ^https://
                 type: string
+                x-kubernetes-validations:
+                - message: url must not contain path traversal
+                  rule: '!self.contains(''/..'')'
             required:
             - url
             type: object

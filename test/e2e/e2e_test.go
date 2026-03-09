@@ -20,8 +20,13 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,7 +34,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/test/utils"
 )
 
@@ -269,16 +278,72 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
+	})
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput, err := getMetricsOutput()
-		// Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+	Context("BootArtifact", func() {
+		const testURL = "https://raw.githubusercontent.com/isoboot/isoboot/main/LICENSE"
+		const wrongSHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+		ctx := context.TODO()
+
+		AfterEach(func() {
+			var list isobootgithubiov1alpha1.BootArtifactList
+			if err := k8sClient.List(ctx, &list); err == nil {
+				for i := range list.Items {
+					_ = k8sClient.Delete(ctx, &list.Items[i])
+				}
+			}
+		})
+
+		It("should download and reach Ready phase", func() {
+			By("computing sha256 of the test file")
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, testURL, nil)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			body, err := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			Expect(err).NotTo(HaveOccurred())
+			hash := sha256.Sum256(body)
+			sha := hex.EncodeToString(hash[:])
+
+			By("creating a BootArtifact with valid hash")
+			artifact := &isobootgithubiov1alpha1.BootArtifact{
+				ObjectMeta: metav1.ObjectMeta{Name: "e2e-valid", Namespace: "default"},
+				Spec: isobootgithubiov1alpha1.BootArtifactSpec{
+					URL:    testURL,
+					SHA256: ptr.To(sha),
+				},
+			}
+			Expect(k8sClient.Create(ctx, artifact)).To(Succeed())
+
+			By("waiting for Ready phase")
+			Eventually(func(g Gomega) {
+				var a isobootgithubiov1alpha1.BootArtifact
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(artifact), &a)).To(Succeed())
+				g.Expect(a.Status.Phase).To(Equal(isobootgithubiov1alpha1.BootArtifactPhaseReady))
+			}).WithTimeout(60 * time.Second).WithPolling(time.Second).Should(Succeed())
+		})
+
+		It("should set Error phase on hash mismatch", func() {
+			By("creating a BootArtifact with wrong hash")
+			artifact := &isobootgithubiov1alpha1.BootArtifact{
+				ObjectMeta: metav1.ObjectMeta{Name: "e2e-bad-hash", Namespace: "default"},
+				Spec: isobootgithubiov1alpha1.BootArtifactSpec{
+					URL:    testURL,
+					SHA256: ptr.To(wrongSHA256),
+				},
+			}
+			Expect(k8sClient.Create(ctx, artifact)).To(Succeed())
+
+			By("waiting for Error phase with failureCount > 0")
+			Eventually(func(g Gomega) {
+				var a isobootgithubiov1alpha1.BootArtifact
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(artifact), &a)).To(Succeed())
+				g.Expect(a.Status.Phase).To(Equal(isobootgithubiov1alpha1.BootArtifactPhaseError))
+				g.Expect(a.Status.FailureCount).To(BeNumerically(">", 0))
+			}).WithTimeout(60 * time.Second).WithPolling(time.Second).Should(Succeed())
+		})
 	})
 })
 

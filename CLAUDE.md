@@ -3,3 +3,10 @@
 ## Git
 
 - Commit messages must be 40 characters or fewer.
+- Always add `Co-Authored-By: Claude Code <noreply@anthropic.com>` to commit messages.
+
+## Before Pushing
+
+- Run `make lint` to check for linting errors.
+- Run `make test` to run unit tests.
+- Update the PR description (if any) to match the branch content.
