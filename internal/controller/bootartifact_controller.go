@@ -108,6 +108,8 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 		return false, nil
 	}
 
+	log.Info("Artifact already on disk, skipping download", "path", filePath)
+
 	// Skip status write if already Ready — avoids a no-op update on
 	// every controller restart for stable artifacts.
 	if artifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {

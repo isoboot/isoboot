@@ -1,0 +1,192 @@
+name: E2E HostPath Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'Dockerfile'
+      - 'config/**'
+      - 'test/e2e/**'
+      - '.github/workflows/test-e2e-hostpath.yml'
+  pull_request:
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'Dockerfile'
+      - 'config/**'
+      - 'test/e2e/**'
+      - '.github/workflows/test-e2e-hostpath.yml'
+
+env:
+  KIND_VERSION: v0.31.0
+  VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
+  VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
+  ARTIFACT_NAME: rocky-10.1-vmlinuz
+  # Mirrors the controller's storage layout: <data-dir>/artifacts/<artifact-name>/<filename>
+  # See internal/controller/bootartifact_controller.go filePath construction.
+  ARTIFACT_PATH: /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
+
+jobs:
+  test-e2e-hostpath:
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install kind ${{ env.KIND_VERSION }}
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VERSION }}/kind-linux-$(go env GOARCH)
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      # Controller runs as UID 65532 (nonroot) — own the dir so it can write
+      - name: Create host data directory
+        run: mkdir -p /tmp/isoboot-data && sudo chown 65532 /tmp/isoboot-data && sudo chmod 755 /tmp/isoboot-data
+
+      - name: Create Kind cluster with hostPath mount
+        run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build manager image with cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ghcr.io/isoboot/isoboot:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Load image into Kind cluster
+        run: kind load docker-image ghcr.io/isoboot/isoboot:${{ github.sha }} --name isoboot-hostpath
+
+      - name: Deploy controller with hostPath volume
+        run: ./test/e2e/deploy-hostpath.sh ghcr.io/isoboot/isoboot:${{ github.sha }}
+
+      - name: Wait for controller to be ready
+        run: |
+          kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
+          kubectl -n isoboot-system get pods
+
+      - name: Create BootArtifact for Rocky 10 vmlinuz
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootArtifact
+          metadata:
+            name: ${{ env.ARTIFACT_NAME }}
+          spec:
+            url: "${{ env.VMLINUZ_URL }}"
+            sha256: "${{ env.VMLINUZ_SHA256 }}"
+          EOF
+
+      - name: Wait for Ready phase
+        run: ./test/e2e/wait-for-bootartifact.sh "${{ env.ARTIFACT_NAME }}"
+
+      - name: Verify file and SHA-256 on host disk
+        run: |
+          echo "Checking file at ${{ env.ARTIFACT_PATH }}"
+          ls -la "${{ env.ARTIFACT_PATH }}"
+          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
+
+      - name: Collect phase-1 logs on failure
+        if: failure()
+        run: |
+          echo "=== BootArtifact status ==="
+          kubectl get bootartifact "${{ env.ARTIFACT_NAME }}" -o yaml 2>/dev/null || true
+          echo "=== Controller logs ==="
+          kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
+          echo "=== Host data directory ==="
+          find /tmp/isoboot-data -type f 2>/dev/null || true
+
+      - name: Delete first Kind cluster
+        run: kind delete cluster --name isoboot-hostpath
+
+      - name: Verify file persists after cluster deletion
+        run: |
+          echo "Cluster deleted — verifying file still exists on host"
+          ls -la "${{ env.ARTIFACT_PATH }}"
+          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
+          echo "File persists after cluster deletion"
+
+      # --- Second cluster: verify controller recognises existing file without downloading ---
+
+      - name: Record file modification time
+        run: stat -c '%Y' "${{ env.ARTIFACT_PATH }}" > /tmp/mtime-before
+
+      - name: Create second Kind cluster with same hostPath
+        run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
+
+      - name: Load image into second cluster
+        run: kind load docker-image ghcr.io/isoboot/isoboot:${{ github.sha }} --name isoboot-hostpath
+
+      - name: Deploy controller with hostPath volume (second cluster)
+        run: ./test/e2e/deploy-hostpath.sh ghcr.io/isoboot/isoboot:${{ github.sha }}
+
+      - name: Wait for controller to be ready (second cluster)
+        run: |
+          kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
+          kubectl -n isoboot-system get pods
+
+      - name: Create same BootArtifact (file already exists on host)
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootArtifact
+          metadata:
+            name: ${{ env.ARTIFACT_NAME }}
+          spec:
+            url: "${{ env.VMLINUZ_URL }}"
+            sha256: "${{ env.VMLINUZ_SHA256 }}"
+          EOF
+
+      - name: Wait for Ready phase (second cluster)
+        run: ./test/e2e/wait-for-bootartifact.sh "${{ env.ARTIFACT_NAME }}"
+
+      - name: Verify file was not re-downloaded
+        run: |
+          mtime_before=$(cat /tmp/mtime-before)
+          mtime_after=$(stat -c '%Y' "${{ env.ARTIFACT_PATH }}")
+          echo "mtime before: $mtime_before"
+          echo "mtime after:  $mtime_after"
+          if [ "$mtime_before" != "$mtime_after" ]; then
+            echo "FAIL: file was re-downloaded (mtime changed)"
+            exit 1
+          fi
+          echo "File was not re-downloaded — mtime unchanged"
+          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
+          # Belt-and-suspenders: confirm controller recognised existing file
+          if ! kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -q "Artifact already on disk, skipping download"; then
+            echo "FAIL: controller did not log 'Artifact already on disk, skipping download'"
+            kubectl -n isoboot-system logs deployment/isoboot-controller-manager
+            exit 1
+          fi
+          echo "Controller logs confirm existing file was recognised"
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== BootArtifact status ==="
+          kubectl get bootartifact "${{ env.ARTIFACT_NAME }}" -o yaml 2>/dev/null || true
+          echo "=== Controller logs ==="
+          kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
+          echo "=== Host data directory ==="
+          find /tmp/isoboot-data -type f 2>/dev/null || true
+
+      - name: Clean up clusters
+        if: always()
+        run: kind delete cluster --name isoboot-hostpath 2>/dev/null || true
