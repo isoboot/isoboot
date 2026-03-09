@@ -56,10 +56,20 @@ jobs:
       - name: Create Kind cluster with hostPath mount
         run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
 
-      - name: Build and load manager image
-        run: |
-          make docker-build IMG=ghcr.io/isoboot/isoboot:${{ github.sha }}
-          kind load docker-image ghcr.io/isoboot/isoboot:${{ github.sha }} --name isoboot-hostpath
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build manager image with cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ghcr.io/isoboot/isoboot:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Load image into Kind cluster
+        run: kind load docker-image ghcr.io/isoboot/isoboot:${{ github.sha }} --name isoboot-hostpath
 
       - name: Deploy controller with hostPath volume
         run: make deploy-hostpath IMG=ghcr.io/isoboot/isoboot:${{ github.sha }}
