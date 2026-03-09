@@ -92,9 +92,7 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 			// File deleted between Stat and Open, fall through to download
 			return false, nil
 		}
-		msg := fmt.Sprintf("hashing existing file: %v", err)
-		_, _ = r.setFailure(ctx, artifact, msg)
-		return false, fmt.Errorf("%s", msg)
+		return false, fmt.Errorf("hashing existing file: %w", err)
 	}
 
 	expectedHash := expectedHash(artifact)
