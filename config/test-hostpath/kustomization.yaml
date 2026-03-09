@@ -1,6 +1,8 @@
 resources:
 - ../default
 
+# The JSON Patch below assumes the "data" volume is at index 0.
+# The "op: test" guard will cause a clear failure if the index changes.
 patches:
 - target:
     kind: Deployment

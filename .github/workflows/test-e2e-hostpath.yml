@@ -28,6 +28,8 @@ env:
   VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
   VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
   ARTIFACT_NAME: rocky-10.1-vmlinuz
+  # Mirrors the controller's storage layout: <data-dir>/artifacts/<artifact-name>/<filename>
+  # See internal/controller/bootartifact_controller.go filePath construction.
   ARTIFACT_PATH: /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
 
 jobs:
@@ -111,9 +113,11 @@ jobs:
           echo "=== Host data directory ==="
           find /tmp/isoboot-data -type f 2>/dev/null || true
 
-      - name: Delete Kind cluster and verify file persists
+      - name: Delete first Kind cluster
+        run: kind delete cluster --name isoboot-hostpath
+
+      - name: Verify file persists after cluster deletion
         run: |
-          kind delete cluster --name isoboot-hostpath
           echo "Cluster deleted — verifying file still exists on host"
           ls -la "${{ env.ARTIFACT_PATH }}"
           echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
