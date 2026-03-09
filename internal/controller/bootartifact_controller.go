@@ -156,8 +156,8 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		// Drain body so the connection can be reused for keep-alive.
-		_, _ = io.Copy(io.Discard, resp.Body)
+		// Drain body (up to 1 MB) so the connection can be reused for keep-alive.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 		return r.setFailure(ctx, artifact, fmt.Sprintf("download failed: HTTP %d", resp.StatusCode))
 	}
 
