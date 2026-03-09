@@ -89,9 +89,6 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 			// File deleted between Stat and Open, fall through to download
 			return false, nil
 		}
-		if _, setErr := r.setFailure(ctx, artifact, fmt.Sprintf("hashing existing file: %v", err)); setErr != nil {
-			return false, setErr
-		}
 		return false, fmt.Errorf("hashing existing file: %w", err)
 	}
 
@@ -157,10 +154,6 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 		return r.setFailure(ctx, artifact, fmt.Sprintf("download failed: HTTP %d", resp.StatusCode))
 	}
 
-	if resp.ContentLength < 0 {
-		return r.setFailure(ctx, artifact, "server did not send Content-Length header")
-	}
-
 	// Create temp file and hash while downloading
 	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
@@ -180,7 +173,7 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 	if err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("writing file: %v", err))
 	}
-	if written != resp.ContentLength {
+	if resp.ContentLength >= 0 && written != resp.ContentLength {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("Content-Length mismatch: expected %d bytes, got %d", resp.ContentLength, written))
 	}
 	if err := tmpFile.Sync(); err != nil {
