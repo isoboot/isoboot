@@ -51,7 +51,7 @@ jobs:
           metadata:
             name: rocky-10.1-vmlinuz
           spec:
-            url: "http://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
+            url: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
             sha256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
           EOF
 
@@ -98,6 +98,84 @@ jobs:
           ls -la /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
           echo "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607  /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz" | sha256sum -c
           echo "File persists after cluster deletion"
+
+      # --- Second cluster: verify controller recognises existing file without downloading ---
+
+      - name: Record file modification time
+        run: stat -c '%Y' /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz > /tmp/mtime-before
+
+      - name: Create second Kind cluster with same hostPath
+        run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
+
+      - name: Load image into second cluster
+        run: kind load docker-image ghcr.io/isoboot/isoboot:${{ github.sha }} --name isoboot-hostpath
+
+      - name: Deploy controller with hostPath volume (second cluster)
+        run: make deploy-hostpath IMG=ghcr.io/isoboot/isoboot:${{ github.sha }}
+
+      - name: Wait for controller to be ready (second cluster)
+        run: |
+          kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
+          kubectl -n isoboot-system get pods
+
+      - name: Create same BootArtifact (file already exists on host)
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootArtifact
+          metadata:
+            name: rocky-10.1-vmlinuz
+          spec:
+            url: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
+            sha256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
+          EOF
+
+      - name: Wait for Ready phase (second cluster)
+        run: |
+          error_count=0
+          for i in $(seq 1 60); do
+            phase=$(kubectl get bootartifact rocky-10.1-vmlinuz -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            echo "Attempt $i: phase=$phase"
+            if [ "$phase" = "Ready" ]; then
+              echo "BootArtifact reached Ready phase"
+              exit 0
+            fi
+            if [ "$phase" = "Error" ]; then
+              error_count=$((error_count + 1))
+              msg=$(kubectl get bootartifact rocky-10.1-vmlinuz -o jsonpath='{.status.message}')
+              echo "BootArtifact is in Error phase (count=$error_count): $msg"
+              if [ "$error_count" -ge 3 ]; then
+                echo "Failing fast after $error_count consecutive errors"
+                kubectl get bootartifact rocky-10.1-vmlinuz -o yaml
+                kubectl -n isoboot-system logs deployment/isoboot-controller-manager
+                exit 1
+              fi
+            else
+              error_count=0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for Ready phase"
+          kubectl get bootartifact rocky-10.1-vmlinuz -o yaml
+          kubectl -n isoboot-system logs deployment/isoboot-controller-manager
+          exit 1
+
+      - name: Verify file was not re-downloaded
+        run: |
+          mtime_before=$(cat /tmp/mtime-before)
+          mtime_after=$(stat -c '%Y' /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz)
+          echo "mtime before: $mtime_before"
+          echo "mtime after:  $mtime_after"
+          if [ "$mtime_before" != "$mtime_after" ]; then
+            echo "FAIL: file was re-downloaded (mtime changed)"
+            exit 1
+          fi
+          echo "File was not re-downloaded — mtime unchanged"
+          echo "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607  /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz" | sha256sum -c
+
+      - name: Clean up second cluster
+        if: always()
+        run: kind delete cluster --name isoboot-hostpath 2>/dev/null || true
 
       - name: Collect logs on failure
         if: failure()
