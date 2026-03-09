@@ -28,8 +28,11 @@ env:
   # Debian point-release URLs (e.g. Debian13.3) are removed from the mirror
   # when the next point release ships. When that happens, update the URLs and
   # SHA256 values below to the new point release.
+  # The "+" in the URL path (20250803+deb13u3) is a literal character, not a
+  # space — "+" only has special meaning in query strings, not URL paths.
   VMLINUZ_SHA256: "6a6419fde155bc1be12f9d2555ad18876cdff111d80c2887c6aa2c5d6cb250ac"
   VMLINUZ_URL: "https://deb.debian.org/debian/dists/Debian13.3/main/installer-amd64/20250803+deb13u3/images/netboot/debian-installer/amd64/linux"
+  # Artifact name is "vmlinuz" by convention; Debian names the kernel file "linux".
   VMLINUZ_NAME: debian-13-vmlinuz
   # Paths mirror the controller's storage layout: <data-dir>/artifacts/<artifact-name>/<filename>
   # See internal/controller/bootartifact_controller.go filePath().
@@ -109,8 +112,8 @@ jobs:
             sha256: "${{ env.INITRD_SHA256 }}"
           EOF
 
-      # Sequential waits: parallel would be faster but adds complexity for little
-      # gain given the small download sizes.
+      # Sequential waits for both artifacts: parallel would be faster but adds
+      # complexity for little gain given the small download sizes (~51 MB total).
       - name: Wait for Ready phase
         run: |
           ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
@@ -151,6 +154,7 @@ jobs:
       # --- Second cluster: verify controller recognises existing file without downloading ---
 
       - name: Record file modification times
+        # stat -c is GNU/Linux-only; fine here since GitHub CI runners are Ubuntu.
         run: |
           stat -c '%Y' "${{ env.VMLINUZ_PATH }}" > /tmp/mtime-vmlinuz-before
           stat -c '%Y' "${{ env.INITRD_PATH }}" > /tmp/mtime-initrd-before
@@ -189,8 +193,6 @@ jobs:
             sha256: "${{ env.INITRD_SHA256 }}"
           EOF
 
-      # Sequential waits: parallel would be faster but adds complexity for little
-      # gain given the small download sizes.
       - name: Wait for Ready phase (second cluster)
         run: |
           ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
@@ -235,6 +237,7 @@ jobs:
           echo "=== Host data directory ==="
           find /tmp/isoboot-data -type f 2>/dev/null || true
 
+      # No /tmp/isoboot-data cleanup needed — GitHub CI runners are ephemeral.
       - name: Clean up clusters
         if: always()
         run: kind delete cluster --name isoboot-hostpath 2>/dev/null || true
