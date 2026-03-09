@@ -1,0 +1,17 @@
+resources:
+- ../default
+
+patches:
+- target:
+    kind: Deployment
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: data
+    - op: remove
+      path: /spec/template/spec/volumes/0/emptyDir
+    - op: add
+      path: /spec/template/spec/volumes/0/hostPath
+      value:
+        path: /data/isoboot
+        type: DirectoryOrCreate

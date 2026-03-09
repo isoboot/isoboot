@@ -1,0 +1,99 @@
+name: E2E HostPath Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-e2e-hostpath:
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install the latest version of kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Create host data directory
+        run: mkdir -p /tmp/isoboot-data && chmod 777 /tmp/isoboot-data
+
+      - name: Create Kind cluster with hostPath mount
+        run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
+
+      - name: Build and load manager image
+        run: |
+          make docker-build IMG=ghcr.io/isoboot/isoboot:${{ github.sha }}
+          kind load docker-image ghcr.io/isoboot/isoboot:${{ github.sha }} --name isoboot-hostpath
+
+      - name: Deploy controller with hostPath volume
+        run: make deploy-hostpath IMG=ghcr.io/isoboot/isoboot:${{ github.sha }}
+
+      - name: Wait for controller to be ready
+        run: |
+          kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
+          kubectl -n isoboot-system get pods
+
+      - name: Create BootArtifact for Rocky 10 vmlinuz
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootArtifact
+          metadata:
+            name: rocky-10.1-vmlinuz
+          spec:
+            url: "https://download.rockylinux.org/pub/rocky/10/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
+            sha256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
+          EOF
+
+      - name: Wait for Ready phase
+        run: |
+          for i in $(seq 1 60); do
+            phase=$(kubectl get bootartifact rocky-10.1-vmlinuz -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            echo "Attempt $i: phase=$phase"
+            if [ "$phase" = "Ready" ]; then
+              echo "BootArtifact reached Ready phase"
+              exit 0
+            fi
+            if [ "$phase" = "Error" ]; then
+              msg=$(kubectl get bootartifact rocky-10.1-vmlinuz -o jsonpath='{.status.message}')
+              echo "BootArtifact is in Error phase: $msg"
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for Ready phase"
+          kubectl get bootartifact rocky-10.1-vmlinuz -o yaml
+          kubectl -n isoboot-system logs deployment/isoboot-controller-manager
+          exit 1
+
+      - name: Verify file exists on host disk
+        run: |
+          echo "Checking file at /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz"
+          ls -la /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
+          echo "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607  /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz" | sha256sum -c
+
+      - name: Delete Kind cluster and verify file persists
+        run: |
+          kind delete cluster --name isoboot-hostpath
+          echo "Cluster deleted — verifying file still exists on host"
+          ls -la /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
+          echo "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607  /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz" | sha256sum -c
+          echo "File persists after cluster deletion"
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== BootArtifact status ==="
+          kubectl get bootartifact rocky-10.1-vmlinuz -o yaml 2>/dev/null || true
+          echo "=== Controller logs ==="
+          kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
+          echo "=== Host data directory ==="
+          find /tmp/isoboot-data -type f 2>/dev/null || true
