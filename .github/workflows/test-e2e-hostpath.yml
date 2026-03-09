@@ -26,11 +26,11 @@ on:
 env:
   KIND_VERSION: v0.31.0
   VMLINUZ_SHA256: "6a6419fde155bc1be12f9d2555ad18876cdff111d80c2887c6aa2c5d6cb250ac"
-  VMLINUZ_URL: "http://deb.debian.org/debian/dists/Debian13.3/main/installer-amd64/20250803+deb13u3/images/netboot/debian-installer/amd64/linux"
+  VMLINUZ_URL: "https://deb.debian.org/debian/dists/Debian13.3/main/installer-amd64/20250803+deb13u3/images/netboot/debian-installer/amd64/linux"
   VMLINUZ_NAME: debian-13-vmlinuz
   VMLINUZ_PATH: /tmp/isoboot-data/artifacts/debian-13-vmlinuz/linux
   INITRD_SHA256: "1e8e7112ada60c459bdfaa50872d3b7278b0cdbabb2414c394c29565435a03bd"
-  INITRD_URL: "http://deb.debian.org/debian/dists/Debian13.3/main/installer-amd64/20250803+deb13u3/images/netboot/debian-installer/amd64/initrd.gz"
+  INITRD_URL: "https://deb.debian.org/debian/dists/Debian13.3/main/installer-amd64/20250803+deb13u3/images/netboot/debian-installer/amd64/initrd.gz"
   INITRD_NAME: debian-13-initrd
   INITRD_PATH: /tmp/isoboot-data/artifacts/debian-13-initrd/initrd.gz
 
