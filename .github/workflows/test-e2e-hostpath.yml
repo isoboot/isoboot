@@ -156,6 +156,8 @@ jobs:
 
       - name: Record file modification times
         # stat -c is GNU/Linux-only; fine here since GitHub CI runners are Ubuntu.
+        # File suffixes (vmlinuz, initrd) must match the 'for artifact in ...'
+        # loop variable in "Verify files were not re-downloaded" below.
         run: |
           stat -c '%Y' "${{ env.VMLINUZ_PATH }}" > /tmp/mtime-vmlinuz-before
           stat -c '%Y' "${{ env.INITRD_PATH }}" > /tmp/mtime-initrd-before
@@ -215,8 +217,12 @@ jobs:
           # artifacts reached Ready phase, so the skip-download log lines have
           # already been written by the time we grep.
           controller_logs=$(kubectl -n isoboot-system logs deployment/isoboot-controller-manager)
+          skip_msg="Artifact already on disk, skipping download"
           for name in "${{ env.VMLINUZ_NAME }}" "${{ env.INITRD_NAME }}"; do
-            if ! echo "$controller_logs" | grep "Artifact already on disk, skipping download" | grep -q "$name"; then
+            # Single grep ensures both the skip message and the artifact name
+            # appear on the same log line — resilient to log format changes
+            # (text or JSON) as long as each record is a single line.
+            if ! echo "$controller_logs" | grep -q "${skip_msg}.*${name}\|${name}.*${skip_msg}"; then
               echo "FAIL: no skip-download log line for $name"
               echo "$controller_logs"
               exit 1
