@@ -97,10 +97,13 @@ jobs:
           kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
           kubectl -n isoboot-system get pods
 
+      # Restrict envsubst to only template variables — prevents accidental
+      # substitution of unrelated env vars (e.g. $HOME, $PATH).
+      # envsubst is from the gettext package, pre-installed on Ubuntu runners.
+      # Variable list must match test/e2e/debian-13-bootartifacts.yaml.
+      # NOTE: This envsubst | kubectl apply command is duplicated below for the
+      # second cluster. Keep both in sync if changing the variable list.
       - name: Create BootArtifacts for Debian 13 kernel and initrd
-        # Restrict envsubst to only template variables — prevents accidental
-        # substitution of unrelated env vars (e.g. $HOME, $PATH).
-        # envsubst is from the gettext package, pre-installed on Ubuntu runners.
         run: envsubst '${VMLINUZ_NAME} ${VMLINUZ_URL} ${VMLINUZ_SHA256} ${INITRD_NAME} ${INITRD_URL} ${INITRD_SHA256}' < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
       # Sequential waits for both artifacts: parallel would be faster but adds
@@ -171,6 +174,7 @@ jobs:
           kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
           kubectl -n isoboot-system get pods
 
+      # Duplicated from above — GitHub Actions doesn't support YAML anchors.
       - name: Create same BootArtifacts (files already exist on host)
         run: envsubst '${VMLINUZ_NAME} ${VMLINUZ_URL} ${VMLINUZ_SHA256} ${INITRD_NAME} ${INITRD_URL} ${INITRD_SHA256}' < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
@@ -200,20 +204,25 @@ jobs:
             echo "${artifact} was not re-downloaded — mtime unchanged"
             echo "${sha}  ${path}" | sha256sum -c
           done
-          # Belt-and-suspenders: confirm controller recognised both existing files.
-          # Hardcoded to 2 (vmlinuz + initrd) — for Debian netboot, 2-3 artifacts
-          # is all we'll ever download, so a named constant isn't worth the noise.
+          # Belt-and-suspenders: confirm controller recognised each existing file.
+          # We check per-artifact rather than counting totals because the controller
+          # may re-reconcile (e.g. status update triggers re-enqueue), producing
+          # more than one skip-download log line per artifact. That's normal
+          # controller-runtime behaviour — we just need at least one per artifact.
+          # A BootConfig uses either 1 artifact (ISO) or 2 (kernel + initrd) or 3
+          # (kernel + initrd + firmware). This test covers the 2-artifact case.
           # Note: no race here — wait-for-bootartifact.sh above ensures both
           # artifacts reached Ready phase, so the skip-download log lines have
           # already been written by the time we grep.
-          # || true: grep -c exits 1 on zero matches, which would fail under set -e
-          skip_count=$(kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -c "Artifact already on disk, skipping download" || true)
-          if [ "$skip_count" -ne 2 ]; then
-            echo "FAIL: expected exactly 2 skip-download log lines, got $skip_count"
-            kubectl -n isoboot-system logs deployment/isoboot-controller-manager
-            exit 1
-          fi
-          echo "Controller logs confirm both existing files were recognised ($skip_count skip lines)"
+          controller_logs=$(kubectl -n isoboot-system logs deployment/isoboot-controller-manager)
+          for name in "${{ env.VMLINUZ_NAME }}" "${{ env.INITRD_NAME }}"; do
+            if ! echo "$controller_logs" | grep "Artifact already on disk, skipping download" | grep -q "$name"; then
+              echo "FAIL: no skip-download log line for $name"
+              echo "$controller_logs"
+              exit 1
+            fi
+          done
+          echo "Controller logs confirm both existing files were recognised"
 
       - name: Collect logs on failure
         if: failure()

@@ -1,3 +1,5 @@
+# Template for envsubst — variables listed here must match the envsubst
+# call in test-e2e-hostpath.yml. Update both if adding/removing variables.
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
 metadata:
