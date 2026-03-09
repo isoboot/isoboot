@@ -51,7 +51,7 @@ jobs:
 
       # Controller runs as UID 65532 (nonroot) — own the dir so it can write
       - name: Create host data directory
-        run: mkdir -p /tmp/isoboot-data && sudo chown 65532 /tmp/isoboot-data && chmod 755 /tmp/isoboot-data
+        run: mkdir -p /tmp/isoboot-data && sudo chown 65532 /tmp/isoboot-data && sudo chmod 755 /tmp/isoboot-data
 
       - name: Create Kind cluster with hostPath mount
         run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
