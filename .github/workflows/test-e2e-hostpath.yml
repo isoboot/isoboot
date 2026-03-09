@@ -25,12 +25,14 @@ on:
 
 env:
   KIND_VERSION: v0.31.0
-  VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
-  VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
-  ARTIFACT_NAME: rocky-10.1-vmlinuz
-  # Mirrors the controller's storage layout: <data-dir>/artifacts/<artifact-name>/<filename>
-  # See internal/controller/bootartifact_controller.go filePath construction.
-  ARTIFACT_PATH: /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
+  VMLINUZ_SHA256: "6a6419fde155bc1be12f9d2555ad18876cdff111d80c2887c6aa2c5d6cb250ac"
+  VMLINUZ_URL: "http://deb.debian.org/debian/dists/Debian13.3/main/installer-amd64/20250803+deb13u3/images/netboot/debian-installer/amd64/linux"
+  VMLINUZ_NAME: debian-13-vmlinuz
+  VMLINUZ_PATH: /tmp/isoboot-data/artifacts/debian-13-vmlinuz/linux
+  INITRD_SHA256: "1e8e7112ada60c459bdfaa50872d3b7278b0cdbabb2414c394c29565435a03bd"
+  INITRD_URL: "http://deb.debian.org/debian/dists/Debian13.3/main/installer-amd64/20250803+deb13u3/images/netboot/debian-installer/amd64/initrd.gz"
+  INITRD_NAME: debian-13-initrd
+  INITRD_PATH: /tmp/isoboot-data/artifacts/debian-13-initrd/initrd.gz
 
 jobs:
   test-e2e-hostpath:
@@ -82,32 +84,46 @@ jobs:
           kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
           kubectl -n isoboot-system get pods
 
-      - name: Create BootArtifact for Rocky 10 vmlinuz
+      - name: Create BootArtifacts for Debian 13 kernel and initrd
         run: |
           kubectl apply -f - <<EOF
           apiVersion: isoboot.github.io/v1alpha1
           kind: BootArtifact
           metadata:
-            name: ${{ env.ARTIFACT_NAME }}
+            name: ${{ env.VMLINUZ_NAME }}
           spec:
             url: "${{ env.VMLINUZ_URL }}"
             sha256: "${{ env.VMLINUZ_SHA256 }}"
+          ---
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootArtifact
+          metadata:
+            name: ${{ env.INITRD_NAME }}
+          spec:
+            url: "${{ env.INITRD_URL }}"
+            sha256: "${{ env.INITRD_SHA256 }}"
           EOF
 
       - name: Wait for Ready phase
-        run: ./test/e2e/wait-for-bootartifact.sh "${{ env.ARTIFACT_NAME }}"
-
-      - name: Verify file and SHA-256 on host disk
         run: |
-          echo "Checking file at ${{ env.ARTIFACT_PATH }}"
-          ls -la "${{ env.ARTIFACT_PATH }}"
-          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
+          ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
+          ./test/e2e/wait-for-bootartifact.sh "${{ env.INITRD_NAME }}"
+
+      - name: Verify files and SHA-256 on host disk
+        run: |
+          echo "Checking vmlinuz at ${{ env.VMLINUZ_PATH }}"
+          ls -la "${{ env.VMLINUZ_PATH }}"
+          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.VMLINUZ_PATH }}" | sha256sum -c
+          echo "Checking initrd at ${{ env.INITRD_PATH }}"
+          ls -la "${{ env.INITRD_PATH }}"
+          echo "${{ env.INITRD_SHA256 }}  ${{ env.INITRD_PATH }}" | sha256sum -c
 
       - name: Collect phase-1 logs on failure
         if: failure()
         run: |
           echo "=== BootArtifact status ==="
-          kubectl get bootartifact "${{ env.ARTIFACT_NAME }}" -o yaml 2>/dev/null || true
+          kubectl get bootartifact "${{ env.VMLINUZ_NAME }}" -o yaml 2>/dev/null || true
+          kubectl get bootartifact "${{ env.INITRD_NAME }}" -o yaml 2>/dev/null || true
           echo "=== Controller logs ==="
           kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
           echo "=== Host data directory ==="
@@ -116,17 +132,21 @@ jobs:
       - name: Delete first Kind cluster
         run: kind delete cluster --name isoboot-hostpath
 
-      - name: Verify file persists after cluster deletion
+      - name: Verify files persist after cluster deletion
         run: |
-          echo "Cluster deleted — verifying file still exists on host"
-          ls -la "${{ env.ARTIFACT_PATH }}"
-          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
-          echo "File persists after cluster deletion"
+          echo "Cluster deleted — verifying files still exist on host"
+          ls -la "${{ env.VMLINUZ_PATH }}"
+          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.VMLINUZ_PATH }}" | sha256sum -c
+          ls -la "${{ env.INITRD_PATH }}"
+          echo "${{ env.INITRD_SHA256 }}  ${{ env.INITRD_PATH }}" | sha256sum -c
+          echo "Files persist after cluster deletion"
 
       # --- Second cluster: verify controller recognises existing file without downloading ---
 
-      - name: Record file modification time
-        run: stat -c '%Y' "${{ env.ARTIFACT_PATH }}" > /tmp/mtime-before
+      - name: Record file modification times
+        run: |
+          stat -c '%Y' "${{ env.VMLINUZ_PATH }}" > /tmp/mtime-vmlinuz-before
+          stat -c '%Y' "${{ env.INITRD_PATH }}" > /tmp/mtime-initrd-before
 
       - name: Create second Kind cluster with same hostPath
         run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
@@ -142,46 +162,66 @@ jobs:
           kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
           kubectl -n isoboot-system get pods
 
-      - name: Create same BootArtifact (file already exists on host)
+      - name: Create same BootArtifacts (files already exist on host)
         run: |
           kubectl apply -f - <<EOF
           apiVersion: isoboot.github.io/v1alpha1
           kind: BootArtifact
           metadata:
-            name: ${{ env.ARTIFACT_NAME }}
+            name: ${{ env.VMLINUZ_NAME }}
           spec:
             url: "${{ env.VMLINUZ_URL }}"
             sha256: "${{ env.VMLINUZ_SHA256 }}"
+          ---
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootArtifact
+          metadata:
+            name: ${{ env.INITRD_NAME }}
+          spec:
+            url: "${{ env.INITRD_URL }}"
+            sha256: "${{ env.INITRD_SHA256 }}"
           EOF
 
       - name: Wait for Ready phase (second cluster)
-        run: ./test/e2e/wait-for-bootartifact.sh "${{ env.ARTIFACT_NAME }}"
-
-      - name: Verify file was not re-downloaded
         run: |
-          mtime_before=$(cat /tmp/mtime-before)
-          mtime_after=$(stat -c '%Y' "${{ env.ARTIFACT_PATH }}")
-          echo "mtime before: $mtime_before"
-          echo "mtime after:  $mtime_after"
-          if [ "$mtime_before" != "$mtime_after" ]; then
-            echo "FAIL: file was re-downloaded (mtime changed)"
-            exit 1
-          fi
-          echo "File was not re-downloaded — mtime unchanged"
-          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
-          # Belt-and-suspenders: confirm controller recognised existing file
+          ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
+          ./test/e2e/wait-for-bootartifact.sh "${{ env.INITRD_NAME }}"
+
+      - name: Verify files were not re-downloaded
+        run: |
+          for artifact in vmlinuz initrd; do
+            mtime_before=$(cat /tmp/mtime-${artifact}-before)
+            if [ "$artifact" = "vmlinuz" ]; then
+              path="${{ env.VMLINUZ_PATH }}"
+              sha="${{ env.VMLINUZ_SHA256 }}"
+            else
+              path="${{ env.INITRD_PATH }}"
+              sha="${{ env.INITRD_SHA256 }}"
+            fi
+            mtime_after=$(stat -c '%Y' "$path")
+            echo "${artifact} mtime before: $mtime_before"
+            echo "${artifact} mtime after:  $mtime_after"
+            if [ "$mtime_before" != "$mtime_after" ]; then
+              echo "FAIL: ${artifact} was re-downloaded (mtime changed)"
+              exit 1
+            fi
+            echo "${artifact} was not re-downloaded — mtime unchanged"
+            echo "${sha}  ${path}" | sha256sum -c
+          done
+          # Belt-and-suspenders: confirm controller recognised existing files
           if ! kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -q "Artifact already on disk, skipping download"; then
             echo "FAIL: controller did not log 'Artifact already on disk, skipping download'"
             kubectl -n isoboot-system logs deployment/isoboot-controller-manager
             exit 1
           fi
-          echo "Controller logs confirm existing file was recognised"
+          echo "Controller logs confirm existing files were recognised"
 
       - name: Collect logs on failure
         if: failure()
         run: |
           echo "=== BootArtifact status ==="
-          kubectl get bootartifact "${{ env.ARTIFACT_NAME }}" -o yaml 2>/dev/null || true
+          kubectl get bootartifact "${{ env.VMLINUZ_NAME }}" -o yaml 2>/dev/null || true
+          kubectl get bootartifact "${{ env.INITRD_NAME }}" -o yaml 2>/dev/null || true
           echo "=== Controller logs ==="
           kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
           echo "=== Host data directory ==="
