@@ -121,6 +121,9 @@ jobs:
           ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
           ./test/e2e/wait-for-bootartifact.sh "${{ env.INITRD_NAME }}"
 
+      # SHA verification is intentionally written out per-artifact (not looped)
+      # in these steps for CI log readability. The mtime check step below uses
+      # a loop because it also checks counts — different trade-off.
       - name: Verify files and SHA-256 on host disk
         run: |
           echo "Checking vmlinuz at ${{ env.VMLINUZ_PATH }}"
@@ -201,6 +204,7 @@ jobs:
           ./test/e2e/wait-for-bootartifact.sh "${{ env.INITRD_NAME }}"
 
       - name: Verify files were not re-downloaded
+        shell: bash
         run: |
           # Use shell arrays so the loop body uses only shell variables.
           # Iteration order doesn't matter here — the explicit 'for' list below
