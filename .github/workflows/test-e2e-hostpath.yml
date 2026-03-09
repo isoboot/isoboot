@@ -25,9 +25,14 @@ on:
 
 env:
   KIND_VERSION: v0.31.0
+  # Debian point-release URLs (e.g. Debian13.3) are removed from the mirror
+  # when the next point release ships. When that happens, update the URLs and
+  # SHA256 values below to the new point release.
   VMLINUZ_SHA256: "6a6419fde155bc1be12f9d2555ad18876cdff111d80c2887c6aa2c5d6cb250ac"
   VMLINUZ_URL: "https://deb.debian.org/debian/dists/Debian13.3/main/installer-amd64/20250803+deb13u3/images/netboot/debian-installer/amd64/linux"
   VMLINUZ_NAME: debian-13-vmlinuz
+  # Paths mirror the controller's storage layout: <data-dir>/artifacts/<artifact-name>/<filename>
+  # See internal/controller/bootartifact_controller.go filePath().
   VMLINUZ_PATH: /tmp/isoboot-data/artifacts/debian-13-vmlinuz/linux
   INITRD_SHA256: "1e8e7112ada60c459bdfaa50872d3b7278b0cdbabb2414c394c29565435a03bd"
   INITRD_URL: "https://deb.debian.org/debian/dists/Debian13.3/main/installer-amd64/20250803+deb13u3/images/netboot/debian-installer/amd64/initrd.gz"
@@ -104,6 +109,8 @@ jobs:
             sha256: "${{ env.INITRD_SHA256 }}"
           EOF
 
+      # Sequential waits: parallel would be faster but adds complexity for little
+      # gain given the small download sizes.
       - name: Wait for Ready phase
         run: |
           ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
@@ -182,6 +189,8 @@ jobs:
             sha256: "${{ env.INITRD_SHA256 }}"
           EOF
 
+      # Sequential waits: parallel would be faster but adds complexity for little
+      # gain given the small download sizes.
       - name: Wait for Ready phase (second cluster)
         run: |
           ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
@@ -189,15 +198,13 @@ jobs:
 
       - name: Verify files were not re-downloaded
         run: |
+          # Use shell arrays so the loop body uses only shell variables.
+          declare -A paths=( [vmlinuz]="${{ env.VMLINUZ_PATH }}" [initrd]="${{ env.INITRD_PATH }}" )
+          declare -A shas=( [vmlinuz]="${{ env.VMLINUZ_SHA256 }}" [initrd]="${{ env.INITRD_SHA256 }}" )
           for artifact in vmlinuz initrd; do
             mtime_before=$(cat /tmp/mtime-${artifact}-before)
-            if [ "$artifact" = "vmlinuz" ]; then
-              path="${{ env.VMLINUZ_PATH }}"
-              sha="${{ env.VMLINUZ_SHA256 }}"
-            else
-              path="${{ env.INITRD_PATH }}"
-              sha="${{ env.INITRD_SHA256 }}"
-            fi
+            path="${paths[$artifact]}"
+            sha="${shas[$artifact]}"
             mtime_after=$(stat -c '%Y' "$path")
             echo "${artifact} mtime before: $mtime_before"
             echo "${artifact} mtime after:  $mtime_after"
@@ -208,13 +215,14 @@ jobs:
             echo "${artifact} was not re-downloaded — mtime unchanged"
             echo "${sha}  ${path}" | sha256sum -c
           done
-          # Belt-and-suspenders: confirm controller recognised existing files
-          if ! kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -q "Artifact already on disk, skipping download"; then
-            echo "FAIL: controller did not log 'Artifact already on disk, skipping download'"
+          # Belt-and-suspenders: confirm controller recognised both existing files
+          skip_count=$(kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -c "Artifact already on disk, skipping download" || true)
+          if [ "$skip_count" -lt 2 ]; then
+            echo "FAIL: expected at least 2 skip-download log lines, got $skip_count"
             kubectl -n isoboot-system logs deployment/isoboot-controller-manager
             exit 1
           fi
-          echo "Controller logs confirm existing files were recognised"
+          echo "Controller logs confirm both existing files were recognised ($skip_count skip lines)"
 
       - name: Collect logs on failure
         if: failure()
