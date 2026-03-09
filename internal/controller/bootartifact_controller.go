@@ -92,7 +92,9 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 			// File deleted between Stat and Open, fall through to download
 			return false, nil
 		}
-		return false, fmt.Errorf("hashing existing file: %w", err)
+		msg := fmt.Sprintf("hashing existing file: %v", err)
+		_, _ = r.setFailure(ctx, artifact, msg)
+		return false, fmt.Errorf("%s", msg)
 	}
 
 	expectedHash := expectedHash(artifact)
@@ -166,8 +168,6 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 	if err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("creating temp file: %v", err))
 	}
-	defer func() { _ = tmpFile.Close() }()
-
 	useSHA256 := artifact.Spec.SHA256 != nil
 	var h hash.Hash
 	if useSHA256 {
@@ -178,12 +178,15 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 
 	written, err := io.Copy(tmpFile, io.TeeReader(resp.Body, h))
 	if err != nil {
+		_ = tmpFile.Close()
 		return r.setFailure(ctx, artifact, fmt.Sprintf("writing file: %v", err))
 	}
 	if resp.ContentLength >= 0 && written != resp.ContentLength {
+		_ = tmpFile.Close()
 		return r.setFailure(ctx, artifact, fmt.Sprintf("Content-Length mismatch: expected %d bytes, got %d", resp.ContentLength, written))
 	}
 	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
 		return r.setFailure(ctx, artifact, fmt.Sprintf("syncing temp file: %v", err))
 	}
 	if err := tmpFile.Close(); err != nil {
