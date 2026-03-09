@@ -31,12 +31,11 @@ import (
 	"strings"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
@@ -158,6 +157,10 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 		return r.setFailure(ctx, artifact, fmt.Sprintf("download failed: HTTP %d", resp.StatusCode))
 	}
 
+	if resp.ContentLength < 0 {
+		return r.setFailure(ctx, artifact, "server did not send Content-Length header")
+	}
+
 	// Create temp file and hash while downloading
 	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
@@ -173,8 +176,12 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 		h = sha512.New()
 	}
 
-	if _, err := io.Copy(tmpFile, io.TeeReader(resp.Body, h)); err != nil {
+	written, err := io.Copy(tmpFile, io.TeeReader(resp.Body, h))
+	if err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("writing file: %v", err))
+	}
+	if written != resp.ContentLength {
+		return r.setFailure(ctx, artifact, fmt.Sprintf("Content-Length mismatch: expected %d bytes, got %d", resp.ContentLength, written))
 	}
 	if err := tmpFile.Sync(); err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("syncing temp file: %v", err))

@@ -260,6 +260,52 @@ var _ = Describe("BootArtifact Controller", func() {
 			Expect(data).To(Equal(content))
 		})
 
+		It("should set Error when Content-Length header is missing", func() {
+			serverURL, httpClient, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) {
+				// Flushing before writing prevents Go from setting Content-Length.
+				w.(http.Flusher).Flush()
+				_, _ = w.Write([]byte("streamed"))
+			})
+			defer cleanup()
+			reconciler.HTTPClient = httpClient
+
+			name := "dl-no-cl"
+			createArtifact(name, serverURL+"/vmlinuz", validSHA256)
+			defer deleteArtifact(name)
+
+			result, err := doReconcile(name)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).NotTo(BeZero())
+
+			status := getStatus(name)
+			Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootArtifactPhaseError))
+			Expect(status.Message).To(ContainSubstring("Content-Length"))
+		})
+
+		It("should set Error on Content-Length size mismatch", func() {
+			// Server declares Content-Length 100 but only sends 5 bytes.
+			// Go's HTTP client enforces this and returns "unexpected EOF",
+			// which the reconciler catches as a write error.
+			serverURL, httpClient, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Length", "100")
+				_, _ = w.Write([]byte("short"))
+			})
+			defer cleanup()
+			reconciler.HTTPClient = httpClient
+
+			name := "dl-cl-mismatch"
+			createArtifact(name, serverURL+"/vmlinuz", validSHA256)
+			defer deleteArtifact(name)
+
+			result, err := doReconcile(name)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).NotTo(BeZero())
+
+			status := getStatus(name)
+			Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootArtifactPhaseError))
+			Expect(status.FailureCount).To(Equal(int32(1)))
+		})
+
 		It("should increment failureCount on repeated failures", func() {
 			serverURL, httpClient, cleanup := withTestServer(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) })
 			defer cleanup()
