@@ -86,14 +86,21 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 
 	computedHash, err := hashFile(filePath, artifact.Spec.SHA256 != nil)
 	if err != nil {
-		return false, fmt.Errorf("hashing file: %w", err)
+		if os.IsNotExist(err) {
+			// File deleted between Stat and Open, fall through to download
+			return false, nil
+		}
+		if _, setErr := r.setFailure(ctx, artifact, fmt.Sprintf("hashing existing file: %v", err)); setErr != nil {
+			return false, setErr
+		}
+		return false, fmt.Errorf("hashing existing file: %w", err)
 	}
 
 	expectedHash := expectedHash(artifact)
 	if !strings.EqualFold(computedHash, expectedHash) {
 		log.Info("Hash mismatch for existing file, removing", "expected", expectedHash, "got", computedHash)
 		if err := os.Remove(filePath); err != nil {
-			log.Error(err, "Failed to remove file with mismatched hash", "path", filePath)
+			log.Info("Could not remove mismatched file, will overwrite via download", "path", filePath, "error", err)
 		}
 		return false, nil
 	}
@@ -168,6 +175,9 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 
 	if _, err := io.Copy(tmpFile, io.TeeReader(resp.Body, h)); err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("writing file: %v", err))
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return r.setFailure(ctx, artifact, fmt.Sprintf("syncing temp file: %v", err))
 	}
 	if err := tmpFile.Close(); err != nil {
 		return r.setFailure(ctx, artifact, fmt.Sprintf("closing temp file: %v", err))
