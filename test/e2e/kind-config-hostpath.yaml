@@ -5,3 +5,4 @@ nodes:
   extraMounts:
   - hostPath: /tmp/isoboot-data
     containerPath: /data/isoboot
+    propagation: HostToContainer

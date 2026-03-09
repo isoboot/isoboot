@@ -49,9 +49,9 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
-      # Controller runs as UID 65532 (nonroot) — needs world-writable dir on CI runner
+      # Controller runs as UID 65532 (nonroot) — own the dir so it can write
       - name: Create host data directory
-        run: mkdir -p /tmp/isoboot-data && chmod 777 /tmp/isoboot-data
+        run: mkdir -p /tmp/isoboot-data && sudo chown 65532 /tmp/isoboot-data && chmod 755 /tmp/isoboot-data
 
       - name: Create Kind cluster with hostPath mount
         run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
@@ -72,7 +72,7 @@ jobs:
         run: kind load docker-image ghcr.io/isoboot/isoboot:${{ github.sha }} --name isoboot-hostpath
 
       - name: Deploy controller with hostPath volume
-        run: make deploy-hostpath IMG=ghcr.io/isoboot/isoboot:${{ github.sha }}
+        run: ./test/e2e/deploy-hostpath.sh ghcr.io/isoboot/isoboot:${{ github.sha }}
 
       - name: Wait for controller to be ready
         run: |
@@ -120,7 +120,7 @@ jobs:
         run: kind load docker-image ghcr.io/isoboot/isoboot:${{ github.sha }} --name isoboot-hostpath
 
       - name: Deploy controller with hostPath volume (second cluster)
-        run: make deploy-hostpath IMG=ghcr.io/isoboot/isoboot:${{ github.sha }}
+        run: ./test/e2e/deploy-hostpath.sh ghcr.io/isoboot/isoboot:${{ github.sha }}
 
       - name: Wait for controller to be ready (second cluster)
         run: |
@@ -154,6 +154,12 @@ jobs:
           fi
           echo "File was not re-downloaded — mtime unchanged"
           echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.ARTIFACT_PATH }}" | sha256sum -c
+          # Belt-and-suspenders: confirm controller did not log a download
+          if kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -q "Downloading artifact"; then
+            echo "FAIL: controller logged 'Downloading artifact' — file was re-downloaded"
+            exit 1
+          fi
+          echo "Controller logs confirm no download occurred"
 
       - name: Clean up clusters
         if: always()
