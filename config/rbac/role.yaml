@@ -15,7 +15,6 @@ rules:
   - isoboot.github.io
   resources:
   - bootartifacts
-  - bootconfigs
   verbs:
   - create
   - delete
@@ -28,7 +27,6 @@ rules:
   - isoboot.github.io
   resources:
   - bootartifacts/finalizers
-  - bootconfigs/finalizers
   verbs:
   - update
 - apiGroups:
@@ -40,3 +38,11 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootconfigs
+  verbs:
+  - get
+  - list
+  - watch
