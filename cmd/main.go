@@ -193,8 +193,9 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.BootConfigReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:  mgr.GetClient(),
+		Scheme:  mgr.GetScheme(),
+		DataDir: dataDir,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "BootConfig")
 		os.Exit(1)

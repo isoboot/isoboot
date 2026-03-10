@@ -34,6 +34,9 @@ env:
   INITRD_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/initrd.img"
   INITRD_NAME: rocky-10.1-initrd
   INITRD_PATH: /tmp/isoboot-data/artifacts/rocky-10.1-initrd/initrd.img
+  BOOTCONFIG_NAME: rocky-10.1
+  BOOTCONFIG_KERNEL_LINK: /tmp/isoboot-data/boot/rocky-10.1/kernel/vmlinuz
+  BOOTCONFIG_INITRD_LINK: /tmp/isoboot-data/boot/rocky-10.1/initrd/initrd.img
 
 jobs:
   test-e2e-hostpath:
@@ -115,16 +118,86 @@ jobs:
           echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.VMLINUZ_PATH }}" | sha256sum -c
           echo "${{ env.INITRD_SHA256 }}  ${{ env.INITRD_PATH }}" | sha256sum -c
 
+      - name: Create BootConfig for Rocky 10.1
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootConfig
+          metadata:
+            name: ${{ env.BOOTCONFIG_NAME }}
+          spec:
+            kernelRef: "${{ env.VMLINUZ_NAME }}"
+            initrdRef: "${{ env.INITRD_NAME }}"
+          EOF
+
+      - name: Wait for BootConfig Ready phase
+        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+
+      - name: Verify BootConfig symlinks on host disk
+        run: |
+          # Verify kernel symlink exists and points to correct target
+          target=$(readlink "${{ env.BOOTCONFIG_KERNEL_LINK }}")
+          echo "kernel symlink target: $target"
+          [ "$target" = "../../../artifacts/${{ env.VMLINUZ_NAME }}/vmlinuz" ] || { echo "FAIL: wrong kernel symlink target"; exit 1; }
+
+          # Verify initrd symlink exists and points to correct target
+          target=$(readlink "${{ env.BOOTCONFIG_INITRD_LINK }}")
+          echo "initrd symlink target: $target"
+          [ "$target" = "../../../artifacts/${{ env.INITRD_NAME }}/initrd.img" ] || { echo "FAIL: wrong initrd symlink target"; exit 1; }
+
+          # Verify symlinks resolve to actual files
+          test -f "${{ env.BOOTCONFIG_KERNEL_LINK }}" || { echo "FAIL: kernel symlink does not resolve"; exit 1; }
+          test -f "${{ env.BOOTCONFIG_INITRD_LINK }}" || { echo "FAIL: initrd symlink does not resolve"; exit 1; }
+
+      - name: Delete BootConfig and verify cleanup
+        run: |
+          kubectl delete bootconfig "${{ env.BOOTCONFIG_NAME }}"
+          for i in $(seq 1 30); do
+            test ! -e /tmp/isoboot-data/boot/${{ env.BOOTCONFIG_NAME }} && echo "Boot directory cleaned up" && exit 0
+            echo "Attempt $i: boot directory still exists, waiting..."
+            sleep 2
+          done
+          echo "FAIL: boot directory not cleaned up"
+          exit 1
+
+      - name: Recreate BootConfig for Rocky 10.1
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootConfig
+          metadata:
+            name: ${{ env.BOOTCONFIG_NAME }}
+          spec:
+            kernelRef: "${{ env.VMLINUZ_NAME }}"
+            initrdRef: "${{ env.INITRD_NAME }}"
+          EOF
+
+      - name: Wait for recreated BootConfig Ready phase
+        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+
+      - name: Verify recreated BootConfig symlinks
+        run: |
+          target=$(readlink "${{ env.BOOTCONFIG_KERNEL_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.VMLINUZ_NAME }}/vmlinuz" ] || { echo "FAIL: wrong kernel symlink target after recreate"; exit 1; }
+
+          target=$(readlink "${{ env.BOOTCONFIG_INITRD_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.INITRD_NAME }}/initrd.img" ] || { echo "FAIL: wrong initrd symlink target after recreate"; exit 1; }
+
+          test -f "${{ env.BOOTCONFIG_KERNEL_LINK }}" || { echo "FAIL: kernel symlink does not resolve after recreate"; exit 1; }
+          test -f "${{ env.BOOTCONFIG_INITRD_LINK }}" || { echo "FAIL: initrd symlink does not resolve after recreate"; exit 1; }
+
       - name: Collect phase-1 logs on failure
         if: failure()
         run: |
           echo "=== BootArtifact status ==="
           kubectl get bootartifact "${{ env.VMLINUZ_NAME }}" -o yaml 2>/dev/null || true
           kubectl get bootartifact "${{ env.INITRD_NAME }}" -o yaml 2>/dev/null || true
+          echo "=== BootConfig status ==="
+          kubectl get bootconfig "${{ env.BOOTCONFIG_NAME }}" -o yaml 2>/dev/null || true
           echo "=== Controller logs ==="
           kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
           echo "=== Host data directory ==="
-          find /tmp/isoboot-data -type f 2>/dev/null || true
+          find /tmp/isoboot-data -type f -o -type l 2>/dev/null || true
 
       - name: Delete first Kind cluster
         run: kind delete cluster --name isoboot-hostpath
@@ -192,16 +265,81 @@ jobs:
           [ "$mtime_before" = "$mtime_after" ] || { echo "FAIL: initrd re-downloaded"; exit 1; }
           echo "${{ env.INITRD_SHA256 }}  ${{ env.INITRD_PATH }}" | sha256sum -c
 
+      - name: Create BootConfig for Rocky 10.1 (second cluster)
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootConfig
+          metadata:
+            name: ${{ env.BOOTCONFIG_NAME }}
+          spec:
+            kernelRef: "${{ env.VMLINUZ_NAME }}"
+            initrdRef: "${{ env.INITRD_NAME }}"
+          EOF
+
+      - name: Wait for BootConfig Ready phase (second cluster)
+        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+
+      - name: Verify BootConfig symlinks (second cluster)
+        run: |
+          target=$(readlink "${{ env.BOOTCONFIG_KERNEL_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.VMLINUZ_NAME }}/vmlinuz" ] || { echo "FAIL: wrong kernel symlink target"; exit 1; }
+
+          target=$(readlink "${{ env.BOOTCONFIG_INITRD_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.INITRD_NAME }}/initrd.img" ] || { echo "FAIL: wrong initrd symlink target"; exit 1; }
+
+          test -f "${{ env.BOOTCONFIG_KERNEL_LINK }}" || { echo "FAIL: kernel symlink does not resolve"; exit 1; }
+          test -f "${{ env.BOOTCONFIG_INITRD_LINK }}" || { echo "FAIL: initrd symlink does not resolve"; exit 1; }
+
+      - name: Delete BootConfig and verify cleanup (second cluster)
+        run: |
+          kubectl delete bootconfig "${{ env.BOOTCONFIG_NAME }}"
+          for i in $(seq 1 30); do
+            test ! -e /tmp/isoboot-data/boot/${{ env.BOOTCONFIG_NAME }} && echo "Boot directory cleaned up" && exit 0
+            echo "Attempt $i: boot directory still exists, waiting..."
+            sleep 2
+          done
+          echo "FAIL: boot directory not cleaned up"
+          exit 1
+
+      - name: Recreate BootConfig (second cluster)
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootConfig
+          metadata:
+            name: ${{ env.BOOTCONFIG_NAME }}
+          spec:
+            kernelRef: "${{ env.VMLINUZ_NAME }}"
+            initrdRef: "${{ env.INITRD_NAME }}"
+          EOF
+
+      - name: Wait for recreated BootConfig Ready phase (second cluster)
+        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+
+      - name: Verify recreated BootConfig symlinks (second cluster)
+        run: |
+          target=$(readlink "${{ env.BOOTCONFIG_KERNEL_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.VMLINUZ_NAME }}/vmlinuz" ] || { echo "FAIL: wrong kernel symlink target after recreate"; exit 1; }
+
+          target=$(readlink "${{ env.BOOTCONFIG_INITRD_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.INITRD_NAME }}/initrd.img" ] || { echo "FAIL: wrong initrd symlink target after recreate"; exit 1; }
+
+          test -f "${{ env.BOOTCONFIG_KERNEL_LINK }}" || { echo "FAIL: kernel symlink does not resolve after recreate"; exit 1; }
+          test -f "${{ env.BOOTCONFIG_INITRD_LINK }}" || { echo "FAIL: initrd symlink does not resolve after recreate"; exit 1; }
+
       - name: Collect logs on failure
         if: failure()
         run: |
           echo "=== BootArtifact status ==="
           kubectl get bootartifact "${{ env.VMLINUZ_NAME }}" -o yaml 2>/dev/null || true
           kubectl get bootartifact "${{ env.INITRD_NAME }}" -o yaml 2>/dev/null || true
+          echo "=== BootConfig status ==="
+          kubectl get bootconfig "${{ env.BOOTCONFIG_NAME }}" -o yaml 2>/dev/null || true
           echo "=== Controller logs ==="
           kubectl -n isoboot-system logs deployment/isoboot-controller-manager 2>/dev/null || true
           echo "=== Host data directory ==="
-          find /tmp/isoboot-data -type f 2>/dev/null || true
+          find /tmp/isoboot-data -type f -o -type l 2>/dev/null || true
 
       - name: Clean up clusters
         if: always()
