@@ -35,7 +35,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
@@ -312,7 +311,7 @@ var _ = Describe("Manager", Ordered, func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "e2e-valid", Namespace: "default"},
 				Spec: isobootgithubiov1alpha1.BootArtifactSpec{
 					URL:    testURL,
-					SHA256: ptr.To(sha),
+					SHA256: new(sha),
 				},
 			}
 			Expect(k8sClient.Create(ctx, artifact)).To(Succeed())
@@ -331,7 +330,7 @@ var _ = Describe("Manager", Ordered, func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "e2e-bad-hash", Namespace: "default"},
 				Spec: isobootgithubiov1alpha1.BootArtifactSpec{
 					URL:    testURL,
-					SHA256: ptr.To(wrongSHA256),
+					SHA256: new(wrongSHA256),
 				},
 			}
 			Expect(k8sClient.Create(ctx, artifact)).To(Succeed())
