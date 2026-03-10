@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
-        shell: bash
+        shell: bash -eu -o pipefail {0}
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -97,30 +97,19 @@ jobs:
           kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
           kubectl -n isoboot-system get pods
 
-      # Restrict envsubst to only template variables — prevents accidental
-      # substitution of unrelated env vars (e.g. $HOME, $PATH).
-      # envsubst is from the gettext package, pre-installed on Ubuntu runners.
-      # Variable list must match test/e2e/debian-13-bootartifacts.yaml.
-      # NOTE: This envsubst | kubectl apply command is duplicated below for the
-      # second cluster. Keep both in sync if changing the variable list.
-      # If envsubst fails, pipefail (set by GHA's shell: bash) fails the step.
+      # Restricted envsubst — variable list must match debian-13-bootartifacts.yaml.
+      # Duplicated below for the second cluster; keep both in sync.
       - name: Create BootArtifacts for Debian 13 kernel and initrd
         run: envsubst '${VMLINUZ_NAME} ${VMLINUZ_URL} ${VMLINUZ_SHA256} ${INITRD_NAME} ${INITRD_URL} ${INITRD_SHA256}' < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
-      # Sequential waits for both artifacts: parallel would be faster but adds
-      # complexity for little gain given the small download sizes (~51 MB total).
+      # Sequential waits — see PR #254 "Accepted risks" for rationale.
       - name: Wait for Ready phase
         run: |
           ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
           ./test/e2e/wait-for-bootartifact.sh "${{ env.INITRD_NAME }}"
 
-      # INTENTIONAL: SHA-256 is verified 3× per artifact (after download, after
-      # cluster deletion, after second-cluster reconciliation). Each check covers
-      # a different failure mode — this is by design, not duplication. Do not
-      # consolidate or remove any of these checks.
-      # The checks are written out per-artifact (not looped) for CI log
-      # readability. The mtime step below uses a loop because it handles
-      # more checks per artifact — different trade-off.
+      # SHA-256 verified 3× per artifact (download, post-delete, second cluster).
+      # Each covers a different failure mode — do not consolidate.
       - name: Verify files and SHA-256 on host disk
         run: |
           echo "Checking vmlinuz at ${{ env.VMLINUZ_PATH }}"
@@ -156,8 +145,7 @@ jobs:
       # --- Second cluster: verify controller recognises existing file without downloading ---
 
       - name: Record file modification times
-        # File suffixes (vmlinuz, initrd) must match the 'for artifact in ...'
-        # loop variable in "Verify files were not re-downloaded" below.
+        # Suffixes must match the 'for artifact in ...' loop below.
         run: |
           stat -c '%Y' "${{ env.VMLINUZ_PATH }}" > /tmp/mtime-vmlinuz-before
           stat -c '%Y' "${{ env.INITRD_PATH }}" > /tmp/mtime-initrd-before
@@ -176,8 +164,7 @@ jobs:
           kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
           kubectl -n isoboot-system get pods
 
-      # Duplicated from above — GitHub Actions doesn't support YAML anchors.
-      # If envsubst fails, pipefail (set by GHA's shell: bash) fails the step.
+      # Duplicated from above — GHA doesn't support YAML anchors.
       - name: Create same BootArtifacts (files already exist on host)
         run: envsubst '${VMLINUZ_NAME} ${VMLINUZ_URL} ${VMLINUZ_SHA256} ${INITRD_NAME} ${INITRD_URL} ${INITRD_SHA256}' < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
@@ -188,9 +175,7 @@ jobs:
 
       - name: Verify files were not re-downloaded
         run: |
-          # Use shell arrays so the loop body uses only shell variables.
-          # Iteration order doesn't matter here — the explicit 'for' list below
-          # controls order, not the associative array key order.
+          # Associative arrays keep the loop body free of GHA expression expansion.
           declare -A paths=( [vmlinuz]="${{ env.VMLINUZ_PATH }}" [initrd]="${{ env.INITRD_PATH }}" )
           declare -A shas=( [vmlinuz]="${{ env.VMLINUZ_SHA256 }}" [initrd]="${{ env.INITRD_SHA256 }}" )
           for artifact in vmlinuz initrd; do
@@ -207,22 +192,12 @@ jobs:
             echo "${artifact} was not re-downloaded — mtime unchanged"
             echo "${sha}  ${path}" | sha256sum -c
           done
-          # Belt-and-suspenders: confirm controller recognised each existing file.
-          # We check per-artifact rather than counting totals because the controller
-          # may re-reconcile (e.g. status update triggers re-enqueue), producing
-          # more than one skip-download log line per artifact. That's normal
-          # controller-runtime behaviour — we just need at least one per artifact.
-          # A BootConfig uses either 1 artifact (ISO) or 2 (kernel + initrd) or 3
-          # (kernel + initrd + firmware). This test covers the 2-artifact case.
-          # Note: no race here — wait-for-bootartifact.sh above ensures both
-          # artifacts reached Ready phase, so the skip-download log lines have
-          # already been written by the time we grep.
+          # Per-artifact grep — re-reconciliation can produce >1 line per artifact,
+          # so we check presence rather than exact count. See PR #254.
           controller_logs=$(kubectl -n isoboot-system logs deployment/isoboot-controller-manager)
+          [[ -n "$controller_logs" ]] || { echo "FAIL: controller logs are empty"; exit 1; }
           skip_msg="Artifact already on disk, skipping download"
           for name in "${{ env.VMLINUZ_NAME }}" "${{ env.INITRD_NAME }}"; do
-            # Two fixed-string greps: first finds lines containing the skip
-            # message, second checks that the artifact name appears on the same
-            # line. Fixed-string matching avoids regex metacharacter concerns.
             if ! grep -F "$skip_msg" <<< "$controller_logs" | grep -Fq "$name"; then
               echo "FAIL: no skip-download log line for $name"
               exit 1

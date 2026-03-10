@@ -3,7 +3,7 @@
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
 metadata:
-  name: ${VMLINUZ_NAME}
+  name: "${VMLINUZ_NAME}"
 spec:
   url: "${VMLINUZ_URL}"
   sha256: "${VMLINUZ_SHA256}"
@@ -11,8 +11,7 @@ spec:
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
 metadata:
-  name: ${INITRD_NAME}
+  name: "${INITRD_NAME}"
 spec:
   url: "${INITRD_URL}"
   sha256: "${INITRD_SHA256}"
----
