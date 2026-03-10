@@ -103,6 +103,7 @@ jobs:
       # Variable list must match test/e2e/debian-13-bootartifacts.yaml.
       # NOTE: This envsubst | kubectl apply command is duplicated below for the
       # second cluster. Keep both in sync if changing the variable list.
+      # If envsubst fails, pipefail (set by GHA's shell: bash) fails the step.
       - name: Create BootArtifacts for Debian 13 kernel and initrd
         run: envsubst '${VMLINUZ_NAME} ${VMLINUZ_URL} ${VMLINUZ_SHA256} ${INITRD_NAME} ${INITRD_URL} ${INITRD_SHA256}' < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
@@ -177,6 +178,7 @@ jobs:
           kubectl -n isoboot-system get pods
 
       # Duplicated from above — GitHub Actions doesn't support YAML anchors.
+      # If envsubst fails, pipefail (set by GHA's shell: bash) fails the step.
       - name: Create same BootArtifacts (files already exist on host)
         run: envsubst '${VMLINUZ_NAME} ${VMLINUZ_URL} ${VMLINUZ_SHA256} ${INITRD_NAME} ${INITRD_URL} ${INITRD_SHA256}' < test/e2e/debian-13-bootartifacts.yaml | kubectl apply -f -
 
@@ -222,9 +224,10 @@ jobs:
             # Single grep ensures both the skip message and the artifact name
             # appear on the same log line — resilient to log format changes
             # (text or JSON) as long as each record is a single line.
-            if ! echo "$controller_logs" | grep -q "${skip_msg}.*${name}\|${name}.*${skip_msg}"; then
+            # Uses ERE (-E) for portable alternation; BRE \| is a GNU extension.
+            if ! grep -Eq "${skip_msg}.*${name}|${name}.*${skip_msg}" <<< "$controller_logs"; then
               echo "FAIL: no skip-download log line for $name"
-              echo "$controller_logs"
+              printf '%s\n' "$controller_logs"
               exit 1
             fi
           done

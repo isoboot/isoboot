@@ -108,7 +108,7 @@ func (r *BootArtifactReconciler) verifyExisting(ctx context.Context, artifact *i
 		return false, nil
 	}
 
-	log.Info("Artifact already on disk, skipping download", "path", filePath)
+	log.Info("Artifact already on disk, skipping download", "artifact", artifact.Name, "path", filePath)
 
 	// Skip status write if already Ready — avoids a no-op update on
 	// every controller restart for stable artifacts.
