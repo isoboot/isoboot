@@ -1,0 +1,183 @@
+{{- if .Values.crds.enabled }}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+    "helm.sh/resource-policy": keep
+  name: bootartifacts.isoboot.github.io
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  group: isoboot.github.io
+  names:
+    kind: BootArtifact
+    listKind: BootArtifactList
+    plural: bootartifacts
+    singular: bootartifact
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.failureCount
+      name: Failures
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: BootArtifact is the Schema for the bootartifacts API.
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of BootArtifact
+            properties:
+              sha256:
+                pattern: ^[a-fA-F0-9]{64}$
+                type: string
+              sha512:
+                pattern: ^[a-fA-F0-9]{128}$
+                type: string
+              url:
+                description: url is the download URL for the artifact. Must use HTTPS.
+                pattern: ^https://
+                type: string
+                x-kubernetes-validations:
+                - message: url must not contain path traversal
+                  rule: '!self.contains(''/..'')'
+            required:
+            - url
+            type: object
+            x-kubernetes-validations:
+            - message: one of sha256 or sha512 is required
+              rule: has(self.sha256) || has(self.sha512)
+            - message: sha256 and sha512 are mutually exclusive
+              rule: '!(has(self.sha256) && has(self.sha512))'
+          status:
+            description: status defines the observed state of BootArtifact
+            properties:
+              failureCount:
+                format: int32
+                type: integer
+              lastChecked:
+                format: date-time
+                type: string
+              lastFailureTime:
+                format: date-time
+                type: string
+              message:
+                type: string
+              phase:
+                enum:
+                - Pending
+                - Downloading
+                - Ready
+                - Error
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+    "helm.sh/resource-policy": keep
+  name: bootconfigs.isoboot.github.io
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  group: isoboot.github.io
+  names:
+    kind: BootConfig
+    listKind: BootConfigList
+    plural: bootconfigs
+    singular: bootconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: BootConfig is the Schema for the bootconfigs API.
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of BootConfig
+            properties:
+              firmwareRef:
+                type: string
+              initrdRef:
+                type: string
+              iso:
+                properties:
+                  artifactRef:
+                    minLength: 1
+                    type: string
+                  initrdPath:
+                    minLength: 1
+                    type: string
+                  kernelPath:
+                    minLength: 1
+                    type: string
+                required:
+                - artifactRef
+                - initrdPath
+                - kernelPath
+                type: object
+              kernelRef:
+                type: string
+            type: object
+            x-kubernetes-validations:
+            - message: must use either kernelRef+initrdRef or iso, not both
+              rule: (has(self.kernelRef) && has(self.initrdRef) && !has(self.iso))
+                || (!has(self.kernelRef) && !has(self.initrdRef) && has(self.iso))
+            - message: firmwareRef is not supported with iso mode
+              rule: '!has(self.iso) || !has(self.firmwareRef)'
+          status:
+            description: status defines the observed state of BootConfig
+            properties:
+              message:
+                type: string
+              phase:
+                enum:
+                - Pending
+                - Ready
+                - Error
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

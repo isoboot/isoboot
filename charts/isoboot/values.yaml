@@ -1,0 +1,30 @@
+# Override the full resource name prefix (default: release-chartname or release if it contains chartname).
+fullnameOverride: ""
+# Override just the chart name portion of the resource name prefix.
+nameOverride: ""
+
+# nodeName is required — the node where the controller pod will be scheduled.
+# All data is stored on this node via hostPath.
+nodeName: ""
+
+image:
+  repository: ghcr.io/isoboot/isoboot
+  # tag defaults to .Chart.AppVersion if omitted
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# dataDir must be pre-created on the target node and writable by UID 65532.
+# Example: sudo mkdir -p /data/isoboot && sudo chown 65532:65532 /data/isoboot
+dataDir: /data/isoboot
+
+# Set to false to skip CRD installation (e.g. if CRDs are managed separately).
+crds:
+  enabled: true
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
