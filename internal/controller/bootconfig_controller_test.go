@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,13 +49,13 @@ var _ = Describe("BootConfig Controller", func() {
 				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			},
 			Entry("mode A: kernel and initrd", "valid-mode-a", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef: ptr.To("my-kernel"),
-				InitrdRef: ptr.To("my-initrd"),
+				KernelRef: new("my-kernel"),
+				InitrdRef: new("my-initrd"),
 			}),
 			Entry("mode A: with firmware", "valid-mode-a-fw", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef:   ptr.To("my-kernel"),
-				InitrdRef:   ptr.To("my-initrd"),
-				FirmwareRef: ptr.To("my-firmware"),
+				KernelRef:   new("my-kernel"),
+				InitrdRef:   new("my-initrd"),
+				FirmwareRef: new("my-firmware"),
 			}),
 			Entry("mode B: iso", "valid-mode-b", isobootgithubiov1alpha1.BootConfigSpec{
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
@@ -74,8 +73,8 @@ var _ = Describe("BootConfig Controller", func() {
 			},
 			Entry("neither mode", "no-mode", isobootgithubiov1alpha1.BootConfigSpec{}),
 			Entry("both modes", "both-modes", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef: ptr.To("my-kernel"),
-				InitrdRef: ptr.To("my-initrd"),
+				KernelRef: new("my-kernel"),
+				InitrdRef: new("my-initrd"),
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
 					ArtifactRef: "my-iso",
 					KernelPath:  "casper/vmlinuz",
@@ -83,13 +82,13 @@ var _ = Describe("BootConfig Controller", func() {
 				},
 			}),
 			Entry("kernelRef without initrdRef", "kernel-only", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef: ptr.To("my-kernel"),
+				KernelRef: new("my-kernel"),
 			}),
 			Entry("initrdRef without kernelRef", "initrd-only", isobootgithubiov1alpha1.BootConfigSpec{
-				InitrdRef: ptr.To("my-initrd"),
+				InitrdRef: new("my-initrd"),
 			}),
 			Entry("firmwareRef with iso mode", "fw-with-iso", isobootgithubiov1alpha1.BootConfigSpec{
-				FirmwareRef: ptr.To("my-firmware"),
+				FirmwareRef: new("my-firmware"),
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
 					ArtifactRef: "my-iso",
 					KernelPath:  "casper/vmlinuz",
@@ -135,7 +134,7 @@ var _ = Describe("BootConfig Controller", func() {
 		createArtifact := func(name string, phase isobootgithubiov1alpha1.BootArtifactPhase, url string) {
 			a := &isobootgithubiov1alpha1.BootArtifact{
 				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: url, SHA256: ptr.To(validSHA256)},
+				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: url, SHA256: new(validSHA256)},
 			}
 			ExpectWithOffset(1, k8sClient.Create(ctx, a)).To(Succeed())
 			a.Status.Phase = phase
@@ -160,8 +159,8 @@ var _ = Describe("BootConfig Controller", func() {
 			bc := &isobootgithubiov1alpha1.BootConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
-					KernelRef: ptr.To(kernelRef),
-					InitrdRef: ptr.To(initrdRef),
+					KernelRef: new(kernelRef),
+					InitrdRef: new(initrdRef),
 				},
 			}
 			ExpectWithOffset(1, k8sClient.Create(ctx, bc)).To(Succeed())
