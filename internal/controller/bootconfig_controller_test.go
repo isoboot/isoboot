@@ -167,11 +167,36 @@ var _ = Describe("BootConfig Controller", func() {
 			ExpectWithOffset(1, k8sClient.Create(ctx, bc)).To(Succeed())
 		}
 
-		// Place artifact files on disk so symlinks resolve
-		placeArtifactFile := func(artifactName, filename string) {
-			dir := filepath.Join(dataDir, "artifacts", artifactName)
+		// Creates both artifacts as Ready with files on disk; returns cleanup func
+		setupReadyPair := func(kernelName, initrdName string) func() {
+			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
+			dir := filepath.Join(dataDir, "artifacts", kernelName)
 			ExpectWithOffset(1, os.MkdirAll(dir, 0o755)).To(Succeed())
-			ExpectWithOffset(1, os.WriteFile(filepath.Join(dir, filename), []byte("data"), 0o644)).To(Succeed())
+			ExpectWithOffset(1, os.WriteFile(filepath.Join(dir, "vmlinuz"), []byte("data"), 0o644)).To(Succeed())
+
+			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.img")
+			dir = filepath.Join(dataDir, "artifacts", initrdName)
+			ExpectWithOffset(1, os.MkdirAll(dir, 0o755)).To(Succeed())
+			ExpectWithOffset(1, os.WriteFile(filepath.Join(dir, "initrd.img"), []byte("data"), 0o644)).To(Succeed())
+
+			return func() { deleteArtifact(kernelName); deleteArtifact(initrdName) }
+		}
+
+		// Verifies symlinks exist, point to correct targets, and resolve to files
+		expectSymlinksReady := func(bcName, kernelArtifact, initrdArtifact string) {
+			kernelLink := filepath.Join(dataDir, "boot", bcName, "kernel", "vmlinuz")
+			target, err := os.Readlink(kernelLink)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			ExpectWithOffset(1, target).To(Equal(filepath.Join("..", "..", "..", "artifacts", kernelArtifact, "vmlinuz")))
+			_, err = os.Stat(kernelLink)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			initrdLink := filepath.Join(dataDir, "boot", bcName, "initrd", "initrd.img")
+			target, err = os.Readlink(initrdLink)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			ExpectWithOffset(1, target).To(Equal(filepath.Join("..", "..", "..", "artifacts", initrdArtifact, "initrd.img")))
+			_, err = os.Stat(initrdLink)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 		}
 
 		It("should return without error for deleted resource", func() {
@@ -185,27 +210,17 @@ var _ = Describe("BootConfig Controller", func() {
 			initrdName := "bc-life-initrd"
 			bcName := "bc-lifecycle"
 
-			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
-			defer deleteArtifact(kernelName)
-			placeArtifactFile(kernelName, "vmlinuz")
+			cleanup := setupReadyPair(kernelName, initrdName)
+			defer cleanup()
 
-			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.img")
-			defer deleteArtifact(initrdName)
-			placeArtifactFile(initrdName, "initrd.img")
-
-			// 1. Create and reconcile — symlinks should exist
+			// 1. Create and reconcile — symlinks should exist with correct targets
 			createBootConfig(bcName, kernelName, initrdName)
 
 			result, err := doReconcile(bcName)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 			Expect(getStatus(bcName).Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
-
-			bootDir := filepath.Join(dataDir, "boot", bcName)
-			_, err = os.Stat(filepath.Join(bootDir, "kernel", "vmlinuz"))
-			Expect(err).NotTo(HaveOccurred())
-			_, err = os.Stat(filepath.Join(bootDir, "initrd", "initrd.img"))
-			Expect(err).NotTo(HaveOccurred())
+			expectSymlinksReady(bcName, kernelName, initrdName)
 
 			// 2. Delete and reconcile — boot directory should be removed
 			deleteResource(bcName)
@@ -214,7 +229,7 @@ var _ = Describe("BootConfig Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			_, err = os.Stat(bootDir)
+			_, err = os.Stat(filepath.Join(dataDir, "boot", bcName))
 			Expect(os.IsNotExist(err)).To(BeTrue())
 
 			// 3. Re-create and reconcile — symlinks should come back
@@ -225,52 +240,7 @@ var _ = Describe("BootConfig Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 			Expect(getStatus(bcName).Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
-
-			_, err = os.Stat(filepath.Join(bootDir, "kernel", "vmlinuz"))
-			Expect(err).NotTo(HaveOccurred())
-			_, err = os.Stat(filepath.Join(bootDir, "initrd", "initrd.img"))
-			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("should set Ready and create symlinks when all artifacts are Ready", func() {
-			kernelName := "bc-test-kernel"
-			initrdName := "bc-test-initrd"
-			bcName := "bc-all-ready"
-
-			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
-			defer deleteArtifact(kernelName)
-			placeArtifactFile(kernelName, "vmlinuz")
-
-			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.img")
-			defer deleteArtifact(initrdName)
-			placeArtifactFile(initrdName, "initrd.img")
-
-			createBootConfig(bcName, kernelName, initrdName)
-			defer deleteResource(bcName)
-
-			result, err := doReconcile(bcName)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeZero())
-
-			status := getStatus(bcName)
-			Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
-
-			// Verify symlinks exist and point to correct targets
-			kernelLink := filepath.Join(dataDir, "boot", bcName, "kernel", "vmlinuz")
-			target, err := os.Readlink(kernelLink)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(target).To(Equal(filepath.Join("..", "..", "..", "artifacts", kernelName, "vmlinuz")))
-
-			initrdLink := filepath.Join(dataDir, "boot", bcName, "initrd", "initrd.img")
-			target, err = os.Readlink(initrdLink)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(target).To(Equal(filepath.Join("..", "..", "..", "artifacts", initrdName, "initrd.img")))
-
-			// Verify symlinks resolve to actual files
-			_, err = os.Stat(kernelLink)
-			Expect(err).NotTo(HaveOccurred())
-			_, err = os.Stat(initrdLink)
-			Expect(err).NotTo(HaveOccurred())
+			expectSymlinksReady(bcName, kernelName, initrdName)
 		})
 
 		It("should set Pending when artifact is not Ready", func() {
@@ -315,13 +285,8 @@ var _ = Describe("BootConfig Controller", func() {
 			initrdName := "bc-idem-initrd"
 			bcName := "bc-idempotent"
 
-			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
-			defer deleteArtifact(kernelName)
-			placeArtifactFile(kernelName, "vmlinuz")
-
-			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.img")
-			defer deleteArtifact(initrdName)
-			placeArtifactFile(initrdName, "initrd.img")
+			cleanup := setupReadyPair(kernelName, initrdName)
+			defer cleanup()
 
 			createBootConfig(bcName, kernelName, initrdName)
 			defer deleteResource(bcName)

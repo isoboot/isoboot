@@ -163,6 +163,9 @@ func (r *BootConfigReconciler) setPending(ctx context.Context, bc *isobootgithub
 }
 
 func (r *BootConfigReconciler) setError(ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig, message string) (ctrl.Result, error) {
+	if bc.Status.Phase == isobootgithubiov1alpha1.BootConfigPhaseError && bc.Status.Message == message {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
 	log := logf.FromContext(ctx)
 	log.Info("BootConfig error", "message", message)
 	bc.Status.Phase = isobootgithubiov1alpha1.BootConfigPhaseError
