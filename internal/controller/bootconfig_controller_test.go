@@ -23,7 +23,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -181,6 +180,58 @@ var _ = Describe("BootConfig Controller", func() {
 			Expect(result).To(Equal(reconcile.Result{}))
 		})
 
+		It("should create symlinks, clean up on delete, and recreate on re-create", func() {
+			kernelName := "bc-life-kernel"
+			initrdName := "bc-life-initrd"
+			bcName := "bc-lifecycle"
+
+			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
+			defer deleteArtifact(kernelName)
+			placeArtifactFile(kernelName, "vmlinuz")
+
+			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.img")
+			defer deleteArtifact(initrdName)
+			placeArtifactFile(initrdName, "initrd.img")
+
+			// 1. Create and reconcile — symlinks should exist
+			createBootConfig(bcName, kernelName, initrdName)
+
+			result, err := doReconcile(bcName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+			Expect(getStatus(bcName).Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+			bootDir := filepath.Join(dataDir, "boot", bcName)
+			_, err = os.Stat(filepath.Join(bootDir, "kernel", "vmlinuz"))
+			Expect(err).NotTo(HaveOccurred())
+			_, err = os.Stat(filepath.Join(bootDir, "initrd", "initrd.img"))
+			Expect(err).NotTo(HaveOccurred())
+
+			// 2. Delete and reconcile — boot directory should be removed
+			deleteResource(bcName)
+
+			result, err = doReconcile(bcName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			_, err = os.Stat(bootDir)
+			Expect(os.IsNotExist(err)).To(BeTrue())
+
+			// 3. Re-create and reconcile — symlinks should come back
+			createBootConfig(bcName, kernelName, initrdName)
+			defer deleteResource(bcName)
+
+			result, err = doReconcile(bcName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+			Expect(getStatus(bcName).Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+			_, err = os.Stat(filepath.Join(bootDir, "kernel", "vmlinuz"))
+			Expect(err).NotTo(HaveOccurred())
+			_, err = os.Stat(filepath.Join(bootDir, "initrd", "initrd.img"))
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 		It("should set Ready and create symlinks when all artifacts are Ready", func() {
 			kernelName := "bc-test-kernel"
 			initrdName := "bc-test-initrd"
@@ -287,56 +338,4 @@ var _ = Describe("BootConfig Controller", func() {
 		})
 	})
 
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-bootconfig"
-
-		ctx := context.Background()
-
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default",
-		}
-		bootconfig := &isobootgithubiov1alpha1.BootConfig{}
-
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind BootConfig")
-			err := k8sClient.Get(ctx, typeNamespacedName, bootconfig)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &isobootgithubiov1alpha1.BootConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					Spec: isobootgithubiov1alpha1.BootConfigSpec{
-						KernelRef: ptr.To("test-kernel"),
-						InitrdRef: ptr.To("test-initrd"),
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
-		})
-
-		AfterEach(func() {
-			resource := &isobootgithubiov1alpha1.BootConfig{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Cleanup the specific resource instance BootConfig")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &BootConfigReconciler{
-				Client:  k8sClient,
-				Scheme:  k8sClient.Scheme(),
-				DataDir: os.TempDir(),
-			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			// Error is expected since test-kernel artifact doesn't exist
-			Expect(err).NotTo(HaveOccurred())
-		})
-	})
 })

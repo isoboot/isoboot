@@ -149,6 +149,43 @@ jobs:
           test -f "${{ env.BOOTCONFIG_KERNEL_LINK }}" || { echo "FAIL: kernel symlink does not resolve"; exit 1; }
           test -f "${{ env.BOOTCONFIG_INITRD_LINK }}" || { echo "FAIL: initrd symlink does not resolve"; exit 1; }
 
+      - name: Delete BootConfig and verify cleanup
+        run: |
+          kubectl delete bootconfig "${{ env.BOOTCONFIG_NAME }}"
+          for i in $(seq 1 30); do
+            test ! -e /tmp/isoboot-data/boot/${{ env.BOOTCONFIG_NAME }} && echo "Boot directory cleaned up" && exit 0
+            echo "Attempt $i: boot directory still exists, waiting..."
+            sleep 2
+          done
+          echo "FAIL: boot directory not cleaned up"
+          exit 1
+
+      - name: Recreate BootConfig for Rocky 10.1
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootConfig
+          metadata:
+            name: ${{ env.BOOTCONFIG_NAME }}
+          spec:
+            kernelRef: "${{ env.VMLINUZ_NAME }}"
+            initrdRef: "${{ env.INITRD_NAME }}"
+          EOF
+
+      - name: Wait for recreated BootConfig Ready phase
+        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+
+      - name: Verify recreated BootConfig symlinks
+        run: |
+          target=$(readlink "${{ env.BOOTCONFIG_KERNEL_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.VMLINUZ_NAME }}/vmlinuz" ] || { echo "FAIL: wrong kernel symlink target after recreate"; exit 1; }
+
+          target=$(readlink "${{ env.BOOTCONFIG_INITRD_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.INITRD_NAME }}/initrd.img" ] || { echo "FAIL: wrong initrd symlink target after recreate"; exit 1; }
+
+          test -f "${{ env.BOOTCONFIG_KERNEL_LINK }}" || { echo "FAIL: kernel symlink does not resolve after recreate"; exit 1; }
+          test -f "${{ env.BOOTCONFIG_INITRD_LINK }}" || { echo "FAIL: initrd symlink does not resolve after recreate"; exit 1; }
+
       - name: Collect phase-1 logs on failure
         if: failure()
         run: |
@@ -253,6 +290,43 @@ jobs:
 
           test -f "${{ env.BOOTCONFIG_KERNEL_LINK }}" || { echo "FAIL: kernel symlink does not resolve"; exit 1; }
           test -f "${{ env.BOOTCONFIG_INITRD_LINK }}" || { echo "FAIL: initrd symlink does not resolve"; exit 1; }
+
+      - name: Delete BootConfig and verify cleanup (second cluster)
+        run: |
+          kubectl delete bootconfig "${{ env.BOOTCONFIG_NAME }}"
+          for i in $(seq 1 30); do
+            test ! -e /tmp/isoboot-data/boot/${{ env.BOOTCONFIG_NAME }} && echo "Boot directory cleaned up" && exit 0
+            echo "Attempt $i: boot directory still exists, waiting..."
+            sleep 2
+          done
+          echo "FAIL: boot directory not cleaned up"
+          exit 1
+
+      - name: Recreate BootConfig (second cluster)
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: isoboot.github.io/v1alpha1
+          kind: BootConfig
+          metadata:
+            name: ${{ env.BOOTCONFIG_NAME }}
+          spec:
+            kernelRef: "${{ env.VMLINUZ_NAME }}"
+            initrdRef: "${{ env.INITRD_NAME }}"
+          EOF
+
+      - name: Wait for recreated BootConfig Ready phase (second cluster)
+        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+
+      - name: Verify recreated BootConfig symlinks (second cluster)
+        run: |
+          target=$(readlink "${{ env.BOOTCONFIG_KERNEL_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.VMLINUZ_NAME }}/vmlinuz" ] || { echo "FAIL: wrong kernel symlink target after recreate"; exit 1; }
+
+          target=$(readlink "${{ env.BOOTCONFIG_INITRD_LINK }}")
+          [ "$target" = "../../../artifacts/${{ env.INITRD_NAME }}/initrd.img" ] || { echo "FAIL: wrong initrd symlink target after recreate"; exit 1; }
+
+          test -f "${{ env.BOOTCONFIG_KERNEL_LINK }}" || { echo "FAIL: kernel symlink does not resolve after recreate"; exit 1; }
+          test -f "${{ env.BOOTCONFIG_INITRD_LINK }}" || { echo "FAIL: initrd symlink does not resolve after recreate"; exit 1; }
 
       - name: Collect logs on failure
         if: failure()

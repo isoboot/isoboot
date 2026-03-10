@@ -49,7 +49,15 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	var bc isobootgithubiov1alpha1.BootConfig
 	if err := r.Get(ctx, req.NamespacedName, &bc); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+		// Resource deleted — clean up boot directory
+		bootDir := filepath.Join(r.DataDir, "boot", req.Name)
+		if err := os.RemoveAll(bootDir); err != nil {
+			log.Error(err, "Failed to clean up boot directory", "path", bootDir)
+		}
+		return ctrl.Result{}, nil
 	}
 
 	// Only Mode A (direct refs) for now
@@ -141,6 +149,9 @@ func (r *BootConfigReconciler) setReady(ctx context.Context, bc *isobootgithubio
 }
 
 func (r *BootConfigReconciler) setPending(ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig, message string) (ctrl.Result, error) {
+	if bc.Status.Phase == isobootgithubiov1alpha1.BootConfigPhasePending && bc.Status.Message == message {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
 	bc.Status.Phase = isobootgithubiov1alpha1.BootConfigPhasePending
 	bc.Status.Message = message
 	if err := r.Status().Update(ctx, bc); err != nil {
