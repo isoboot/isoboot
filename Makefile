@@ -128,7 +128,7 @@ PLATFORMS ?= linux/amd64,linux/arm64
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
 	$(CONTAINER_TOOL) buildx use isoboot-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} .
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} .
 	- $(CONTAINER_TOOL) buildx rm isoboot-builder
 
 .PHONY: build-installer
