@@ -2,6 +2,9 @@ name: E2E DHCP Network Test
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/test-e2e-dhcp.yml"
 
 concurrency:
   group: e2e-dhcp-${{ github.ref }}
@@ -58,8 +61,8 @@ jobs:
 
     - name: Start DHCP server container (192.168.101.1)
       run: |
-        # Start container with no networking — we attach it to the bridge
-        docker run -d --name dhcp-srv --network=none --cap-add=NET_ADMIN \
+        # Start with default networking so apk can download dnsmasq
+        docker run -d --name dhcp-srv --cap-add=NET_ADMIN \
           alpine:3.23 sh -c "apk add --no-cache dnsmasq && sleep infinity"
 
         # Wait for dnsmasq binary to be installed
@@ -67,6 +70,9 @@ jobs:
           docker exec dhcp-srv which dnsmasq 2>/dev/null && break
           sleep 1
         done
+
+        # Disconnect from Docker bridge — fully isolate the container
+        docker network disconnect bridge dhcp-srv
 
         # Link container netns so ip-netns can manage it
         SRV_PID=$(docker inspect -f '{{.State.Pid}}' dhcp-srv)
@@ -76,7 +82,7 @@ jobs:
         sudo ip link add veth-srv type veth peer name veth-srv-br
         sudo ip link set veth-srv-br master br-pxe
         sudo ip link set veth-srv-br up
-        sudo ip link set veth-srv netns ns-srv
+        sudo ip link set veth-srv netns "$SRV_PID"
         sudo ip netns exec ns-srv ip addr add 192.168.101.1/24 dev veth-srv
         sudo ip netns exec ns-srv ip link set veth-srv up
         sudo ip netns exec ns-srv ip link set lo up
@@ -130,7 +136,7 @@ jobs:
         sudo ip link add veth-kind type veth peer name veth-kind-br
         sudo ip link set veth-kind-br master br-pxe
         sudo ip link set veth-kind-br up
-        sudo ip link set veth-kind netns ns-kind
+        sudo ip link set veth-kind netns "$KIND_PID"
         sudo ip netns exec ns-kind ip link set veth-kind up
 
         # Get DHCP lease from dnsmasq
