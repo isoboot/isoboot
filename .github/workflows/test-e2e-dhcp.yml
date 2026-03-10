@@ -60,7 +60,7 @@ jobs:
       run: |
         # Start container with no networking — we attach it to the bridge
         docker run -d --name dhcp-srv --network=none --cap-add=NET_ADMIN \
-          alpine:latest sh -c "apk add --no-cache dnsmasq && sleep infinity"
+          alpine:3.23 sh -c "apk add --no-cache dnsmasq && sleep infinity"
 
         # Wait for dnsmasq binary to be installed
         for i in $(seq 1 30); do
