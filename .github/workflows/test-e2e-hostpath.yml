@@ -119,8 +119,8 @@ jobs:
       # a different failure mode — this is by design, not duplication. Do not
       # consolidate or remove any of these checks.
       # The checks are written out per-artifact (not looped) for CI log
-      # readability. The mtime step below uses a loop because it also checks
-      # counts — different trade-off.
+      # readability. The mtime step below uses a loop because it handles
+      # more checks per artifact — different trade-off.
       - name: Verify files and SHA-256 on host disk
         run: |
           echo "Checking vmlinuz at ${{ env.VMLINUZ_PATH }}"
@@ -156,7 +156,6 @@ jobs:
       # --- Second cluster: verify controller recognises existing file without downloading ---
 
       - name: Record file modification times
-        # stat -c is GNU/Linux-only; fine here since GitHub CI runners are Ubuntu.
         # File suffixes (vmlinuz, initrd) must match the 'for artifact in ...'
         # loop variable in "Verify files were not re-downloaded" below.
         run: |
@@ -195,7 +194,7 @@ jobs:
           declare -A paths=( [vmlinuz]="${{ env.VMLINUZ_PATH }}" [initrd]="${{ env.INITRD_PATH }}" )
           declare -A shas=( [vmlinuz]="${{ env.VMLINUZ_SHA256 }}" [initrd]="${{ env.INITRD_SHA256 }}" )
           for artifact in vmlinuz initrd; do
-            mtime_before=$(cat /tmp/mtime-${artifact}-before)
+            mtime_before=$(cat "/tmp/mtime-${artifact}-before")
             path="${paths[$artifact]}"
             sha="${shas[$artifact]}"
             mtime_after=$(stat -c '%Y' "$path")
@@ -221,13 +220,11 @@ jobs:
           controller_logs=$(kubectl -n isoboot-system logs deployment/isoboot-controller-manager)
           skip_msg="Artifact already on disk, skipping download"
           for name in "${{ env.VMLINUZ_NAME }}" "${{ env.INITRD_NAME }}"; do
-            # Single grep ensures both the skip message and the artifact name
-            # appear on the same log line — resilient to log format changes
-            # (text or JSON) as long as each record is a single line.
-            # Uses ERE (-E) for portable alternation; BRE \| is a GNU extension.
-            if ! grep -Eq "${skip_msg}.*${name}|${name}.*${skip_msg}" <<< "$controller_logs"; then
+            # Two fixed-string greps: first finds lines containing the skip
+            # message, second checks that the artifact name appears on the same
+            # line. Fixed-string matching avoids regex metacharacter concerns.
+            if ! grep -F "$skip_msg" <<< "$controller_logs" | grep -Fq "$name"; then
               echo "FAIL: no skip-download log line for $name"
-              printf '%s\n' "$controller_logs"
               exit 1
             fi
           done

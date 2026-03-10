@@ -14,3 +14,7 @@
 - Run `make lint` to check for linting errors.
 - Run `make test` to run unit tests.
 - Update the PR description (if any) to match the branch content.
+
+## GitHub Actions
+
+- Workflows only run on Ubuntu runners. Do not worry about portability (e.g. macOS, Alpine, BusyBox). GNU coreutils and Bash 5.x are always available.
