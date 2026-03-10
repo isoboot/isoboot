@@ -66,6 +66,10 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
+	if bc.Spec.FirmwareRef != nil {
+		return r.setError(ctx, &bc, "firmwareRef is not yet supported")
+	}
+
 	// Look up referenced BootArtifacts
 	kernelArtifact, err := r.getArtifact(ctx, *bc.Spec.KernelRef, bc.Namespace)
 	if err != nil {
