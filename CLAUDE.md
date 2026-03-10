@@ -12,7 +12,7 @@
 ## Before Pushing
 
 - Run `make lint` to check for linting errors.
-- Run `make test` to run unit tests.
+- Run `make test` to run unit tests (e2e tests run in CI only).
 - Update the PR description (if any) to match the branch content.
 
 ## GitHub Actions

@@ -145,10 +145,11 @@ jobs:
       # --- Second cluster: verify controller recognises existing file without downloading ---
 
       - name: Record file modification times
-        # Suffixes must match the 'for artifact in ...' loop below.
         run: |
-          stat -c '%Y' "${{ env.VMLINUZ_PATH }}" > /tmp/mtime-vmlinuz-before
-          stat -c '%Y' "${{ env.INITRD_PATH }}" > /tmp/mtime-initrd-before
+          declare -A paths=( [vmlinuz]="${{ env.VMLINUZ_PATH }}" [initrd]="${{ env.INITRD_PATH }}" )
+          for artifact in "${!paths[@]}"; do
+            stat -c '%Y' "${paths[$artifact]}" > "/tmp/mtime-${artifact}-before"
+          done
 
       - name: Create second Kind cluster with same hostPath
         run: kind create cluster --name isoboot-hostpath --config test/e2e/kind-config-hostpath.yaml
@@ -198,7 +199,7 @@ jobs:
           [[ -n "$controller_logs" ]] || { echo "FAIL: controller logs are empty"; exit 1; }
           skip_msg="Artifact already on disk, skipping download"
           for name in "${{ env.VMLINUZ_NAME }}" "${{ env.INITRD_NAME }}"; do
-            if ! grep -F "$skip_msg" <<< "$controller_logs" | grep -Fq "$name"; then
+            if ! printf '%s\n' "$controller_logs" | grep -F "$skip_msg" | grep -Fq "$name"; then
               echo "FAIL: no skip-download log line for $name"
               exit 1
             fi
