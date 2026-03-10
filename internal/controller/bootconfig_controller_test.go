@@ -280,6 +280,37 @@ var _ = Describe("BootConfig Controller", func() {
 			Expect(status.Message).To(ContainSubstring("not found"))
 		})
 
+		It("should remove stale symlinks when ref filename changes", func() {
+			kernelName := "bc-stale-kernel"
+			initrdName := "bc-stale-initrd"
+			bcName := "bc-stale"
+
+			cleanup := setupReadyPair(kernelName, initrdName)
+			defer cleanup()
+
+			createBootConfig(bcName, kernelName, initrdName)
+			defer deleteResource(bcName)
+
+			_, err := doReconcile(bcName)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Simulate a ref change: remove correct symlink and plant a stale one
+			correctLink := filepath.Join(dataDir, "boot", bcName, "kernel", "vmlinuz")
+			Expect(os.Remove(correctLink)).To(Succeed())
+			staleLink := filepath.Join(dataDir, "boot", bcName, "kernel", "old-vmlinuz")
+			Expect(os.Symlink("../../../artifacts/old/old-vmlinuz", staleLink)).To(Succeed())
+
+			// Reconcile — should create correct symlink and remove stale one
+			_, err = doReconcile(bcName)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = os.Lstat(staleLink)
+			Expect(os.IsNotExist(err)).To(BeTrue())
+
+			// Correct symlink should be recreated
+			expectSymlinksReady(bcName, kernelName, initrdName)
+		})
+
 		It("should be idempotent on repeated reconcile", func() {
 			kernelName := "bc-idem-kernel"
 			initrdName := "bc-idem-initrd"

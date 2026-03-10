@@ -107,16 +107,14 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.setError(ctx, &bc, fmt.Sprintf("creating initrd dir: %v", err))
 	}
 
-	// Create symlinks (relative paths)
-	kernelLink := filepath.Join(kernelDir, kernelFilename)
+	// Create symlinks (relative paths), removing stale entries from ref changes
 	kernelTarget := filepath.Join("..", "..", "..", "artifacts", kernelArtifact.Name, kernelFilename)
-	if err := r.ensureSymlink(kernelLink, kernelTarget); err != nil {
+	if err := ensureSymlink(kernelDir, kernelFilename, kernelTarget); err != nil {
 		return r.setError(ctx, &bc, fmt.Sprintf("creating kernel symlink: %v", err))
 	}
 
-	initrdLink := filepath.Join(initrdDir, initrdFilename)
 	initrdTarget := filepath.Join("..", "..", "..", "artifacts", initrdArtifact.Name, initrdFilename)
-	if err := r.ensureSymlink(initrdLink, initrdTarget); err != nil {
+	if err := ensureSymlink(initrdDir, initrdFilename, initrdTarget); err != nil {
 		return r.setError(ctx, &bc, fmt.Sprintf("creating initrd symlink: %v", err))
 	}
 
@@ -135,13 +133,17 @@ func (r *BootConfigReconciler) getArtifact(ctx context.Context, name, namespace 
 	return &artifact, nil
 }
 
-func (r *BootConfigReconciler) ensureSymlink(link, target string) error {
+func ensureSymlink(dir, filename, target string) error {
+	link := filepath.Join(dir, filename)
 	existing, err := os.Readlink(link)
 	if err == nil && existing == target {
 		return nil // already correct
 	}
-	// Remove stale link or file
-	_ = os.Remove(link)
+	// Symlink is wrong or missing — clean all entries (stale refs, wrong target)
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+	}
 	return os.Symlink(target, link)
 }
 
