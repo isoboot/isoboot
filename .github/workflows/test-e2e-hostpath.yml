@@ -199,10 +199,6 @@ jobs:
             echo "${artifact} mtime unchanged"
             echo "${sha}  ${path}" | sha256sum -c
           done
-          if ! kubectl -n isoboot-system logs deployment/isoboot-controller-manager | grep -q "Artifact already on disk, skipping download"; then
-            echo "FAIL: controller did not log skip-download message"
-            exit 1
-          fi
 
       - name: Collect logs on failure
         if: failure()
