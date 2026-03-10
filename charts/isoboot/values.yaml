@@ -4,7 +4,8 @@ nodeName: ""
 
 image:
   repository: ghcr.io/isoboot/isoboot
-  tag: latest
+  # tag defaults to .Chart.AppVersion if omitted
+  tag: ""
   pullPolicy: IfNotPresent
 
 dataDir: /data/isoboot

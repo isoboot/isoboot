@@ -34,7 +34,7 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=:8443
         - --data-dir={{ .Values.dataDir }}
-        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         securityContext:
           readOnlyRootFilesystem: true
@@ -63,6 +63,6 @@ spec:
       - name: data
         hostPath:
           path: {{ .Values.dataDir }}
-          type: DirectoryOrCreate
+          type: Directory
       serviceAccountName: {{ include "isoboot.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
