@@ -182,23 +182,15 @@ jobs:
 
       - name: Verify files were not re-downloaded
         run: |
-          for artifact in vmlinuz initrd; do
-            mtime_before=$(cat "/tmp/mtime-${artifact}")
-            if [ "$artifact" = "vmlinuz" ]; then
-              path="${{ env.VMLINUZ_PATH }}"
-              sha="${{ env.VMLINUZ_SHA256 }}"
-            else
-              path="${{ env.INITRD_PATH }}"
-              sha="${{ env.INITRD_SHA256 }}"
-            fi
-            mtime_after=$(stat -c '%Y' "$path")
-            if [ "$mtime_before" != "$mtime_after" ]; then
-              echo "FAIL: ${artifact} was re-downloaded (mtime changed)"
-              exit 1
-            fi
-            echo "${artifact} mtime unchanged"
-            echo "${sha}  ${path}" | sha256sum -c
-          done
+          mtime_before=$(cat /tmp/mtime-vmlinuz)
+          mtime_after=$(stat -c '%Y' "${{ env.VMLINUZ_PATH }}")
+          [ "$mtime_before" = "$mtime_after" ] || { echo "FAIL: vmlinuz re-downloaded"; exit 1; }
+          echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.VMLINUZ_PATH }}" | sha256sum -c
+
+          mtime_before=$(cat /tmp/mtime-initrd)
+          mtime_after=$(stat -c '%Y' "${{ env.INITRD_PATH }}")
+          [ "$mtime_before" = "$mtime_after" ] || { echo "FAIL: initrd re-downloaded"; exit 1; }
+          echo "${{ env.INITRD_SHA256 }}  ${{ env.INITRD_PATH }}" | sha256sum -c
 
       - name: Collect logs on failure
         if: failure()
