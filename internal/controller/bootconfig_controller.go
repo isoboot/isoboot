@@ -68,11 +68,17 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Look up referenced BootArtifacts
 	kernelArtifact, err := r.getArtifact(ctx, *bc.Spec.KernelRef, bc.Namespace)
 	if err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
 		return r.setError(ctx, &bc, fmt.Sprintf("kernel artifact %q not found", *bc.Spec.KernelRef))
 	}
 
 	initrdArtifact, err := r.getArtifact(ctx, *bc.Spec.InitrdRef, bc.Namespace)
 	if err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
 		return r.setError(ctx, &bc, fmt.Sprintf("initrd artifact %q not found", *bc.Spec.InitrdRef))
 	}
 
