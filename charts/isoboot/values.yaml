@@ -8,6 +8,8 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
+# dataDir must be pre-created on the target node and writable by UID 65532.
+# Example: sudo mkdir -p /data/isoboot && sudo chown 65532:65532 /data/isoboot
 dataDir: /data/isoboot
 
 resources:
