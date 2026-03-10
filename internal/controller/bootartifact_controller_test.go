@@ -30,7 +30,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,8 +78,8 @@ var _ = Describe("BootArtifact Controller", func() {
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			},
-			Entry("sha256 only", "valid-sha256", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/vmlinuz", SHA256: ptr.To(validSHA256)}),
-			Entry("sha512 only", "valid-sha512", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/vmlinuz", SHA512: ptr.To(validSHA512)}),
+			Entry("sha256 only", "valid-sha256", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/vmlinuz", SHA256: new(validSHA256)}),
+			Entry("sha512 only", "valid-sha512", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/vmlinuz", SHA512: new(validSHA512)}),
 		)
 
 		DescribeTable("should reject invalid specs",
@@ -88,16 +87,16 @@ var _ = Describe("BootArtifact Controller", func() {
 				resource := newArtifact(name, spec)
 				Expect(k8sClient.Create(ctx, resource)).NotTo(Succeed())
 			},
-			Entry("both hashes set", "both", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA256: ptr.To(validSHA256), SHA512: ptr.To(validSHA512)}),
+			Entry("both hashes set", "both", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA256: new(validSHA256), SHA512: new(validSHA512)}),
 			Entry("no hash set", "none", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f"}),
-			Entry("short sha256", "short256", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA256: ptr.To("abcdef")}),
-			Entry("short sha512", "short512", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA512: ptr.To("abcdef")}),
-			Entry("non-hex sha256", "nonhex256", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA256: ptr.To("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")}),
-			Entry("non-hex sha512", "nonhex512", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA512: ptr.To("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")}),
-			Entry("http url", "http", isobootgithubiov1alpha1.BootArtifactSpec{URL: "http://example.com/f", SHA256: ptr.To(validSHA256)}),
-			Entry("empty url", "empty", isobootgithubiov1alpha1.BootArtifactSpec{URL: "", SHA256: ptr.To(validSHA256)}),
-			Entry("path traversal", "traversal", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/foo/../bar", SHA256: ptr.To(validSHA256)}),
-			Entry("path traversal at end", "traversal-end", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/..", SHA256: ptr.To(validSHA256)}),
+			Entry("short sha256", "short256", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA256: new("abcdef")}),
+			Entry("short sha512", "short512", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA512: new("abcdef")}),
+			Entry("non-hex sha256", "nonhex256", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA256: new("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")}),
+			Entry("non-hex sha512", "nonhex512", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/f", SHA512: new("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")}),
+			Entry("http url", "http", isobootgithubiov1alpha1.BootArtifactSpec{URL: "http://example.com/f", SHA256: new(validSHA256)}),
+			Entry("empty url", "empty", isobootgithubiov1alpha1.BootArtifactSpec{URL: "", SHA256: new(validSHA256)}),
+			Entry("path traversal", "traversal", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/foo/../bar", SHA256: new(validSHA256)}),
+			Entry("path traversal at end", "traversal-end", isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/..", SHA256: new(validSHA256)}),
 		)
 	})
 
@@ -145,7 +144,7 @@ var _ = Describe("BootArtifact Controller", func() {
 		createArtifact := func(name, url, sha string) {
 			resource := &isobootgithubiov1alpha1.BootArtifact{
 				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: url, SHA256: ptr.To(sha)},
+				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: url, SHA256: new(sha)},
 			}
 			ExpectWithOffset(1, k8sClient.Create(ctx, resource)).To(Succeed())
 		}
@@ -195,7 +194,7 @@ var _ = Describe("BootArtifact Controller", func() {
 			name := "dl-sha512"
 			resource := &isobootgithubiov1alpha1.BootArtifact{
 				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: serverURL + "/vmlinuz", SHA512: ptr.To(sha512Hex(content))},
+				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: serverURL + "/vmlinuz", SHA512: new(sha512Hex(content))},
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			defer deleteArtifact(name)

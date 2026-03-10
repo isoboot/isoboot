@@ -23,7 +23,6 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,8 +52,8 @@ var _ = Describe("BootConfig Controller", func() {
 						Namespace: "default",
 					},
 					Spec: isobootgithubiov1alpha1.BootConfigSpec{
-						KernelRef: ptr.To("test-kernel"),
-						InitrdRef: ptr.To("test-initrd"),
+						KernelRef: new("test-kernel"),
+						InitrdRef: new("test-initrd"),
 					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -100,13 +99,13 @@ var _ = Describe("BootConfig Controller", func() {
 				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			},
 			Entry("mode A: kernel and initrd", "valid-mode-a", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef: ptr.To("my-kernel"),
-				InitrdRef: ptr.To("my-initrd"),
+				KernelRef: new("my-kernel"),
+				InitrdRef: new("my-initrd"),
 			}),
 			Entry("mode A: with firmware", "valid-mode-a-fw", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef:   ptr.To("my-kernel"),
-				InitrdRef:   ptr.To("my-initrd"),
-				FirmwareRef: ptr.To("my-firmware"),
+				KernelRef:   new("my-kernel"),
+				InitrdRef:   new("my-initrd"),
+				FirmwareRef: new("my-firmware"),
 			}),
 			Entry("mode B: iso", "valid-mode-b", isobootgithubiov1alpha1.BootConfigSpec{
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
@@ -124,8 +123,8 @@ var _ = Describe("BootConfig Controller", func() {
 			},
 			Entry("neither mode", "no-mode", isobootgithubiov1alpha1.BootConfigSpec{}),
 			Entry("both modes", "both-modes", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef: ptr.To("my-kernel"),
-				InitrdRef: ptr.To("my-initrd"),
+				KernelRef: new("my-kernel"),
+				InitrdRef: new("my-initrd"),
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
 					ArtifactRef: "my-iso",
 					KernelPath:  "casper/vmlinuz",
@@ -133,13 +132,13 @@ var _ = Describe("BootConfig Controller", func() {
 				},
 			}),
 			Entry("kernelRef without initrdRef", "kernel-only", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef: ptr.To("my-kernel"),
+				KernelRef: new("my-kernel"),
 			}),
 			Entry("initrdRef without kernelRef", "initrd-only", isobootgithubiov1alpha1.BootConfigSpec{
-				InitrdRef: ptr.To("my-initrd"),
+				InitrdRef: new("my-initrd"),
 			}),
 			Entry("firmwareRef with iso mode", "fw-with-iso", isobootgithubiov1alpha1.BootConfigSpec{
-				FirmwareRef: ptr.To("my-firmware"),
+				FirmwareRef: new("my-firmware"),
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
 					ArtifactRef: "my-iso",
 					KernelPath:  "casper/vmlinuz",
