@@ -12,7 +12,6 @@
 {{- end -}}
 
 {{- define "isoboot.selectorLabels" -}}
-control-plane: controller-manager
 app.kubernetes.io/name: isoboot
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}

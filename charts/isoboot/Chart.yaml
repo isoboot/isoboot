@@ -2,5 +2,6 @@ apiVersion: v2
 name: isoboot
 description: isoboot controller for managing network boot artifacts
 type: application
+kubeVersion: ">=1.25.0-0"
 version: 0.1.0
 appVersion: "0.1.0"
