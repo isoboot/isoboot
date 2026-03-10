@@ -88,7 +88,8 @@ jobs:
           --bind-interfaces \
           --dhcp-range=192.168.101.100,192.168.101.200,255.255.255.0,1h \
           --dhcp-option=option:router,192.168.101.1 \
-          --log-dhcp
+          --log-dhcp \
+          --log-facility=/tmp/dnsmasq.log
 
         # Wait for dnsmasq to be ready
         for i in 1 2 3 4 5; do
@@ -257,6 +258,8 @@ jobs:
         sudo ip netns exec ns-srv ip addr 2>/dev/null || true
         echo "=== Kind node (ns-kind) ==="
         sudo ip netns exec ns-kind ip addr 2>/dev/null || true
+        echo "=== dnsmasq DHCP logs ==="
+        docker exec dhcp-srv cat /tmp/dnsmasq.log 2>/dev/null || true
         echo "=== dnsmasq container logs ==="
         docker logs dhcp-srv 2>/dev/null || true
         echo "=== BootArtifact status ==="
