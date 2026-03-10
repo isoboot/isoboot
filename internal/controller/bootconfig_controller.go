@@ -62,6 +62,7 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// Only Mode A (direct refs) for now
 	if bc.Spec.KernelRef == nil || bc.Spec.InitrdRef == nil {
+		log.V(1).Info("Skipping BootConfig without direct refs")
 		return ctrl.Result{}, nil
 	}
 
@@ -184,7 +185,7 @@ func (r *BootConfigReconciler) setError(ctx context.Context, bc *isobootgithubio
 
 func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, obj client.Object) []reconcile.Request {
 	var configs isobootgithubiov1alpha1.BootConfigList
-	if err := r.List(ctx, &configs); err != nil {
+	if err := r.List(ctx, &configs, client.InNamespace(obj.GetNamespace())); err != nil {
 		return nil
 	}
 
