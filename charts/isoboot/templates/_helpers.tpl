@@ -19,5 +19,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "isoboot.labels" -}}
 {{ include "isoboot.selectorLabels" . }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
