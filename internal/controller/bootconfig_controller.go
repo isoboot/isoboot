@@ -113,7 +113,9 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.setError(ctx, &bc, fmt.Sprintf("creating initrd symlink: %v", err))
 	}
 
-	log.Info("BootConfig assembled", "name", bc.Name, "bootDir", bootDir)
+	if bc.Status.Phase != isobootgithubiov1alpha1.BootConfigPhaseReady {
+		log.Info("BootConfig assembled", "name", bc.Name, "bootDir", bootDir)
+	}
 
 	return r.setReady(ctx, &bc)
 }
