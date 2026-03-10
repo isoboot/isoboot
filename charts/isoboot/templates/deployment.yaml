@@ -20,6 +20,8 @@ spec:
       labels:
         {{- include "isoboot.selectorLabels" . | nindent 8 }}
     spec:
+      serviceAccountName: {{ include "isoboot.fullname" . }}-controller-manager
+      terminationGracePeriodSeconds: 10
       nodeName: {{ .Values.nodeName }}
       securityContext:
         runAsNonRoot: true
@@ -63,5 +65,3 @@ spec:
         hostPath:
           path: {{ .Values.dataDir }}
           type: Directory
-      serviceAccountName: {{ include "isoboot.fullname" . }}-controller-manager
-      terminationGracePeriodSeconds: 10

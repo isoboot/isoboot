@@ -99,6 +99,7 @@ subjects:
   name: {{ include "isoboot.fullname" . }}-controller-manager
   namespace: {{ .Release.Namespace }}
 ---
+# metrics-reader: bind this role to any subject that needs to scrape /metrics
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
