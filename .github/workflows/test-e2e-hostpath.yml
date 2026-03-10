@@ -25,7 +25,7 @@ on:
 
 env:
   KIND_VERSION: v0.31.0
-  # Rocky Linux 10.1 — SHA256 from .treeinfo
+  # Rocky Linux 10.1 — SHA256s from .treeinfo
   VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
   VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
   VMLINUZ_NAME: rocky-10.1-vmlinuz
