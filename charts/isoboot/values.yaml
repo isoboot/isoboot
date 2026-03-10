@@ -1,0 +1,18 @@
+# nodeName is required — the node where the controller pod will be scheduled.
+# All data is stored on this node via hostPath.
+nodeName: ""
+
+image:
+  repository: ghcr.io/isoboot/isoboot
+  tag: latest
+  pullPolicy: IfNotPresent
+
+dataDir: /data/isoboot
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
