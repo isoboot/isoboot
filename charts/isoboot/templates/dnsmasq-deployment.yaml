@@ -129,11 +129,15 @@ spec:
         - name: ipxe
           mountPath: /ipxe
           readOnly: true
+        - name: run
+          mountPath: /var/lib/misc
       volumes:
       - name: data
         hostPath:
           path: {{ .Values.dataDir }}
           type: Directory
       - name: ipxe
+        emptyDir: {}
+      - name: run
         emptyDir: {}
 {{- end }}
