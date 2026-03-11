@@ -47,7 +47,7 @@ spec:
             topologyKey: kubernetes.io/hostname
       initContainers:
       - name: extract-ipxe
-        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag }}"
+        image: {{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}
         command: ["/bin/sh", "-c"]
         args:
         - |
@@ -67,13 +67,11 @@ spec:
           mountPath: /ipxe
       containers:
       - name: dnsmasq
-        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag }}"
+        image: {{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}
         command: ["/bin/sh", "-c"]
         args:
         - |
           set -e
-          apk add --no-cache dnsmasq iproute2
-
           SUBNET="{{ .Values.dnsmasq.subnet }}"
           IFACE=$(ip -4 route show "$SUBNET" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
           [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; ip -4 route show; exit 1; }
@@ -101,7 +99,9 @@ spec:
             --log-dhcp \
             --log-facility=-
         securityContext:
+          runAsNonRoot: true
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop: ["ALL"]
             add:

@@ -50,8 +50,9 @@ dnsmasq:
     url: "https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz"
     sha512: "14ab6e793b87f5ee8437b79bcba1edc39a1e10a69a6c71dac3e2b17422bdbc7a8184d2b2a4b3a3193674850239994bb0b95907b89a7a630454d57c30af09089b"
   image:
-    repository: alpine
-    tag: "3.23"
+    repository: ghcr.io/isoboot/isoboot-dnsmasq
+    # tag defaults to .Chart.AppVersion if omitted
+    tag: ""
   resources:
     limits:
       cpu: 100m
