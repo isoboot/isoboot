@@ -23,6 +23,10 @@ on:
       - "go.sum"
       - ".github/workflows/test-helm.yml"
 
+concurrency:
+  group: helm-test-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   KIND_VERSION: v0.31.0
   IMG: ghcr.io/isoboot/isoboot:${{ github.sha }}
