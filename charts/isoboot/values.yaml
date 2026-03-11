@@ -41,3 +41,18 @@ resources:
   requests:
     cpu: 10m
     memory: 64Mi
+
+dnsmasq:
+  enabled: false
+  # subnet is required when dnsmasq is enabled (e.g. "192.168.101.0/24").
+  subnet: ""
+  image:
+    repository: alpine
+    tag: "3.23"
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
