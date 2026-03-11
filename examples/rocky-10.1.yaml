@@ -1,7 +1,7 @@
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
 metadata:
-  name: rocky-10-1-kernel
+  name: rocky-10.1-kernel
   labels:
     app.kubernetes.io/name: isoboot
 spec:
@@ -11,7 +11,7 @@ spec:
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
 metadata:
-  name: rocky-10-1-initrd
+  name: rocky-10.1-initrd
   labels:
     app.kubernetes.io/name: isoboot
 spec:
@@ -21,9 +21,9 @@ spec:
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootConfig
 metadata:
-  name: rocky-10-1
+  name: rocky-10.1
   labels:
     app.kubernetes.io/name: isoboot
 spec:
-  kernelRef: rocky-10-1-kernel
-  initrdRef: rocky-10-1-initrd
+  kernelRef: rocky-10.1-kernel
+  initrdRef: rocky-10.1-initrd
