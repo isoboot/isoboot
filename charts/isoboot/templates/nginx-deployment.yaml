@@ -19,11 +19,33 @@ spec:
     spec:
       hostNetwork: true
       nodeName: {{ .Values.nodeName }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: nginx
         image: {{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}
         ports:
         - containerPort: {{ .Values.nginx.port }}
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        livenessProbe:
+          tcpSocket:
+            port: {{ .Values.nginx.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.nginx.port }}
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        resources:
+          {{- toYaml .Values.nginx.resources | nindent 10 }}
         volumeMounts:
         - name: config
           mountPath: /etc/nginx/nginx.conf
