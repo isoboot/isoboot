@@ -24,8 +24,6 @@ env:
   # Rocky Linux 10.1 — SHA-256 digests from .treeinfo
   VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
   INITRD_SHA256: "07ec303514509b4ddbfe8df90f65dddaf48519f25b416a2a5368903fe39c627a"
-  IPXE_KPXE_URL: "https://boot.ipxe.org/undionly.kpxe"
-  IPXE_EFI_URL: "https://boot.ipxe.org/x86_64-efi/ipxe.efi"
 
 jobs:
   release-and-test:
@@ -233,38 +231,9 @@ jobs:
         kubectl get crd bootartifacts.isoboot.github.io
         kubectl get crd bootconfigs.isoboot.github.io
 
-    # ── iPXE boot firmware ──────────────────────────────────────────
-    - name: Compute iPXE SHA-256 hashes
-      run: |
-        wget -q -O /tmp/ipxe-undionly.kpxe "${{ env.IPXE_KPXE_URL }}"
-        wget -q -O /tmp/ipxe-efi.efi "${{ env.IPXE_EFI_URL }}"
-        echo "IPXE_KPXE_SHA256=$(sha256sum /tmp/ipxe-undionly.kpxe | awk '{print $1}')" >> "$GITHUB_ENV"
-        echo "IPXE_EFI_SHA256=$(sha256sum /tmp/ipxe-efi.efi | awk '{print $1}')" >> "$GITHUB_ENV"
-
-    - name: Create BootArtifacts for iPXE firmware
-      run: |
-        kubectl apply -f - <<EOF
-        apiVersion: isoboot.github.io/v1alpha1
-        kind: BootArtifact
-        metadata:
-          name: ipxe-undionly-kpxe
-        spec:
-          url: "${{ env.IPXE_KPXE_URL }}"
-          sha256: "${{ env.IPXE_KPXE_SHA256 }}"
-        ---
-        apiVersion: isoboot.github.io/v1alpha1
-        kind: BootArtifact
-        metadata:
-          name: ipxe-efi
-        spec:
-          url: "${{ env.IPXE_EFI_URL }}"
-          sha256: "${{ env.IPXE_EFI_SHA256 }}"
-        EOF
-
-    - name: Wait for iPXE BootArtifacts Ready
-      run: |
-        ./test/e2e/wait-for-bootartifact.sh ipxe-undionly-kpxe
-        ./test/e2e/wait-for-bootartifact.sh ipxe-efi
+    # ── iPXE boot firmware (created by chart when dnsmasq.enabled) ──
+    - name: Wait for iPXE BootArtifact Ready
+      run: ./test/e2e/wait-for-bootartifact.sh isoboot-ipxe
 
     - name: Wait for dnsmasq pod ready
       run: |

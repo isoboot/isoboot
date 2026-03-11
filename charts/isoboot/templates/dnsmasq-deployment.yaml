@@ -42,6 +42,24 @@ spec:
                 {{- include "isoboot.selectorLabels" . | nindent 16 }}
                 app.kubernetes.io/component: dnsmasq
             topologyKey: kubernetes.io/hostname
+      initContainers:
+      - name: extract-ipxe
+        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          TARBALL="{{ .Values.dataDir }}/artifacts/{{ include "isoboot.fullname" . }}-ipxe/ipxeboot.tar.gz"
+          DEST="{{ .Values.dataDir }}/ipxe"
+          echo "Waiting for iPXE tarball at $TARBALL..."
+          until [ -f "$TARBALL" ]; do sleep 2; done
+          mkdir -p "$DEST"
+          tar xzf "$TARBALL" -C "$DEST" --strip-components=2 ipxeboot/x86_64/
+          echo "Extracted x86_64 iPXE files to $DEST:"
+          ls -la "$DEST"
+        volumeMounts:
+        - name: data
+          mountPath: {{ .Values.dataDir }}
       containers:
       - name: dnsmasq
         image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag }}"
@@ -69,12 +87,12 @@ spec:
             --dhcp-match=set:efi64,option:client-arch,7 \
             --dhcp-match=set:efi64,option:client-arch,9 \
             --dhcp-match=set:ipxe,175 \
-            --pxe-service="tag:!ipxe,X86PC,Network Boot,ipxe-undionly-kpxe/undionly.kpxe,${HOST_IP}" \
-            --pxe-service="tag:!ipxe,X86-64_EFI,Network Boot UEFI,ipxe-efi/ipxe.efi,${HOST_IP}" \
-            --pxe-service="tag:!ipxe,BC_EFI,Network Boot UEFI,ipxe-efi/ipxe.efi,${HOST_IP}" \
+            --pxe-service="tag:!ipxe,X86PC,Network Boot,undionly.kpxe,${HOST_IP}" \
+            --pxe-service="tag:!ipxe,X86-64_EFI,Network Boot UEFI,ipxe.efi,${HOST_IP}" \
+            --pxe-service="tag:!ipxe,BC_EFI,Network Boot UEFI,ipxe.efi,${HOST_IP}" \
             --dhcp-boot="tag:ipxe,http://${HOST_IP}:{{ .Values.nginx.port }}/static/boot.ipxe" \
             --enable-tftp \
-            --tftp-root={{ .Values.dataDir }}/artifacts \
+            --tftp-root={{ .Values.dataDir }}/ipxe \
             --log-dhcp \
             --log-facility=-
         securityContext:
@@ -87,7 +105,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - test -f {{ .Values.dataDir }}/artifacts/ipxe-undionly-kpxe/undionly.kpxe && test -f {{ .Values.dataDir }}/artifacts/ipxe-efi/ipxe.efi
+            - test -f {{ .Values.dataDir }}/ipxe/undionly.kpxe && test -f {{ .Values.dataDir }}/ipxe/ipxe.efi
           initialDelaySeconds: 5
           periodSeconds: 10
         livenessProbe:
@@ -102,7 +120,6 @@ spec:
         volumeMounts:
         - name: data
           mountPath: {{ .Values.dataDir }}
-          readOnly: true
       volumes:
       - name: data
         hostPath:
