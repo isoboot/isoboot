@@ -53,7 +53,7 @@ spec:
         - --metrics-bind-address=:8443
         - "--data-dir={{ .Values.dataDir }}"
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        imagePullPolicy: "{{ .Values.image.pullPolicy }}"
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false

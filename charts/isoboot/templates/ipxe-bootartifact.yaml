@@ -10,6 +10,6 @@ metadata:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "0"
 spec:
-  url: {{ .Values.dnsmasq.ipxe.url | quote }}
-  sha512: {{ .Values.dnsmasq.ipxe.sha512 | quote }}
+  url: "{{ .Values.dnsmasq.ipxe.url }}"
+  sha512: "{{ .Values.dnsmasq.ipxe.sha512 }}"
 {{- end }}
