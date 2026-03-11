@@ -121,8 +121,10 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        docker run -d --name dhcp-srv --network=none --cap-add=NET_ADMIN \
-          ${{ env.IMAGE }}-dnsmasq:${VERSION} sleep infinity
+        docker run -d --name dhcp-srv --network=none \
+          --cap-add=NET_ADMIN --cap-add=NET_BIND_SERVICE \
+          --entrypoint sleep \
+          ${{ env.IMAGE }}-dnsmasq:${VERSION} infinity
 
         # Link container netns so ip-netns can manage it
         SRV_PID=$(docker inspect -f '{{.State.Pid}}' dhcp-srv)
