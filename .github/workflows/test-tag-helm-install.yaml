@@ -23,9 +23,7 @@ env:
   KIND_VERSION: v0.31.0
   # Rocky Linux 10.1 — SHA-256 digests from .treeinfo
   VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
-  VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
   INITRD_SHA256: "07ec303514509b4ddbfe8df90f65dddaf48519f25b416a2a5368903fe39c627a"
-  INITRD_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/initrd.img"
   IPXE_KPXE_URL: "https://boot.ipxe.org/undionly.kpxe"
   IPXE_EFI_URL: "https://boot.ipxe.org/x86_64-efi/ipxe.efi"
 
@@ -275,66 +273,37 @@ jobs:
         kubectl -n isoboot-system get pods
 
     # ── Rocky Linux 10.1 boot artifacts ──────────────────────────────
-    - name: Create BootArtifacts for Rocky Linux 10.1
-      run: |
-        kubectl apply -f - <<EOF
-        apiVersion: isoboot.github.io/v1alpha1
-        kind: BootArtifact
-        metadata:
-          name: rocky-10.1-vmlinuz
-        spec:
-          url: "${{ env.VMLINUZ_URL }}"
-          sha256: "${{ env.VMLINUZ_SHA256 }}"
-        ---
-        apiVersion: isoboot.github.io/v1alpha1
-        kind: BootArtifact
-        metadata:
-          name: rocky-10.1-initrd
-        spec:
-          url: "${{ env.INITRD_URL }}"
-          sha256: "${{ env.INITRD_SHA256 }}"
-        EOF
+    - name: Apply Rocky Linux 10.1 example manifest
+      run: kubectl apply -f examples/rocky-10.1.yaml
 
     - name: Wait for BootArtifacts Ready
       run: |
-        ./test/e2e/wait-for-bootartifact.sh rocky-10.1-vmlinuz
+        ./test/e2e/wait-for-bootartifact.sh rocky-10.1-kernel
         ./test/e2e/wait-for-bootartifact.sh rocky-10.1-initrd
 
     - name: Verify artifact SHA-256 on host disk
       run: |
-        echo "${{ env.VMLINUZ_SHA256 }}  /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz" | sha256sum -c
+        echo "${{ env.VMLINUZ_SHA256 }}  /tmp/isoboot-data/artifacts/rocky-10.1-kernel/vmlinuz" | sha256sum -c
         echo "${{ env.INITRD_SHA256 }}  /tmp/isoboot-data/artifacts/rocky-10.1-initrd/initrd.img" | sha256sum -c
 
-    - name: Create BootConfig for Rocky Linux 10.1
-      run: |
-        kubectl apply -f - <<EOF
-        apiVersion: isoboot.github.io/v1alpha1
-        kind: BootConfig
-        metadata:
-          name: rocky-linux-10.1
-        spec:
-          kernelRef: rocky-10.1-vmlinuz
-          initrdRef: rocky-10.1-initrd
-        EOF
-
     - name: Wait for BootConfig Ready
-      run: ./test/e2e/wait-for-bootconfig.sh rocky-linux-10.1
+      run: ./test/e2e/wait-for-bootconfig.sh rocky-10.1
 
     - name: Verify BootConfig symlinks on host disk
       run: |
         # Verify kernel symlink
-        target=$(readlink /tmp/isoboot-data/boot/rocky-linux-10.1/kernel/vmlinuz)
+        target=$(readlink /tmp/isoboot-data/boot/rocky-10.1/kernel/vmlinuz)
         echo "kernel symlink target: $target"
-        [ "$target" = "../../../artifacts/rocky-10.1-vmlinuz/vmlinuz" ] || { echo "FAIL: wrong kernel target"; exit 1; }
+        [ "$target" = "../../../artifacts/rocky-10.1-kernel/vmlinuz" ] || { echo "FAIL: wrong kernel target"; exit 1; }
 
         # Verify initrd symlink
-        target=$(readlink /tmp/isoboot-data/boot/rocky-linux-10.1/initrd/initrd.img)
+        target=$(readlink /tmp/isoboot-data/boot/rocky-10.1/initrd/initrd.img)
         echo "initrd symlink target: $target"
         [ "$target" = "../../../artifacts/rocky-10.1-initrd/initrd.img" ] || { echo "FAIL: wrong initrd target"; exit 1; }
 
         # Verify symlinks resolve to actual files
-        test -f /tmp/isoboot-data/boot/rocky-linux-10.1/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
-        test -f /tmp/isoboot-data/boot/rocky-linux-10.1/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
+        test -f /tmp/isoboot-data/boot/rocky-10.1/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
+        test -f /tmp/isoboot-data/boot/rocky-10.1/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
 
     # ── Static iPXE boot script (hardcoded Rocky Linux 10.1) ───────
     - name: Write boot.ipxe script
@@ -342,8 +311,8 @@ jobs:
         KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
         cat <<IPXE | sudo tee /tmp/isoboot-data/boot/boot.ipxe
         #!ipxe
-        kernel http://${KIND_PXE_IP}:8080/static/rocky-linux-10.1/kernel/vmlinuz quiet
-        initrd http://${KIND_PXE_IP}:8080/static/rocky-linux-10.1/initrd/initrd.img
+        kernel http://${KIND_PXE_IP}:8080/static/rocky-10.1/kernel/vmlinuz quiet
+        initrd http://${KIND_PXE_IP}:8080/static/rocky-10.1/initrd/initrd.img
         boot
         IPXE
 
@@ -373,9 +342,9 @@ jobs:
       run: |
         KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
         docker exec wget-client wget -O /tmp/dl-vmlinuz \
-          "http://${KIND_PXE_IP}:8080/static/rocky-linux-10.1/kernel/vmlinuz"
+          "http://${KIND_PXE_IP}:8080/static/rocky-10.1/kernel/vmlinuz"
         docker exec wget-client wget -O /tmp/dl-initrd \
-          "http://${KIND_PXE_IP}:8080/static/rocky-linux-10.1/initrd/initrd.img"
+          "http://${KIND_PXE_IP}:8080/static/rocky-10.1/initrd/initrd.img"
 
     - name: Verify downloaded artifact checksums
       run: |
@@ -441,13 +410,13 @@ jobs:
 
         # Verify kernel was downloaded with HTTP 200
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep '"GET /static/rocky-linux-10.1/kernel/vmlinuz' \
+          | grep '"GET /static/rocky-10.1/kernel/vmlinuz' \
           | grep '" 200 ' \
           || { echo "FAIL: no HTTP 200 for kernel download"; exit 1; }
 
         # Verify initrd was downloaded with HTTP 200
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep '"GET /static/rocky-linux-10.1/initrd/initrd.img' \
+          | grep '"GET /static/rocky-10.1/initrd/initrd.img' \
           | grep '" 200 ' \
           || { echo "FAIL: no HTTP 200 for initrd download"; exit 1; }
 
