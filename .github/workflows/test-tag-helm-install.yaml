@@ -145,7 +145,7 @@ jobs:
         sudo ip netns exec ns1 ip link set lo up
 
         # Start dnsmasq inside the container
-        docker exec -d dhcp-srv dnsmasq \
+        docker exec -u 0 -d dhcp-srv dnsmasq \
           --no-daemon \
           --interface=veth-ns1 \
           --bind-interfaces \
