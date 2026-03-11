@@ -50,16 +50,18 @@ spec:
         - |
           set -e
           TARBALL="{{ .Values.dataDir }}/artifacts/{{ include "isoboot.fullname" . }}-ipxe/ipxeboot.tar.gz"
-          DEST="{{ .Values.dataDir }}/ipxe"
+          DEST="/ipxe"
           echo "Waiting for iPXE tarball at $TARBALL..."
           until [ -f "$TARBALL" ]; do sleep 2; done
-          mkdir -p "$DEST"
           tar xzf "$TARBALL" -C "$DEST" --strip-components=2 ipxeboot/x86_64/
           echo "Extracted x86_64 iPXE files to $DEST:"
           ls -la "$DEST"
         volumeMounts:
         - name: data
           mountPath: {{ .Values.dataDir }}
+          readOnly: true
+        - name: ipxe
+          mountPath: /ipxe
       containers:
       - name: dnsmasq
         image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag }}"
@@ -92,7 +94,7 @@ spec:
             --pxe-service="tag:!ipxe,BC_EFI,Network Boot UEFI,ipxe.efi,${HOST_IP}" \
             --dhcp-boot="tag:ipxe,http://${HOST_IP}:{{ .Values.nginx.port }}/static/boot.ipxe" \
             --enable-tftp \
-            --tftp-root={{ .Values.dataDir }}/ipxe \
+            --tftp-root=/ipxe \
             --log-dhcp \
             --log-facility=-
         securityContext:
@@ -105,7 +107,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - test -f {{ .Values.dataDir }}/ipxe/undionly.kpxe && test -f {{ .Values.dataDir }}/ipxe/ipxe.efi
+            - test -f /ipxe/undionly.kpxe && test -f /ipxe/ipxe.efi
           initialDelaySeconds: 5
           periodSeconds: 10
         livenessProbe:
@@ -118,11 +120,14 @@ spec:
         resources:
           {{- toYaml .Values.dnsmasq.resources | nindent 10 }}
         volumeMounts:
-        - name: data
-          mountPath: {{ .Values.dataDir }}
+        - name: ipxe
+          mountPath: /ipxe
+          readOnly: true
       volumes:
       - name: data
         hostPath:
           path: {{ .Values.dataDir }}
           type: Directory
+      - name: ipxe
+        emptyDir: {}
 {{- end }}
