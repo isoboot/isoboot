@@ -175,7 +175,7 @@ jobs:
 
     - name: Verify controller is running
       run: |
-        kubectl -n isoboot-system wait --for=condition=Ready pod -l control-plane=controller-manager --timeout=60s
+        kubectl -n isoboot-system wait --for=condition=Ready pod -l app.kubernetes.io/name=isoboot --timeout=60s
         kubectl -n isoboot-system get pods
 
     - name: Verify CRDs installed
@@ -273,13 +273,13 @@ jobs:
         echo "=== BootConfig status ==="
         kubectl get bootconfig -o yaml 2>/dev/null || true
         echo "=== Controller logs ==="
-        kubectl -n isoboot-system logs -l control-plane=controller-manager --tail=100 2>/dev/null || true
+        kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --tail=100 2>/dev/null || true
         echo "=== Events ==="
         kubectl -n isoboot-system get events --sort-by='.lastTimestamp' 2>/dev/null || true
         echo "=== Host data directory ==="
         find /tmp/isoboot-data -type f -o -type l 2>/dev/null || true
         echo "=== Describe pods ==="
-        kubectl -n isoboot-system describe pod -l control-plane=controller-manager 2>/dev/null || true
+        kubectl -n isoboot-system describe pod -l app.kubernetes.io/name=isoboot 2>/dev/null || true
 
     - name: Clean up
       if: always()

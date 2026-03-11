@@ -1,0 +1,111 @@
+name: Helm Install Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "Dockerfile"
+      - "cmd/**"
+      - "internal/**"
+      - "api/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-helm.yml"
+  pull_request:
+    paths:
+      - "charts/**"
+      - "Dockerfile"
+      - "cmd/**"
+      - "internal/**"
+      - "api/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-helm.yml"
+
+env:
+  KIND_VERSION: v0.31.0
+  IMG: ghcr.io/isoboot/isoboot:${{ github.sha }}
+
+jobs:
+  helm-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        load: true
+        tags: ${{ env.IMG }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Install kind
+      run: |
+        curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VERSION }}/kind-linux-amd64
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
+
+    - name: Create Kind cluster
+      run: |
+        sudo mkdir -p /tmp/isoboot-data
+        sudo chown 65532:65532 /tmp/isoboot-data
+
+        cat <<EOF | kind create cluster --name helm-test --config=-
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+        - role: control-plane
+          extraMounts:
+          - hostPath: /tmp/isoboot-data
+            containerPath: /data/isoboot
+        EOF
+
+    - name: Load image into Kind
+      run: kind load docker-image ${{ env.IMG }} --name helm-test
+
+    - name: Install Helm
+      uses: azure/setup-helm@v4
+
+    - name: Get Kind node name
+      id: node
+      run: echo "name=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')" >> "$GITHUB_OUTPUT"
+
+    - name: Helm install
+      run: |
+        helm install isoboot charts/isoboot \
+          --namespace isoboot-system \
+          --create-namespace \
+          --set nodeName=${{ steps.node.outputs.name }} \
+          --set image.repository=ghcr.io/isoboot/isoboot \
+          --set image.tag=${{ github.sha }} \
+          --wait \
+          --timeout 120s
+
+    - name: Verify controller is running
+      run: |
+        kubectl -n isoboot-system get pods
+        kubectl -n isoboot-system wait --for=condition=Ready pod -l app.kubernetes.io/name=isoboot --timeout=60s
+
+    - name: Verify CRDs installed
+      run: |
+        kubectl get crd bootartifacts.isoboot.github.io
+        kubectl get crd bootconfigs.isoboot.github.io
+
+    - name: Collect logs on failure
+      if: failure()
+      run: |
+        echo "=== Pods ==="
+        kubectl -n isoboot-system get pods -o wide
+        echo "=== Controller logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --tail=50 || true
+        echo "=== Events ==="
+        kubectl -n isoboot-system get events --sort-by='.lastTimestamp' || true
+        echo "=== Describe pod ==="
+        kubectl -n isoboot-system describe pod -l app.kubernetes.io/name=isoboot || true
