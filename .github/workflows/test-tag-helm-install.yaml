@@ -388,17 +388,19 @@ jobs:
         echo "=== nginx access log ==="
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log
 
-        # Verify kernel was downloaded with HTTP 200
+        # Verify kernel was downloaded by iPXE (not wget-client)
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
           | grep '"GET /static/rocky-10.1/kernel/vmlinuz' \
           | grep '" 200 ' \
-          || { echo "FAIL: no HTTP 200 for kernel download"; exit 1; }
+          | grep 'iPXE/' \
+          || { echo "FAIL: no iPXE HTTP 200 for kernel download"; exit 1; }
 
-        # Verify initrd was downloaded with HTTP 200
+        # Verify initrd was downloaded by iPXE (not wget-client)
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
           | grep '"GET /static/rocky-10.1/initrd/initrd.img' \
           | grep '" 200 ' \
-          || { echo "FAIL: no HTTP 200 for initrd download"; exit 1; }
+          | grep 'iPXE/' \
+          || { echo "FAIL: no iPXE HTTP 200 for initrd download"; exit 1; }
 
         echo "PXE boot successfully downloaded kernel and initrd via HTTP"
 
