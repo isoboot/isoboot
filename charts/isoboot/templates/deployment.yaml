@@ -13,16 +13,26 @@ spec:
   selector:
     matchLabels:
       {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
         {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
     spec:
       serviceAccountName: {{ include "isoboot.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
       nodeName: {{ .Values.nodeName }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                {{- include "isoboot.selectorLabels" . | nindent 16 }}
+                app.kubernetes.io/component: controller
+            topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         seccompProfile:
