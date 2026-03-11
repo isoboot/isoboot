@@ -22,8 +22,15 @@ spec:
     spec:
       automountServiceAccountToken: false
       hostNetwork: true
-      nodeName: {{ .Values.nodeName }}
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchFields:
+              - key: metadata.name
+                operator: In
+                values:
+                - {{ .Values.nodeName }}
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
