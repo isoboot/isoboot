@@ -107,6 +107,7 @@ spec:
             add:
             - NET_ADMIN
             - NET_RAW
+            - NET_BIND_SERVICE
         readinessProbe:
           exec:
             command:
