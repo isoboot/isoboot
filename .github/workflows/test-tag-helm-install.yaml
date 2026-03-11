@@ -419,7 +419,7 @@ jobs:
           -netdev tap,id=pxe0,ifname=tap-ns4,script=no,downscript=no \
           -device virtio-net-pci,netdev=pxe0,bootindex=1 \
           -boot n \
-          -nographic \
+          -display none \
           -serial file:/tmp/qemu-serial.log \
           -daemonize \
           -pidfile /tmp/qemu-pxe.pid
