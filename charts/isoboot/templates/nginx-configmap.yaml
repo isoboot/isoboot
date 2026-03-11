@@ -13,6 +13,7 @@ data:
     http {
         include /etc/nginx/mime.types;
         default_type application/octet-stream;
+        access_log /var/run/access.log;
         sendfile on;
         server {
             listen {{ .Values.nginx.port }};

@@ -26,6 +26,8 @@ env:
   VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
   INITRD_SHA256: "07ec303514509b4ddbfe8df90f65dddaf48519f25b416a2a5368903fe39c627a"
   INITRD_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/initrd.img"
+  IPXE_KPXE_URL: "https://boot.ipxe.org/undionly.kpxe"
+  IPXE_EFI_URL: "https://boot.ipxe.org/x86_64-efi/ipxe.efi"
 
 jobs:
   release-and-test:
@@ -86,7 +88,14 @@ jobs:
 
     # ── PXE network: ns1=DHCP server, ns2=Kind node, ns3=wget client ──
     - name: Install network tools
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq isc-dhcp-client
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq isc-dhcp-client qemu-system-x86 qemu-utils ovmf
+
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
 
     - name: Install kind
       run: |
@@ -210,18 +219,60 @@ jobs:
           --namespace isoboot-system \
           --create-namespace \
           --set nodeName="${NODE_NAME}" \
-          --wait \
-          --timeout 120s
+          --set dnsmasq.enabled=true \
+          --set dnsmasq.subnet=192.168.101.0/24
 
-    - name: Verify controller and nginx are running
+    - name: Wait for controller and nginx
       run: |
-        kubectl -n isoboot-system wait --for=condition=Ready pod -l app.kubernetes.io/name=isoboot --timeout=60s
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=controller --timeout=120s
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=nginx --timeout=120s
         kubectl -n isoboot-system get pods
 
     - name: Verify CRDs installed
       run: |
         kubectl get crd bootartifacts.isoboot.github.io
         kubectl get crd bootconfigs.isoboot.github.io
+
+    # ── iPXE boot firmware ──────────────────────────────────────────
+    - name: Compute iPXE SHA-256 hashes
+      run: |
+        wget -q -O /tmp/ipxe-undionly.kpxe "${{ env.IPXE_KPXE_URL }}"
+        wget -q -O /tmp/ipxe-efi.efi "${{ env.IPXE_EFI_URL }}"
+        echo "IPXE_KPXE_SHA256=$(sha256sum /tmp/ipxe-undionly.kpxe | awk '{print $1}')" >> "$GITHUB_ENV"
+        echo "IPXE_EFI_SHA256=$(sha256sum /tmp/ipxe-efi.efi | awk '{print $1}')" >> "$GITHUB_ENV"
+
+    - name: Create BootArtifacts for iPXE firmware
+      run: |
+        kubectl apply -f - <<EOF
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: BootArtifact
+        metadata:
+          name: ipxe-undionly-kpxe
+        spec:
+          url: "${{ env.IPXE_KPXE_URL }}"
+          sha256: "${{ env.IPXE_KPXE_SHA256 }}"
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: BootArtifact
+        metadata:
+          name: ipxe-efi
+        spec:
+          url: "${{ env.IPXE_EFI_URL }}"
+          sha256: "${{ env.IPXE_EFI_SHA256 }}"
+        EOF
+
+    - name: Wait for iPXE BootArtifacts Ready
+      run: |
+        ./test/e2e/wait-for-bootartifact.sh ipxe-undionly-kpxe
+        ./test/e2e/wait-for-bootartifact.sh ipxe-efi
+
+    - name: Wait for dnsmasq pod ready
+      run: |
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=dnsmasq --timeout=180s
+        kubectl -n isoboot-system get pods
 
     # ── Rocky Linux 10.1 boot artifacts ──────────────────────────────
     - name: Create BootArtifacts for Rocky Linux 10.1
@@ -285,6 +336,17 @@ jobs:
         test -f /tmp/isoboot-data/boot/rocky-linux-10.1/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
         test -f /tmp/isoboot-data/boot/rocky-linux-10.1/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
 
+    # ── Static iPXE boot script (hardcoded Rocky Linux 10.1) ───────
+    - name: Write boot.ipxe script
+      run: |
+        KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
+        cat <<IPXE | sudo tee /tmp/isoboot-data/boot/boot.ipxe
+        #!ipxe
+        kernel http://${KIND_PXE_IP}:8080/static/rocky-linux-10.1/kernel/vmlinuz quiet
+        initrd http://${KIND_PXE_IP}:8080/static/rocky-linux-10.1/initrd/initrd.img
+        boot
+        IPXE
+
     # ── PXE download test: ns3 wget client ─────────────────────────
     - name: Start wget client container (ns3)
       run: |
@@ -322,6 +384,75 @@ jobs:
         docker exec wget-client sh -c \
           "echo '${INITRD_SHA256}  /tmp/dl-initrd' | sha256sum -c"
 
+    # ── PXE boot test: ns4 QEMU VM ──────────────────────────────────
+    - name: PXE boot QEMU VM (ns4 — UEFI)
+      run: |
+        # Locate OVMF firmware
+        OVMF_CODE=""
+        for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
+          [ -f "$f" ] && OVMF_CODE="$f" && break
+        done
+        [ -n "$OVMF_CODE" ] || { echo "FAIL: OVMF firmware not found"; exit 1; }
+
+        OVMF_VARS_SRC=""
+        for f in /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd; do
+          [ -f "$f" ] && OVMF_VARS_SRC="$f" && break
+        done
+        cp "$OVMF_VARS_SRC" /tmp/ovmf-vars.fd
+
+        # Create tap device on PXE bridge
+        sudo ip tuntap add dev tap-ns4 mode tap
+        sudo ip link set tap-ns4 master br-pxe
+        sudo ip link set tap-ns4 up
+
+        # Create empty disk
+        qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 1G
+
+        # Boot QEMU with UEFI PXE
+        sudo qemu-system-x86_64 \
+          -enable-kvm \
+          -m 1024 \
+          -cpu host \
+          -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+          -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
+          -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2 \
+          -netdev tap,id=pxe0,ifname=tap-ns4,script=no,downscript=no \
+          -device virtio-net-pci,netdev=pxe0,bootindex=1 \
+          -boot n \
+          -nographic \
+          -serial file:/tmp/qemu-serial.log \
+          -daemonize \
+          -pidfile /tmp/qemu-pxe.pid
+
+        echo "QEMU PXE VM launched (tap-ns4 on br-pxe)"
+
+    - name: Wait for PXE boot to download kernel and initrd
+      run: |
+        echo "Waiting 90s for QEMU PXE boot to complete downloads..."
+        sleep 90
+
+    - name: Verify PXE boot downloaded kernel and initrd
+      run: |
+        NGINX_POD=$(kubectl -n isoboot-system get pod \
+          -l app.kubernetes.io/component=nginx -o jsonpath='{.items[0].metadata.name}')
+
+        echo "=== nginx access log ==="
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log
+
+        # Verify kernel was downloaded with HTTP 200
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
+          | grep '"GET /static/rocky-linux-10.1/kernel/vmlinuz' \
+          | grep '" 200 ' \
+          || { echo "FAIL: no HTTP 200 for kernel download"; exit 1; }
+
+        # Verify initrd was downloaded with HTTP 200
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
+          | grep '"GET /static/rocky-linux-10.1/initrd/initrd.img' \
+          | grep '" 200 ' \
+          || { echo "FAIL: no HTTP 200 for initrd download"; exit 1; }
+
+        echo "PXE boot successfully downloaded kernel and initrd via HTTP"
+
     # ── Final PXE network check ──────────────────────────────────────
     - name: Verify PXE network connectivity
       run: |
@@ -356,6 +487,13 @@ jobs:
         kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --tail=100 2>/dev/null || true
         echo "=== Nginx logs ==="
         kubectl -n isoboot-system logs -l app.kubernetes.io/component=nginx --tail=50 2>/dev/null || true
+        echo "=== Nginx access log ==="
+        NGINX_POD=$(kubectl -n isoboot-system get pod -l app.kubernetes.io/component=nginx -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null || true
+        echo "=== dnsmasq pod logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=dnsmasq --tail=100 2>/dev/null || true
+        echo "=== QEMU serial log ==="
+        cat /tmp/qemu-serial.log 2>/dev/null || true
         echo "=== Events ==="
         kubectl -n isoboot-system get events --sort-by='.lastTimestamp' 2>/dev/null || true
         echo "=== Host data directory ==="
@@ -366,6 +504,8 @@ jobs:
     - name: Clean up
       if: always()
       run: |
+        [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+        sudo ip link del tap-ns4 2>/dev/null || true
         kind delete cluster --name pxe-test 2>/dev/null || true
         docker rm -f dhcp-srv wget-client 2>/dev/null || true
         sudo rm -f /var/run/netns/ns1 /var/run/netns/ns2 /var/run/netns/ns3

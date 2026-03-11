@@ -1,0 +1,121 @@
+{{- if .Values.dnsmasq.enabled }}
+{{- if not .Values.dnsmasq.subnet }}
+{{- fail "dnsmasq.subnet is required when dnsmasq.enabled is true" }}
+{{- end }}
+{{- if not .Values.nodeName }}
+{{- fail "nodeName is required" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "isoboot.fullname" . }}-dnsmasq
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dnsmasq
+  template:
+    metadata:
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: dnsmasq
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: true
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchFields:
+              - key: metadata.name
+                operator: In
+                values:
+                - {{ .Values.nodeName }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                {{- include "isoboot.selectorLabels" . | nindent 16 }}
+                app.kubernetes.io/component: dnsmasq
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: dnsmasq
+        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          apk add --no-cache dnsmasq iproute2 ipcalc
+
+          SUBNET="{{ .Values.dnsmasq.subnet }}"
+          IFACE=""
+          for dev in $(ip -o link show | awk -F: '{print $2}' | tr -d ' '); do
+            addr=$(ip -4 -o addr show "$dev" 2>/dev/null | awk '{print $4}') || continue
+            [ -z "$addr" ] && continue
+            net=$(ipcalc -n "$addr" | grep NETWORK | cut -d= -f2)
+            prefix=$(echo "$addr" | cut -d/ -f2)
+            if [ "${net}/${prefix}" = "$SUBNET" ]; then
+              IFACE=$dev
+              break
+            fi
+          done
+          [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; exit 1; }
+          HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1)
+          NETWORK=$(echo "$SUBNET" | cut -d/ -f1)
+          echo "Detected interface=$IFACE host_ip=$HOST_IP network=$NETWORK"
+
+          exec dnsmasq \
+            --no-daemon \
+            --port=0 \
+            --interface="$IFACE" \
+            --bind-dynamic \
+            --dhcp-range="${NETWORK},proxy" \
+            --dhcp-no-override \
+            --dhcp-match=set:bios,option:client-arch,0 \
+            --dhcp-match=set:efi64,option:client-arch,7 \
+            --dhcp-match=set:efi64,option:client-arch,9 \
+            --dhcp-match=set:ipxe,175 \
+            --pxe-service="tag:!ipxe,X86PC,Network Boot,ipxe-undionly-kpxe/undionly.kpxe,${HOST_IP}" \
+            --pxe-service="tag:!ipxe,X86-64_EFI,Network Boot UEFI,ipxe-efi/ipxe.efi,${HOST_IP}" \
+            --pxe-service="tag:!ipxe,BC_EFI,Network Boot UEFI,ipxe-efi/ipxe.efi,${HOST_IP}" \
+            --dhcp-boot="tag:ipxe,http://${HOST_IP}:{{ .Values.nginx.port }}/static/boot.ipxe" \
+            --enable-tftp \
+            --tftp-root={{ .Values.dataDir }}/artifacts \
+            --log-dhcp \
+            --log-facility=-
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - test -f {{ .Values.dataDir }}/artifacts/ipxe-undionly-kpxe/undionly.kpxe && test -f {{ .Values.dataDir }}/artifacts/ipxe-efi/ipxe.efi
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command:
+            - pidof
+            - dnsmasq
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.dnsmasq.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: {{ .Values.dataDir }}
+          readOnly: true
+      volumes:
+      - name: data
+        hostPath:
+          path: {{ .Values.dataDir }}
+          type: Directory
+{{- end }}
