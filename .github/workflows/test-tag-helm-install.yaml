@@ -1,38 +1,26 @@
-name: E2E DHCP Network Test
+name: Tag Release & E2E Test
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - "charts/**"
-      - "Dockerfile"
-      - "cmd/**"
-      - "internal/**"
-      - "api/**"
-      - "go.mod"
-      - "go.sum"
-      - "test/e2e/**"
-      - ".github/workflows/test-e2e-dhcp.yml"
-  pull_request:
-    paths:
-      - "charts/**"
-      - "Dockerfile"
-      - "cmd/**"
-      - "internal/**"
-      - "api/**"
-      - "go.mod"
-      - "go.sum"
-      - "test/e2e/**"
-      - ".github/workflows/test-e2e-dhcp.yml"
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.0.1-rc1)"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
 
 concurrency:
-  group: e2e-dhcp-${{ github.ref }}
+  group: tag-release-${{ github.ref }}
   cancel-in-progress: true
 
 env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/isoboot/isoboot
   KIND_VERSION: v0.31.0
-  IMG: ghcr.io/isoboot/isoboot:${{ github.sha }}
   # Rocky Linux 10.1 — SHA-256 digests from .treeinfo
   VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
   VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
@@ -40,39 +28,73 @@ env:
   INITRD_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/initrd.img"
 
 jobs:
-  test-e2e-dhcp:
-    name: DHCP + Kind + Rocky 10.1
+  release-and-test:
+    name: Release & E2E DHCP + Kind + Rocky 10.1
     # isc-dhcp-client may be removed from future ubuntu-latest — accepted risk.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
+
+    - name: Parse version
+      id: version
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -n "$INPUT_VERSION" ]; then
+          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        fi
+
+    # ── Build & push to GHCR ────────────────────────────────────────
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build image
+    - name: Build and push multi-arch image
       uses: docker/build-push-action@v6
       with:
         context: .
-        load: true
-        tags: ${{ env.IMG }}
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+          ${{ !contains(steps.version.outputs.version, '-') && format('{0}:latest', env.IMAGE) || '' }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+    - uses: azure/setup-helm@v4
+
+    - name: Package and push Helm chart
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        sed -i "s/^version:.*/version: ${VERSION}/" charts/isoboot/Chart.yaml
+        sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/isoboot/Chart.yaml
+        helm package charts/isoboot --destination /tmp/charts
+        helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${REGISTRY}/isoboot/charts
+
+    # ── PXE network: Docker dnsmasq at .1, Kind=DHCP client ─────────
+    # The DHCP network is tested alongside isoboot as groundwork for
+    # future PXE serving tests. For now they exercise independent paths.
+    - name: Install network tools
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq isc-dhcp-client
 
     - name: Install kind
       run: |
         curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VERSION }}/kind-linux-amd64
         chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
 
-    - uses: azure/setup-helm@v4
-
-    - name: Install network tools
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq isc-dhcp-client
-
-    # ── PXE network: Docker dnsmasq at .1, Kind=DHCP client ─────────
-    # The DHCP network is tested alongside isoboot as groundwork for
-    # future PXE serving tests. For now they exercise independent paths.
     - name: Create PXE bridge
       run: |
         sudo ip link add br-pxe type bridge
@@ -175,23 +197,21 @@ jobs:
         sudo ip netns exec ns-srv ping -c 3 "$KIND_PXE_IP"
         echo "PXE network OK: dhcp-srv(.1) <-> Kind($KIND_PXE_IP)"
 
-    - name: Load image into Kind
-      run: kind load docker-image ${{ env.IMG }} --name pxe-test
-
-    # ── Deploy isoboot via Helm ──────────────────────────────────────
+    # ── Deploy isoboot from GHCR ─────────────────────────────────────
     - name: Get Kind node name
       id: node
       run: echo "name=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')" >> "$GITHUB_OUTPUT"
 
-    - name: Helm install
+    - name: Helm install from GHCR
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        NODE_NAME: ${{ steps.node.outputs.name }}
       run: |
-        helm install isoboot charts/isoboot \
+        helm install isoboot oci://${REGISTRY}/isoboot/charts/isoboot \
+          --version "${VERSION}" \
           --namespace isoboot-system \
           --create-namespace \
-          --set nodeName=${{ steps.node.outputs.name }} \
-          --set image.repository=ghcr.io/isoboot/isoboot \
-          --set image.tag=${{ github.sha }} \
-          --set image.pullPolicy=Never \
+          --set nodeName="${NODE_NAME}" \
           --wait \
           --timeout 120s
 
