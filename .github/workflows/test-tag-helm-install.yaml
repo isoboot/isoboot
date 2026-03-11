@@ -297,9 +297,8 @@ jobs:
     # ── PXE download test: ns3 wget client ─────────────────────────
     - name: Start wget client container (ns3)
       run: |
-        docker run -d --name wget-client --cap-add=NET_ADMIN \
+        docker run -d --name wget-client --network=none --cap-add=NET_ADMIN \
           alpine:3.23 sh -c "sleep infinity"
-        docker network disconnect bridge wget-client
 
         CLIENT_PID=$(docker inspect -f '{{.State.Pid}}' wget-client)
         sudo ln -sf /proc/$CLIENT_PID/ns/net /var/run/netns/ns3
