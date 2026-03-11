@@ -49,22 +49,12 @@ spec:
         args:
         - |
           set -e
-          apk add --no-cache dnsmasq iproute2 ipcalc
+          apk add --no-cache dnsmasq iproute2
 
           SUBNET="{{ .Values.dnsmasq.subnet }}"
-          IFACE=""
-          for dev in $(ip -o link show | awk -F: '{print $2}' | tr -d ' '); do
-            addr=$(ip -4 -o addr show "$dev" 2>/dev/null | awk '{print $4}') || continue
-            [ -z "$addr" ] && continue
-            net=$(ipcalc -n "$addr" | grep NETWORK | cut -d= -f2)
-            prefix=$(echo "$addr" | cut -d/ -f2)
-            if [ "${net}/${prefix}" = "$SUBNET" ]; then
-              IFACE=$dev
-              break
-            fi
-          done
-          [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; exit 1; }
-          HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1)
+          IFACE=$(ip -4 route show "$SUBNET" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
+          [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; ip -4 route show; exit 1; }
+          HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -1)
           NETWORK=$(echo "$SUBNET" | cut -d/ -f1)
           echo "Detected interface=$IFACE host_ip=$HOST_IP network=$NETWORK"
 
