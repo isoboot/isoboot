@@ -117,19 +117,16 @@ jobs:
         sudo ip link set br-pxe up
         sudo mkdir -p /var/run/netns
 
-    - name: Pull dnsmasq image for E2E
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: docker pull ${{ env.IMAGE }}-dnsmasq:${VERSION}
-
+    # E2E uses plain alpine for the DHCP server — the pre-built dnsmasq
+    # image is for the chart (production). The E2E container runs a
+    # different dnsmasq config and needs root for privileged ports.
     - name: Start DHCP server container (ns1 — 192.168.101.1)
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
       run: |
         docker run -d --name dhcp-srv --network=none \
           --cap-add=NET_ADMIN --cap-add=NET_BIND_SERVICE \
-          --entrypoint sleep \
-          ${{ env.IMAGE }}-dnsmasq:${VERSION} infinity
+          alpine:3.23 sleep infinity
+
+        docker exec dhcp-srv apk add --no-cache dnsmasq
 
         # Link container netns so ip-netns can manage it
         SRV_PID=$(docker inspect -f '{{.State.Pid}}' dhcp-srv)
@@ -145,7 +142,7 @@ jobs:
         sudo ip netns exec ns1 ip link set lo up
 
         # Start dnsmasq inside the container
-        docker exec -u 0 -d dhcp-srv dnsmasq \
+        docker exec -d dhcp-srv dnsmasq \
           --no-daemon \
           --interface=veth-ns1 \
           --bind-interfaces \
