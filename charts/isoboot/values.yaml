@@ -24,7 +24,7 @@ crds:
 nginx:
   image:
     repository: nginxinc/nginx-unprivileged
-    tag: "1.29-alpine3.23"
+    tag: "1.29-alpine"
   port: 8080
   resources:
     limits:
