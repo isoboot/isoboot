@@ -2,6 +2,29 @@ name: E2E DHCP Network Test
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "Dockerfile"
+      - "cmd/**"
+      - "internal/**"
+      - "api/**"
+      - "go.mod"
+      - "go.sum"
+      - "test/e2e/**"
+      - ".github/workflows/test-e2e-dhcp.yml"
+  pull_request:
+    paths:
+      - "charts/**"
+      - "Dockerfile"
+      - "cmd/**"
+      - "internal/**"
+      - "api/**"
+      - "go.mod"
+      - "go.sum"
+      - "test/e2e/**"
+      - ".github/workflows/test-e2e-dhcp.yml"
 
 concurrency:
   group: e2e-dhcp-${{ github.ref }}
@@ -58,8 +81,8 @@ jobs:
 
     - name: Start DHCP server container (192.168.101.1)
       run: |
-        # Start container with no networking — we attach it to the bridge
-        docker run -d --name dhcp-srv --network=none --cap-add=NET_ADMIN \
+        # Start with default networking so apk can download dnsmasq
+        docker run -d --name dhcp-srv --cap-add=NET_ADMIN \
           alpine:3.23 sh -c "apk add --no-cache dnsmasq && sleep infinity"
 
         # Wait for dnsmasq binary to be installed
@@ -67,6 +90,10 @@ jobs:
           docker exec dhcp-srv which dnsmasq 2>/dev/null && break
           sleep 1
         done
+        docker exec dhcp-srv which dnsmasq || { echo "FAIL: dnsmasq not installed"; docker logs dhcp-srv; exit 1; }
+
+        # Disconnect from Docker bridge — fully isolate the container
+        docker network disconnect bridge dhcp-srv
 
         # Link container netns so ip-netns can manage it
         SRV_PID=$(docker inspect -f '{{.State.Pid}}' dhcp-srv)
@@ -76,7 +103,7 @@ jobs:
         sudo ip link add veth-srv type veth peer name veth-srv-br
         sudo ip link set veth-srv-br master br-pxe
         sudo ip link set veth-srv-br up
-        sudo ip link set veth-srv netns ns-srv
+        sudo ip link set veth-srv netns "$SRV_PID"
         sudo ip netns exec ns-srv ip addr add 192.168.101.1/24 dev veth-srv
         sudo ip netns exec ns-srv ip link set veth-srv up
         sudo ip netns exec ns-srv ip link set lo up
@@ -130,7 +157,7 @@ jobs:
         sudo ip link add veth-kind type veth peer name veth-kind-br
         sudo ip link set veth-kind-br master br-pxe
         sudo ip link set veth-kind-br up
-        sudo ip link set veth-kind netns ns-kind
+        sudo ip link set veth-kind netns "$KIND_PID"
         sudo ip netns exec ns-kind ip link set veth-kind up
 
         # Get DHCP lease from dnsmasq
@@ -138,7 +165,7 @@ jobs:
 
         # Show and capture assigned IP
         sudo ip netns exec ns-kind ip addr show veth-kind
-        KIND_PXE_IP=$(sudo ip netns exec ns-kind ip -4 -o addr show veth-kind | grep -oP '192\.168\.101\.\d+')
+        KIND_PXE_IP=$(sudo ip netns exec ns-kind ip -4 -o addr show veth-kind | grep -oP '192\.168\.101\.\d+' | head -1)
         [ -n "$KIND_PXE_IP" ] || { echo "FAIL: dhclient did not obtain a 192.168.101.x lease"; exit 1; }
         echo "Kind node got DHCP IP: $KIND_PXE_IP"
         echo "$KIND_PXE_IP" > /tmp/kind-pxe-ip
@@ -164,12 +191,13 @@ jobs:
           --set nodeName=${{ steps.node.outputs.name }} \
           --set image.repository=ghcr.io/isoboot/isoboot \
           --set image.tag=${{ github.sha }} \
+          --set image.pullPolicy=Never \
           --wait \
           --timeout 120s
 
     - name: Verify controller is running
       run: |
-        kubectl -n isoboot-system wait --for=condition=Ready pod -l control-plane=controller-manager --timeout=60s
+        kubectl -n isoboot-system wait --for=condition=Ready pod -l app.kubernetes.io/name=isoboot --timeout=60s
         kubectl -n isoboot-system get pods
 
     - name: Verify CRDs installed
@@ -267,13 +295,13 @@ jobs:
         echo "=== BootConfig status ==="
         kubectl get bootconfig -o yaml 2>/dev/null || true
         echo "=== Controller logs ==="
-        kubectl -n isoboot-system logs -l control-plane=controller-manager --tail=100 2>/dev/null || true
+        kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --tail=100 2>/dev/null || true
         echo "=== Events ==="
         kubectl -n isoboot-system get events --sort-by='.lastTimestamp' 2>/dev/null || true
         echo "=== Host data directory ==="
         find /tmp/isoboot-data -type f -o -type l 2>/dev/null || true
         echo "=== Describe pods ==="
-        kubectl -n isoboot-system describe pod -l control-plane=controller-manager 2>/dev/null || true
+        kubectl -n isoboot-system describe pod -l app.kubernetes.io/name=isoboot 2>/dev/null || true
 
     - name: Clean up
       if: always()
