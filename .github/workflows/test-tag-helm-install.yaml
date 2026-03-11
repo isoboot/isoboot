@@ -241,7 +241,7 @@ jobs:
 
     # ── iPXE boot firmware (created by chart when dnsmasq.enabled) ──
     - name: Wait for iPXE BootArtifact Ready
-      run: ./test/e2e/wait-for-bootartifact.sh isoboot-ipxe
+      run: ./test/e2e/wait-for-bootartifact.sh -n isoboot-system isoboot-ipxe
 
     - name: Wait for dnsmasq pod ready
       run: |
