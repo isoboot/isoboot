@@ -1,4 +1,4 @@
 FROM alpine:3.23
 RUN apk add --no-cache dnsmasq iproute2
-USER nobody
-ENTRYPOINT ["dnsmasq"]
+USER 65534:65534
+ENTRYPOINT ["dnsmasq", "-k"]
