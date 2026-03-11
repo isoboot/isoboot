@@ -14,3 +14,7 @@
 - Run `make lint` to check for linting errors.
 - Run `make test` to run unit tests.
 - Update the PR description (if any) to match the branch content.
+
+## Pull Requests
+
+- After creating a new PR, post a comment: `@claude please review this PR`.
