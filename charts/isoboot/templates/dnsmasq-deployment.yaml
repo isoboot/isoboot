@@ -99,7 +99,7 @@ spec:
             --log-dhcp \
             --log-facility=-
         securityContext:
-          runAsNonRoot: true
+          runAsUser: 0
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
