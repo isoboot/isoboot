@@ -7,6 +7,7 @@ metadata:
     {{- include "isoboot.labels" . | nindent 4 }}
 data:
   nginx.conf: |
+    pid /var/run/nginx.pid;
     worker_processes 1;
     events { worker_connections 128; }
     http {

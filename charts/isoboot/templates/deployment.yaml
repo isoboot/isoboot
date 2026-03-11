@@ -13,12 +13,14 @@ spec:
   selector:
     matchLabels:
       {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
         {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
     spec:
       serviceAccountName: {{ include "isoboot.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
