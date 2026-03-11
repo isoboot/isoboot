@@ -1,0 +1,143 @@
+{{- if .Values.dnsmasq.enabled }}
+{{- if not .Values.dnsmasq.subnet }}
+{{- fail "dnsmasq.subnet is required when dnsmasq.enabled is true" }}
+{{- end }}
+{{- if not .Values.nodeName }}
+{{- fail "nodeName is required" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "isoboot.fullname" . }}-dnsmasq
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dnsmasq
+  template:
+    metadata:
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: dnsmasq
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchFields:
+              - key: metadata.name
+                operator: In
+                values:
+                - {{ .Values.nodeName }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                {{- include "isoboot.selectorLabels" . | nindent 16 }}
+                app.kubernetes.io/component: dnsmasq
+            topologyKey: kubernetes.io/hostname
+      initContainers:
+      - name: extract-ipxe
+        image: {{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          TARBALL="{{ .Values.dataDir }}/artifacts/{{ include "isoboot.fullname" . }}-ipxe/ipxeboot.tar.gz"
+          DEST="/ipxe"
+          echo "Waiting for iPXE tarball at $TARBALL..."
+          until [ -f "$TARBALL" ]; do sleep 2; done
+          tar xzf "$TARBALL" -C "$DEST" --strip-components=2 ipxeboot/x86_64/
+          echo "Extracted x86_64 iPXE files to $DEST:"
+          ls -la "$DEST"
+        volumeMounts:
+        - name: data
+          mountPath: {{ .Values.dataDir }}
+          readOnly: true
+        - name: ipxe
+          mountPath: /ipxe
+      containers:
+      - name: dnsmasq
+        image: {{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          SUBNET="{{ .Values.dnsmasq.subnet }}"
+          IFACE=$(ip -4 route show "$SUBNET" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
+          [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; ip -4 route show; exit 1; }
+          HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -1)
+          NETWORK=$(echo "$SUBNET" | cut -d/ -f1)
+          echo "Detected interface=$IFACE host_ip=$HOST_IP network=$NETWORK"
+
+          exec dnsmasq \
+            --no-daemon \
+            --port=0 \
+            --interface="$IFACE" \
+            --bind-dynamic \
+            --dhcp-range="${NETWORK},proxy" \
+            --dhcp-no-override \
+            --dhcp-match=set:bios,option:client-arch,0 \
+            --dhcp-match=set:efi64,option:client-arch,7 \
+            --dhcp-match=set:efi64,option:client-arch,9 \
+            --dhcp-match=set:ipxe,175 \
+            --pxe-service="tag:!ipxe,X86PC,Network Boot,undionly.kpxe,${HOST_IP}" \
+            --pxe-service="tag:!ipxe,X86-64_EFI,Network Boot UEFI,ipxe.efi,${HOST_IP}" \
+            --pxe-service="tag:!ipxe,BC_EFI,Network Boot UEFI,ipxe.efi,${HOST_IP}" \
+            --dhcp-boot="tag:ipxe,http://${HOST_IP}:{{ .Values.nginx.port }}/static/boot.ipxe" \
+            --enable-tftp \
+            --tftp-root=/ipxe \
+            --log-dhcp \
+            --log-facility=-
+        securityContext:
+          runAsUser: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+            add:
+            - NET_ADMIN
+            - NET_RAW
+            - NET_BIND_SERVICE
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - test -f /ipxe/undionly.kpxe && test -f /ipxe/ipxe.efi
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command:
+            - pidof
+            - dnsmasq
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.dnsmasq.resources | nindent 10 }}
+        volumeMounts:
+        - name: ipxe
+          mountPath: /ipxe
+          readOnly: true
+        - name: run
+          mountPath: /var/lib/misc
+      volumes:
+      - name: data
+        hostPath:
+          path: {{ .Values.dataDir }}
+          type: Directory
+      - name: ipxe
+        emptyDir: {}
+      - name: run
+        emptyDir: {}
+{{- end }}
