@@ -2,8 +2,28 @@ name: E2E DHCP Network Test
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "Dockerfile"
+      - "cmd/**"
+      - "internal/**"
+      - "api/**"
+      - "go.mod"
+      - "go.sum"
+      - "test/e2e/**"
+      - ".github/workflows/test-e2e-dhcp.yml"
   pull_request:
     paths:
+      - "charts/**"
+      - "Dockerfile"
+      - "cmd/**"
+      - "internal/**"
+      - "api/**"
+      - "go.mod"
+      - "go.sum"
+      - "test/e2e/**"
       - ".github/workflows/test-e2e-dhcp.yml"
 
 concurrency:
