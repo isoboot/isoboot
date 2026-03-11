@@ -20,6 +20,7 @@ spec:
         {{- include "isoboot.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: nginx
     spec:
+      automountServiceAccountToken: false
       hostNetwork: true
       nodeName: {{ .Values.nodeName }}
       affinity:
