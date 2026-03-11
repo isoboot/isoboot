@@ -24,8 +24,15 @@ spec:
     spec:
       serviceAccountName: {{ include "isoboot.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
-      nodeName: {{ .Values.nodeName }}
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchFields:
+              - key: metadata.name
+                operator: In
+                values:
+                - {{ .Values.nodeName }}
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
