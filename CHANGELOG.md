@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.0.1-rc3
+
+- Add dnsmasq proxyDHCP + QEMU PXE boot E2E test
+- Add dnsmasq Docker image
+- Add Rocky Linux 10.1 example manifest
+- Quote Helm template values
+- Add Helm quoting rule to CLAUDE.md
+
 ## v0.0.1-rc2
 
 - Add nginx PXE file server to Helm chart
