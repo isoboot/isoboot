@@ -112,21 +112,19 @@ jobs:
         sudo ip link set br-pxe up
         sudo mkdir -p /var/run/netns
 
+    - name: Pull dnsmasq image for E2E
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: docker pull ${{ env.IMAGE }}-dnsmasq:${VERSION}
+
     - name: Start DHCP server container (ns1 — 192.168.101.1)
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
-        # Start with default networking so apk can download dnsmasq
-        docker run -d --name dhcp-srv --cap-add=NET_ADMIN \
-          alpine:3.23 sh -c "apk add --no-cache dnsmasq && sleep infinity"
-
-        # Wait for dnsmasq binary to be installed
-        for i in $(seq 1 30); do
-          docker exec dhcp-srv which dnsmasq 2>/dev/null && break
-          sleep 1
-        done
-        docker exec dhcp-srv which dnsmasq || { echo "FAIL: dnsmasq not installed"; docker logs dhcp-srv; exit 1; }
-
-        # Disconnect from Docker bridge — fully isolate the container
-        docker network disconnect bridge dhcp-srv
+        docker run -d --name dhcp-srv --network=none \
+          --cap-add=NET_ADMIN --cap-add=NET_BIND_SERVICE \
+          --entrypoint sleep \
+          ${{ env.IMAGE }}-dnsmasq:${VERSION} infinity
 
         # Link container netns so ip-netns can manage it
         SRV_PID=$(docker inspect -f '{{.State.Pid}}' dhcp-srv)
@@ -301,9 +299,8 @@ jobs:
     # ── PXE download test: ns3 wget client ─────────────────────────
     - name: Start wget client container (ns3)
       run: |
-        docker run -d --name wget-client --cap-add=NET_ADMIN \
+        docker run -d --name wget-client --network=none --cap-add=NET_ADMIN \
           alpine:3.23 sh -c "sleep infinity"
-        docker network disconnect bridge wget-client
 
         CLIENT_PID=$(docker inspect -f '{{.State.Pid}}' wget-client)
         sudo ln -sf /proc/$CLIENT_PID/ns/net /var/run/netns/ns3
