@@ -346,6 +346,7 @@ jobs:
         for f in /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd; do
           [ -f "$f" ] && OVMF_VARS_SRC="$f" && break
         done
+        [ -n "$OVMF_VARS_SRC" ] || { echo "FAIL: OVMF vars not found"; exit 1; }
         cp "$OVMF_VARS_SRC" /tmp/ovmf-vars.fd
 
         # Create tap device on PXE bridge

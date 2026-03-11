@@ -26,6 +26,9 @@ spec:
     spec:
       automountServiceAccountToken: false
       hostNetwork: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -98,7 +101,9 @@ spec:
             --log-dhcp \
             --log-facility=-
         securityContext:
+          allowPrivilegeEscalation: false
           capabilities:
+            drop: ["ALL"]
             add:
             - NET_ADMIN
             - NET_RAW
