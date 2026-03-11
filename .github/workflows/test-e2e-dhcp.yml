@@ -191,6 +191,7 @@ jobs:
           --set nodeName=${{ steps.node.outputs.name }} \
           --set image.repository=ghcr.io/isoboot/isoboot \
           --set image.tag=${{ github.sha }} \
+          --set image.pullPolicy=Never \
           --wait \
           --timeout 120s
 
