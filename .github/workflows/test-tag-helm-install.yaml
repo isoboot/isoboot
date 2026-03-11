@@ -71,6 +71,19 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+    - name: Build and push dnsmasq image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile.dnsmasq
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.IMAGE }}-dnsmasq:${{ steps.version.outputs.version }}
+          ${{ !contains(steps.version.outputs.version, '-') && format('{0}-dnsmasq:latest', env.IMAGE) || '' }}
+        cache-from: type=gha,scope=dnsmasq
+        cache-to: type=gha,mode=max,scope=dnsmasq
+
     - uses: azure/setup-helm@v4
 
     - name: Package and push Helm chart
