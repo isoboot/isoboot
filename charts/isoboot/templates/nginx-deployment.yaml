@@ -30,7 +30,7 @@ spec:
               - key: metadata.name
                 operator: In
                 values:
-                - {{ .Values.nodeName }}
+                - "{{ .Values.nodeName }}"
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -71,7 +71,7 @@ spec:
           subPath: nginx.conf
           readOnly: true
         - name: data
-          mountPath: {{ .Values.dataDir }}
+          mountPath: "{{ .Values.dataDir }}"
           readOnly: true
         - name: cache
           mountPath: /var/cache/nginx
@@ -83,7 +83,7 @@ spec:
           name: {{ include "isoboot.fullname" . }}-nginx-config
       - name: data
         hostPath:
-          path: {{ .Values.dataDir }}
+          path: "{{ .Values.dataDir }}"
           type: Directory
       - name: cache
         emptyDir: {}

@@ -7,7 +7,7 @@
 
 ## Helm Templates
 
-- Quote interpolated values: use `{{ .Values.foo | quote }}` for YAML fields, `"{{ .Values.foo }}"` for inline shell args.
+- Quote interpolated values in templates: `"{{ .Values.foo }}"` for YAML fields and inline shell/config args.
 
 ## E2E Tests
 
