@@ -82,7 +82,7 @@ jobs:
         sed -i "s/^version:.*/version: ${VERSION}/" charts/isoboot/Chart.yaml
         sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/isoboot/Chart.yaml
         helm package charts/isoboot --destination /tmp/charts
-        helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${{ env.REGISTRY }}/isoboot/charts
+        helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${REGISTRY}/isoboot/charts
 
     # ── PXE network: Docker dnsmasq at .1, Kind=DHCP client ─────────
     # The DHCP network is tested alongside isoboot as groundwork for
@@ -207,7 +207,7 @@ jobs:
         VERSION: ${{ steps.version.outputs.version }}
         NODE_NAME: ${{ steps.node.outputs.name }}
       run: |
-        helm install isoboot oci://${{ env.REGISTRY }}/isoboot/charts/isoboot \
+        helm install isoboot oci://${REGISTRY}/isoboot/charts/isoboot \
           --version "${VERSION}" \
           --namespace isoboot-system \
           --create-namespace \
