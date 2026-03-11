@@ -37,7 +37,7 @@ spec:
               - key: metadata.name
                 operator: In
                 values:
-                - {{ .Values.nodeName }}
+                - {{ .Values.nodeName | quote }}
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -47,7 +47,7 @@ spec:
             topologyKey: kubernetes.io/hostname
       initContainers:
       - name: extract-ipxe
-        image: {{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}
+        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}"
         command: ["/bin/sh", "-c"]
         args:
         - |
@@ -61,13 +61,13 @@ spec:
           ls -la "$DEST"
         volumeMounts:
         - name: data
-          mountPath: {{ .Values.dataDir }}
+          mountPath: {{ .Values.dataDir | quote }}
           readOnly: true
         - name: ipxe
           mountPath: /ipxe
       containers:
       - name: dnsmasq
-        image: {{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}
+        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}"
         command: ["/bin/sh", "-c"]
         args:
         - |
@@ -134,7 +134,7 @@ spec:
       volumes:
       - name: data
         hostPath:
-          path: {{ .Values.dataDir }}
+          path: {{ .Values.dataDir | quote }}
           type: Directory
       - name: ipxe
         emptyDir: {}
