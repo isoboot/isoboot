@@ -17,7 +17,6 @@ data:
             listen {{ .Values.nginx.port }};
             location /static/ {
                 alias {{ .Values.dataDir }}/boot/;
-                autoindex on;
             }
         }
     }
