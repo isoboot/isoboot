@@ -21,6 +21,12 @@ dataDir: /data/isoboot
 crds:
   enabled: true
 
+nginx:
+  image:
+    repository: nginx
+    tag: "1.29-alpine3.23"
+  port: 8080
+
 resources:
   limits:
     cpu: 500m
