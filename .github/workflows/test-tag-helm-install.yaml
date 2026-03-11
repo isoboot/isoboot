@@ -84,9 +84,7 @@ jobs:
         helm package charts/isoboot --destination /tmp/charts
         helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${REGISTRY}/isoboot/charts
 
-    # ── PXE network: Docker dnsmasq at .1, Kind=DHCP client ─────────
-    # The DHCP network is tested alongside isoboot as groundwork for
-    # future PXE serving tests. For now they exercise independent paths.
+    # ── PXE network: ns1=DHCP server, ns2=Kind node, ns3=wget client ──
     - name: Install network tools
       run: sudo apt-get update -qq && sudo apt-get install -y -qq isc-dhcp-client
 
@@ -101,7 +99,7 @@ jobs:
         sudo ip link set br-pxe up
         sudo mkdir -p /var/run/netns
 
-    - name: Start DHCP server container (192.168.101.1)
+    - name: Start DHCP server container (ns1 — 192.168.101.1)
       run: |
         # Start with default networking so apk can download dnsmasq
         docker run -d --name dhcp-srv --cap-add=NET_ADMIN \
@@ -119,21 +117,21 @@ jobs:
 
         # Link container netns so ip-netns can manage it
         SRV_PID=$(docker inspect -f '{{.State.Pid}}' dhcp-srv)
-        sudo ln -sf /proc/$SRV_PID/ns/net /var/run/netns/ns-srv
+        sudo ln -sf /proc/$SRV_PID/ns/net /var/run/netns/ns1
 
         # Attach to bridge with static IP 192.168.101.1/24
-        sudo ip link add veth-srv type veth peer name veth-srv-br
-        sudo ip link set veth-srv-br master br-pxe
-        sudo ip link set veth-srv-br up
-        sudo ip link set veth-srv netns "$SRV_PID"
-        sudo ip netns exec ns-srv ip addr add 192.168.101.1/24 dev veth-srv
-        sudo ip netns exec ns-srv ip link set veth-srv up
-        sudo ip netns exec ns-srv ip link set lo up
+        sudo ip link add veth-ns1 type veth peer name veth-ns1-br
+        sudo ip link set veth-ns1-br master br-pxe
+        sudo ip link set veth-ns1-br up
+        sudo ip link set veth-ns1 netns "$SRV_PID"
+        sudo ip netns exec ns1 ip addr add 192.168.101.1/24 dev veth-ns1
+        sudo ip netns exec ns1 ip link set veth-ns1 up
+        sudo ip netns exec ns1 ip link set lo up
 
         # Start dnsmasq inside the container
         docker exec -d dhcp-srv dnsmasq \
           --no-daemon \
-          --interface=veth-srv \
+          --interface=veth-ns1 \
           --bind-interfaces \
           --dhcp-range=192.168.101.100,192.168.101.200,255.255.255.0,1h \
           --dhcp-option=option:router,192.168.101.1 \
@@ -146,7 +144,7 @@ jobs:
           sleep 1
         done
         docker exec dhcp-srv pgrep dnsmasq || { echo "FAIL: dnsmasq not running"; docker logs dhcp-srv; exit 1; }
-        echo "DHCP server running at 192.168.101.1 (Docker container)"
+        echo "DHCP server running at 192.168.101.1 (ns1)"
 
     # ── Kind cluster ─────────────────────────────────────────────────
     - name: Create host data directory
@@ -166,36 +164,36 @@ jobs:
             containerPath: /data/isoboot
         EOF
 
-    - name: Connect Kind node to PXE bridge (DHCP client)
+    - name: Connect Kind node to PXE bridge (ns2 — DHCP client)
       run: |
         KIND_CONTAINER=$(docker ps -qf "name=pxe-test-control-plane")
         KIND_PID=$(docker inspect -f '{{.State.Pid}}' "$KIND_CONTAINER")
 
         # Link Kind container netns so ip-netns can manage it
         sudo mkdir -p /var/run/netns
-        sudo ln -sf /proc/$KIND_PID/ns/net /var/run/netns/ns-kind
+        sudo ln -sf /proc/$KIND_PID/ns/net /var/run/netns/ns2
 
         # Attach veth to bridge
-        sudo ip link add veth-kind type veth peer name veth-kind-br
-        sudo ip link set veth-kind-br master br-pxe
-        sudo ip link set veth-kind-br up
-        sudo ip link set veth-kind netns "$KIND_PID"
-        sudo ip netns exec ns-kind ip link set veth-kind up
+        sudo ip link add veth-ns2 type veth peer name veth-ns2-br
+        sudo ip link set veth-ns2-br master br-pxe
+        sudo ip link set veth-ns2-br up
+        sudo ip link set veth-ns2 netns "$KIND_PID"
+        sudo ip netns exec ns2 ip link set veth-ns2 up
 
         # Get DHCP lease from dnsmasq
-        sudo ip netns exec ns-kind dhclient -v veth-kind
+        sudo ip netns exec ns2 dhclient -v veth-ns2
 
         # Show and capture assigned IP
-        sudo ip netns exec ns-kind ip addr show veth-kind
-        KIND_PXE_IP=$(sudo ip netns exec ns-kind ip -4 -o addr show veth-kind | grep -oP '192\.168\.101\.\d+' | head -1)
+        sudo ip netns exec ns2 ip addr show veth-ns2
+        KIND_PXE_IP=$(sudo ip netns exec ns2 ip -4 -o addr show veth-ns2 | grep -oP '192\.168\.101\.\d+' | head -1)
         [ -n "$KIND_PXE_IP" ] || { echo "FAIL: dhclient did not obtain a 192.168.101.x lease"; exit 1; }
-        echo "Kind node got DHCP IP: $KIND_PXE_IP"
+        echo "Kind node got DHCP IP: $KIND_PXE_IP (ns2)"
         echo "$KIND_PXE_IP" > /tmp/kind-pxe-ip
 
-        # Verify bidirectional connectivity (Kind <-> DHCP server container)
-        sudo ip netns exec ns-kind ping -c 3 192.168.101.1
-        sudo ip netns exec ns-srv ping -c 3 "$KIND_PXE_IP"
-        echo "PXE network OK: dhcp-srv(.1) <-> Kind($KIND_PXE_IP)"
+        # Verify bidirectional connectivity (ns2 <-> ns1)
+        sudo ip netns exec ns2 ping -c 3 192.168.101.1
+        sudo ip netns exec ns1 ping -c 3 "$KIND_PXE_IP"
+        echo "PXE network OK: ns1(.1) <-> ns2($KIND_PXE_IP)"
 
     # ── Deploy isoboot from GHCR ─────────────────────────────────────
     - name: Get Kind node name
@@ -215,7 +213,7 @@ jobs:
           --wait \
           --timeout 120s
 
-    - name: Verify controller is running
+    - name: Verify controller and nginx are running
       run: |
         kubectl -n isoboot-system wait --for=condition=Ready pod -l app.kubernetes.io/name=isoboot --timeout=60s
         kubectl -n isoboot-system get pods
@@ -287,13 +285,51 @@ jobs:
         test -f /tmp/isoboot-data/boot/rocky-linux-10.1/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
         test -f /tmp/isoboot-data/boot/rocky-linux-10.1/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
 
+    # ── PXE download test: ns3 wget client ─────────────────────────
+    - name: Start wget client container (ns3)
+      run: |
+        docker run -d --name wget-client --cap-add=NET_ADMIN \
+          alpine:3.23 sh -c "sleep infinity"
+        docker network disconnect bridge wget-client
+
+        CLIENT_PID=$(docker inspect -f '{{.State.Pid}}' wget-client)
+        sudo ln -sf /proc/$CLIENT_PID/ns/net /var/run/netns/ns3
+
+        sudo ip link add veth-ns3 type veth peer name veth-ns3-br
+        sudo ip link set veth-ns3-br master br-pxe
+        sudo ip link set veth-ns3-br up
+        sudo ip link set veth-ns3 netns "$CLIENT_PID"
+        sudo ip netns exec ns3 ip link set veth-ns3 up
+        sudo ip netns exec ns3 ip link set lo up
+
+        # Get DHCP lease
+        sudo ip netns exec ns3 dhclient -v veth-ns3
+        sudo ip netns exec ns3 ip addr show veth-ns3
+        echo "wget client ready (ns3)"
+
+    - name: Download boot artifacts via PXE network (ns3 -> nginx on ns2)
+      run: |
+        KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
+        docker exec wget-client wget -O /tmp/dl-vmlinuz \
+          "http://${KIND_PXE_IP}:8080/static/rocky-linux-10.1/kernel/vmlinuz"
+        docker exec wget-client wget -O /tmp/dl-initrd \
+          "http://${KIND_PXE_IP}:8080/static/rocky-linux-10.1/initrd/initrd.img"
+
+    - name: Verify downloaded artifact checksums
+      run: |
+        docker exec wget-client sh -c \
+          "echo '${VMLINUZ_SHA256}  /tmp/dl-vmlinuz' | sha256sum -c"
+        docker exec wget-client sh -c \
+          "echo '${INITRD_SHA256}  /tmp/dl-initrd' | sha256sum -c"
+
     # ── Final PXE network check ──────────────────────────────────────
     - name: Verify PXE network connectivity
       run: |
         KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
-        sudo ip netns exec ns-srv ping -c 3 "$KIND_PXE_IP"
-        sudo ip netns exec ns-kind ping -c 3 192.168.101.1
-        echo "PXE network fully operational"
+        sudo ip netns exec ns1 ping -c 3 "$KIND_PXE_IP"
+        sudo ip netns exec ns2 ping -c 3 192.168.101.1
+        sudo ip netns exec ns3 ping -c 3 192.168.101.1
+        echo "PXE network fully operational (ns1, ns2, ns3)"
 
     # ── Failure diagnostics ──────────────────────────────────────────
     - name: Collect logs on failure
@@ -302,10 +338,12 @@ jobs:
         echo "=== Bridge ==="
         ip addr show br-pxe 2>/dev/null || true
         bridge link show master br-pxe 2>/dev/null || true
-        echo "=== DHCP server (ns-srv) ==="
-        sudo ip netns exec ns-srv ip addr 2>/dev/null || true
-        echo "=== Kind node (ns-kind) ==="
-        sudo ip netns exec ns-kind ip addr 2>/dev/null || true
+        echo "=== DHCP server (ns1) ==="
+        sudo ip netns exec ns1 ip addr 2>/dev/null || true
+        echo "=== Kind node (ns2) ==="
+        sudo ip netns exec ns2 ip addr 2>/dev/null || true
+        echo "=== wget client (ns3) ==="
+        sudo ip netns exec ns3 ip addr 2>/dev/null || true
         echo "=== dnsmasq DHCP logs ==="
         docker exec dhcp-srv cat /tmp/dnsmasq.log 2>/dev/null || true
         echo "=== dnsmasq container logs ==="
@@ -316,6 +354,8 @@ jobs:
         kubectl get bootconfig -o yaml 2>/dev/null || true
         echo "=== Controller logs ==="
         kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --tail=100 2>/dev/null || true
+        echo "=== Nginx logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=nginx --tail=50 2>/dev/null || true
         echo "=== Events ==="
         kubectl -n isoboot-system get events --sort-by='.lastTimestamp' 2>/dev/null || true
         echo "=== Host data directory ==="
@@ -327,6 +367,6 @@ jobs:
       if: always()
       run: |
         kind delete cluster --name pxe-test 2>/dev/null || true
-        docker rm -f dhcp-srv 2>/dev/null || true
-        sudo rm -f /var/run/netns/ns-srv /var/run/netns/ns-kind
+        docker rm -f dhcp-srv wget-client 2>/dev/null || true
+        sudo rm -f /var/run/netns/ns1 /var/run/netns/ns2 /var/run/netns/ns3
         sudo ip link del br-pxe 2>/dev/null || true

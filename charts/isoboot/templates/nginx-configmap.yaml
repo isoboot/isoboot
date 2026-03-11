@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "isoboot.fullname" . }}-nginx-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+data:
+  nginx.conf: |
+    pid /var/run/nginx.pid;
+    worker_processes 1;
+    events { worker_connections 128; }
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        sendfile on;
+        server {
+            listen {{ .Values.nginx.port }};
+            location /static/ {
+                alias {{ .Values.dataDir }}/boot/;
+            }
+        }
+    }

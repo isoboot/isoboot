@@ -21,6 +21,19 @@ dataDir: /data/isoboot
 crds:
   enabled: true
 
+nginx:
+  image:
+    repository: nginxinc/nginx-unprivileged
+    tag: "1.29-alpine"
+  port: 8080
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
 resources:
   limits:
     cpu: 500m
