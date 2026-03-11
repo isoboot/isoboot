@@ -70,6 +70,7 @@ jobs:
           docker exec dhcp-srv which dnsmasq 2>/dev/null && break
           sleep 1
         done
+        docker exec dhcp-srv which dnsmasq || { echo "FAIL: dnsmasq not installed"; docker logs dhcp-srv; exit 1; }
 
         # Disconnect from Docker bridge — fully isolate the container
         docker network disconnect bridge dhcp-srv
