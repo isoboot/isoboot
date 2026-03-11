@@ -32,7 +32,7 @@ spec:
               - key: metadata.name
                 operator: In
                 values:
-                - {{ .Values.nodeName }}
+                - "{{ .Values.nodeName }}"
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -51,8 +51,8 @@ spec:
         args:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=:8443
-        - --data-dir={{ .Values.dataDir }}
-        image: {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+        - "--data-dir={{ .Values.dataDir }}"
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         securityContext:
           readOnlyRootFilesystem: true
@@ -76,9 +76,9 @@ spec:
           {{- toYaml .Values.resources | nindent 10 }}
         volumeMounts:
         - name: data
-          mountPath: {{ .Values.dataDir }}
+          mountPath: "{{ .Values.dataDir }}"
       volumes:
       - name: data
         hostPath:
-          path: {{ .Values.dataDir }}
+          path: "{{ .Values.dataDir }}"
           type: Directory
