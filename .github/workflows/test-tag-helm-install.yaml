@@ -76,8 +76,9 @@ jobs:
     - uses: azure/setup-helm@v4
 
     - name: Package and push Helm chart
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
-        VERSION="${{ steps.version.outputs.version }}"
         sed -i "s/^version:.*/version: ${VERSION}/" charts/isoboot/Chart.yaml
         sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/isoboot/Chart.yaml
         helm package charts/isoboot --destination /tmp/charts
@@ -202,13 +203,15 @@ jobs:
       run: echo "name=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')" >> "$GITHUB_OUTPUT"
 
     - name: Helm install from GHCR
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        NODE_NAME: ${{ steps.node.outputs.name }}
       run: |
-        VERSION="${{ steps.version.outputs.version }}"
         helm install isoboot oci://${{ env.REGISTRY }}/isoboot/charts/isoboot \
           --version "${VERSION}" \
           --namespace isoboot-system \
           --create-namespace \
-          --set nodeName=${{ steps.node.outputs.name }} \
+          --set nodeName="${NODE_NAME}" \
           --wait \
           --timeout 120s
 
