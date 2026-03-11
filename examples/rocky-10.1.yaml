@@ -1,0 +1,29 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: rocky-10-1-kernel
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://download.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz
+  sha256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: rocky-10-1-initrd
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://download.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/initrd.img
+  sha256: "07ec303514509b4ddbfe8df90f65dddaf48519f25b416a2a5368903fe39c627a"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: rocky-10-1
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  kernelRef: rocky-10-1-kernel
+  initrdRef: rocky-10-1-initrd
