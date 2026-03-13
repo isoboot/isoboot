@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +31,7 @@ func noMatchDirective() bootDirectiveFunc {
 
 func duplicateDirective() bootDirectiveFunc {
 	return func(_ context.Context, mac string) (*httpd.BootDirective, error) {
-		return nil, errors.New("multiple machines with MAC " + mac)
+		return nil, fmt.Errorf("%w with MAC %s", httpd.ErrMultipleMachines, mac)
 	}
 }
 

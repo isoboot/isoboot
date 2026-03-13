@@ -18,12 +18,21 @@ package httpd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/controller"
+)
+
+var (
+	// ErrMultipleMachines indicates more than one Machine shares a MAC.
+	ErrMultipleMachines = errors.New("multiple machines")
+	// ErrMultipleProvisions indicates more than one pending Provision
+	// exists for the same Machine.
+	ErrMultipleProvisions = errors.New("multiple pending provisions")
 )
 
 // PendingProvisionForMAC returns the Provision with status.phase == Pending
@@ -47,7 +56,7 @@ func PendingProvisionForMAC(
 		// proceed
 	default:
 		return nil, fmt.Errorf(
-			"multiple machines with MAC %s", mac)
+			"%w with MAC %s", ErrMultipleMachines, mac)
 	}
 
 	var provisions isobootgithubiov1alpha1.ProvisionList
@@ -68,6 +77,6 @@ func PendingProvisionForMAC(
 		return &provisions.Items[0], nil
 	default:
 		return nil, fmt.Errorf(
-			"multiple pending provisions for MAC %s", mac)
+			"%w for MAC %s", ErrMultipleProvisions, mac)
 	}
 }

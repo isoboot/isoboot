@@ -18,10 +18,10 @@ package httpd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
-	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -37,12 +37,8 @@ type BootDirective struct {
 
 // IsDuplicateError reports whether err indicates a duplicate machine or provision.
 func IsDuplicateError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "multiple machines") ||
-		strings.Contains(s, "multiple pending provisions")
+	return errors.Is(err, ErrMultipleMachines) ||
+		errors.Is(err, ErrMultipleProvisions)
 }
 
 // BootDirectiveForMAC looks up the pending provision for the given MAC address

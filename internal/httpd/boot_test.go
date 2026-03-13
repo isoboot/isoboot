@@ -180,14 +180,16 @@ var _ = Describe("IsDuplicateError", func() {
 		Expect(IsDuplicateError(nil)).To(BeFalse())
 	})
 
-	It("returns true for multiple machines error", func() {
+	It("returns true for wrapped ErrMultipleMachines", func() {
 		Expect(IsDuplicateError(fmt.Errorf(
-			"multiple machines with MAC aa-bb-cc-dd-ee-ff"))).To(BeTrue())
+			"%w with MAC aa-bb-cc-dd-ee-ff",
+			ErrMultipleMachines))).To(BeTrue())
 	})
 
-	It("returns true for multiple provisions error", func() {
+	It("returns true for wrapped ErrMultipleProvisions", func() {
 		Expect(IsDuplicateError(fmt.Errorf(
-			"multiple pending provisions for MAC aa"))).To(BeTrue())
+			"%w for MAC aa",
+			ErrMultipleProvisions))).To(BeTrue())
 	})
 
 	It("returns false for other errors", func() {
