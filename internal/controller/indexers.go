@@ -25,10 +25,14 @@ import (
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
+// ProvisionPhaseField is the field path used to index Provision
+// resources by status.phase.
+const ProvisionPhaseField = "status.phase"
+
 // SetupIndexers registers field indexes on the manager's cache.
 func SetupIndexers(ctx context.Context, mgr manager.Manager) error {
 	return mgr.GetFieldIndexer().IndexField(ctx,
-		&isobootgithubiov1alpha1.Provision{}, "status.phase",
+		&isobootgithubiov1alpha1.Provision{}, ProvisionPhaseField,
 		func(obj client.Object) []string {
 			p := obj.(*isobootgithubiov1alpha1.Provision)
 			if p.Status.Phase == "" {

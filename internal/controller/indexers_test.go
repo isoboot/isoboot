@@ -95,7 +95,7 @@ var _ = Describe("Provision status.phase indexer", func() {
 		Eventually(func() int {
 			list = isobootgithubiov1alpha1.ProvisionList{}
 			err := indexedClient.List(ctx, &list,
-				client.MatchingFields{"status.phase": "Pending"})
+				client.MatchingFields{ProvisionPhaseField: "Pending"})
 			if err != nil {
 				return -1
 			}
@@ -113,15 +113,24 @@ var _ = Describe("Provision status.phase indexer", func() {
 			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
 		}()
 
-		var list isobootgithubiov1alpha1.ProvisionList
+		// Wait for the InProgress provision to appear in the cache
+		// before asserting that Pending returns 0.
 		Eventually(func() int {
-			list = isobootgithubiov1alpha1.ProvisionList{}
-			err := indexedClient.List(ctx, &list,
-				client.MatchingFields{"status.phase": "Pending"})
+			var all isobootgithubiov1alpha1.ProvisionList
+			err := indexedClient.List(ctx, &all,
+				client.MatchingFields{
+					ProvisionPhaseField: "InProgress",
+				})
 			if err != nil {
 				return -1
 			}
-			return len(list.Items)
-		}).Should(Equal(0))
+			return len(all.Items)
+		}).Should(Equal(1))
+
+		var list isobootgithubiov1alpha1.ProvisionList
+		Expect(indexedClient.List(ctx, &list,
+			client.MatchingFields{ProvisionPhaseField: "Pending"})).
+			To(Succeed())
+		Expect(list.Items).To(BeEmpty())
 	})
 })
