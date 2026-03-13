@@ -137,6 +137,105 @@ var _ = Describe("Provision status.phase indexer", func() {
 	})
 })
 
+var _ = Describe("Provision spec.machineRef indexer", func() {
+	var (
+		indexedClient client.Client
+		mgrCancel     context.CancelFunc
+	)
+
+	BeforeEach(func() {
+		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+			Scheme:  scheme.Scheme,
+			Metrics: metricsserver.Options{BindAddress: "0"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(SetupIndexers(ctx, mgr)).To(Succeed())
+
+		indexedClient = mgr.GetClient()
+
+		var mgrCtx context.Context
+		mgrCtx, mgrCancel = context.WithCancel(ctx)
+		go func() {
+			defer GinkgoRecover()
+			Expect(mgr.Start(mgrCtx)).To(Succeed())
+		}()
+	})
+
+	AfterEach(func() {
+		mgrCancel()
+	})
+
+	provision := func(
+		name, machineRef string,
+	) *isobootgithubiov1alpha1.Provision {
+		p := &isobootgithubiov1alpha1.Provision{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "default",
+			},
+			Spec: isobootgithubiov1alpha1.ProvisionSpec{
+				MachineRef:         machineRef,
+				BootConfigRef:      "bootconfig-1",
+				ProvisionAnswerRef: "answer-1",
+			},
+		}
+		Expect(k8sClient.Create(ctx, p)).To(Succeed())
+		return p
+	}
+
+	It("returns only provisions with matching machineRef", func() {
+		p1 := provision("idx-ref-a", "machine-1")
+		p2 := provision("idx-ref-b", "machine-2")
+		p3 := provision("idx-ref-c", "machine-1")
+
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p1)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, p2)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, p3)).To(Succeed())
+		}()
+
+		var list isobootgithubiov1alpha1.ProvisionList
+		Eventually(func() int {
+			list = isobootgithubiov1alpha1.ProvisionList{}
+			err := indexedClient.List(ctx, &list,
+				client.MatchingFields{ProvisionMachineRefField: "machine-1"})
+			if err != nil {
+				return -1
+			}
+			return len(list.Items)
+		}).Should(Equal(2))
+
+		names := []string{list.Items[0].Name, list.Items[1].Name}
+		Expect(names).To(ContainElements("idx-ref-a", "idx-ref-c"))
+	})
+
+	It("returns empty list when no provisions match", func() {
+		p := provision("idx-ref-other", "machine-other")
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+		}()
+
+		Eventually(func() int {
+			var all isobootgithubiov1alpha1.ProvisionList
+			err := indexedClient.List(ctx, &all,
+				client.MatchingFields{
+					ProvisionMachineRefField: "machine-other",
+				})
+			if err != nil {
+				return -1
+			}
+			return len(all.Items)
+		}).Should(Equal(1))
+
+		var list isobootgithubiov1alpha1.ProvisionList
+		Expect(indexedClient.List(ctx, &list,
+			client.MatchingFields{ProvisionMachineRefField: "machine-none"})).
+			To(Succeed())
+		Expect(list.Items).To(BeEmpty())
+	})
+})
+
 var _ = Describe("Machine spec.mac indexer", func() {
 	var (
 		indexedClient client.Client

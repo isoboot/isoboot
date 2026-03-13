@@ -29,6 +29,10 @@ import (
 // resources by status.phase.
 const ProvisionPhaseField = "status.phase"
 
+// ProvisionMachineRefField is the field path used to index Provision
+// resources by spec.machineRef.
+const ProvisionMachineRefField = "spec.machineRef"
+
 // MachineSpecMACField is the field path used to index Machine
 // resources by spec.mac.
 const MachineSpecMACField = "spec.mac"
@@ -47,6 +51,18 @@ func SetupIndexers(ctx context.Context, mgr manager.Manager) error {
 				return nil
 			}
 			return []string{string(p.Status.Phase)}
+		}); err != nil {
+		return err
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(ctx,
+		&isobootgithubiov1alpha1.Provision{}, ProvisionMachineRefField,
+		func(obj client.Object) []string {
+			p := obj.(*isobootgithubiov1alpha1.Provision)
+			if p.Spec.MachineRef == "" {
+				return nil
+			}
+			return []string{p.Spec.MachineRef}
 		}); err != nil {
 		return err
 	}
