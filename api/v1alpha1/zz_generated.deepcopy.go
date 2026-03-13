@@ -480,8 +480,8 @@ func (in *ProvisionSpec) DeepCopyInto(out *ProvisionSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	if in.MachineId != nil {
-		in, out := &in.MachineId, &out.MachineId
+	if in.MachineID != nil {
+		in, out := &in.MachineID, &out.MachineID
 		*out = new(string)
 		**out = **in
 	}

@@ -48,7 +48,7 @@ type ProvisionSpec struct {
 	// machineId is an optional machine identifier (32-character hex string).
 	// +optional
 	// +kubebuilder:validation:Pattern="^[0-9a-f]{32}$"
-	MachineId *string `json:"machineId,omitempty"`
+	MachineID *string `json:"machineId,omitempty"`
 }
 
 // ProvisionPhase describes the current phase of a Provision.
