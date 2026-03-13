@@ -351,7 +351,7 @@ jobs:
         KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
         KIND_PXE_PORT=$(cat /tmp/kind-pxe-port)
         docker exec wget-client wget -qO /tmp/dynamic-boot \
-          "http://${KIND_PXE_IP}:${KIND_PXE_PORT}/dynamic/conditional-boot?mac=00:11:22:33:44:55"
+          "http://${KIND_PXE_IP}:${KIND_PXE_PORT}/dynamic/conditional-boot?mac=00-11-22-33-44-55"
         echo "=== dynamic boot response ==="
         docker exec wget-client cat /tmp/dynamic-boot
         docker exec wget-client grep '#!ipxe' /tmp/dynamic-boot \

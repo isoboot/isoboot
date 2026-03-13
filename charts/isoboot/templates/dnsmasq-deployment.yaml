@@ -53,7 +53,7 @@ spec:
           echo -n "$HOST_IP" > /config/host-ip
           echo -n "$IFACE" > /config/iface
           mkdir -p "{{ .Values.dataDir }}/boot" || { echo "FAIL: cannot create {{ .Values.dataDir }}/boot — ensure dataDir is writable by UID 65532"; exit 1; }
-          printf '#!ipxe\nchain http://%s:{{ .Values.nginx.port }}/dynamic/conditional-boot?mac=${net0/mac} || sanboot --no-describe --drive 0x80\n' "$HOST_IP" > "{{ .Values.dataDir }}/boot/boot.ipxe"
+          printf '#!ipxe\nchain http://%s:{{ .Values.nginx.port }}/dynamic/conditional-boot?mac=${net0/mac:hexhyp} || sanboot --no-describe --drive 0x80\n' "$HOST_IP" > "{{ .Values.dataDir }}/boot/boot.ipxe"
           echo "Generated boot.ipxe:"
           cat "{{ .Values.dataDir }}/boot/boot.ipxe"
         securityContext:

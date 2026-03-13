@@ -21,7 +21,7 @@ func mustHandler(t *testing.T) http.HandlerFunc {
 
 func TestConditionalBoot_ValidIPXEHeader(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	w := httptest.NewRecorder()
 
@@ -35,7 +35,7 @@ func TestConditionalBoot_ValidIPXEHeader(t *testing.T) {
 
 func TestConditionalBoot_ContentType(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	w := httptest.NewRecorder()
 
@@ -49,7 +49,7 @@ func TestConditionalBoot_ContentType(t *testing.T) {
 
 func TestConditionalBoot_BothForwardedHeaders(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Host", "proxy.example.com")
 	req.Header.Set("X-Forwarded-Port", "443")
@@ -65,7 +65,7 @@ func TestConditionalBoot_BothForwardedHeaders(t *testing.T) {
 
 func TestConditionalBoot_FallbackToHostHeader(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	w := httptest.NewRecorder()
 
@@ -79,7 +79,7 @@ func TestConditionalBoot_FallbackToHostHeader(t *testing.T) {
 
 func TestConditionalBoot_HostWithPort_UsesListenerPort(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = "192.168.101.2:9999"
 	w := httptest.NewRecorder()
 
@@ -93,7 +93,7 @@ func TestConditionalBoot_HostWithPort_UsesListenerPort(t *testing.T) {
 
 func TestConditionalBoot_OnlyForwardedHost(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Host", "proxy.example.com")
 	w := httptest.NewRecorder()
@@ -108,7 +108,7 @@ func TestConditionalBoot_OnlyForwardedHost(t *testing.T) {
 
 func TestConditionalBoot_OnlyForwardedPort(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Port", "443")
 	w := httptest.NewRecorder()
@@ -123,7 +123,7 @@ func TestConditionalBoot_OnlyForwardedPort(t *testing.T) {
 
 func TestConditionalBoot_MissingHostHeader(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = ""
 	w := httptest.NewRecorder()
 
@@ -186,7 +186,7 @@ func TestConditionalBoot_InvalidMacFormat(t *testing.T) {
 
 func TestConditionalBoot_MacInjection(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff%0aboot", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff%0aboot", nil)
 	req.Host = testHost
 	w := httptest.NewRecorder()
 
@@ -199,7 +199,7 @@ func TestConditionalBoot_MacInjection(t *testing.T) {
 
 func TestConditionalBoot_InvalidHost(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Host", "evil.com/exploit#")
 	req.Header.Set("X-Forwarded-Port", "443")
@@ -214,7 +214,7 @@ func TestConditionalBoot_InvalidHost(t *testing.T) {
 
 func TestConditionalBoot_InvalidPort(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Port", "443/evil#")
 	w := httptest.NewRecorder()
@@ -228,7 +228,7 @@ func TestConditionalBoot_InvalidPort(t *testing.T) {
 
 func TestConditionalBoot_PortOutOfRange(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Port", "99999")
 	w := httptest.NewRecorder()
@@ -242,7 +242,7 @@ func TestConditionalBoot_PortOutOfRange(t *testing.T) {
 
 func TestConditionalBoot_ForwardedHostWithPort(t *testing.T) {
 	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Host", "proxy.example.com:443")
 	req.Header.Set("X-Forwarded-Port", "443")
