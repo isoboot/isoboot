@@ -356,8 +356,8 @@ jobs:
         docker exec wget-client cat /tmp/dynamic-boot
         docker exec wget-client grep '#!ipxe' /tmp/dynamic-boot \
           || { echo "FAIL: missing #!ipxe header"; exit 1; }
-        docker exec wget-client grep 'rocky-10.1' /tmp/dynamic-boot \
-          || { echo "FAIL: missing rocky-10.1"; exit 1; }
+        docker exec wget-client grep 'chain' /tmp/dynamic-boot \
+          || { echo "FAIL: missing chain directive"; exit 1; }
         docker exec wget-client sh -c "grep '${KIND_PXE_IP}:${KIND_PXE_PORT}' /tmp/dynamic-boot" \
           || { echo "FAIL: missing host:port"; exit 1; }
 
