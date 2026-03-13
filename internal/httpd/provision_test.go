@@ -62,12 +62,15 @@ var _ = Describe("PendingProvisionForMAC", func() {
 	}
 
 	It("returns nil when no machine exists for MAC", func() {
-		// Wait for the cache to be ready before querying.
+		// Create and delete a sentinel machine so we can confirm the
+		// cache has synced before asserting the zero-match path.
+		sentinel := createMachine("ppm-sentinel", "ff-ff-ff-ff-ff-ff")
 		Eventually(func() error {
 			_, err := PendingProvisionForMAC(
-				ctx, indexedClient, ns, "00-00-00-00-00-01")
+				ctx, indexedClient, ns, "ff-ff-ff-ff-ff-ff")
 			return err
 		}).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, sentinel)).To(Succeed())
 
 		result, err := PendingProvisionForMAC(
 			ctx, indexedClient, ns, "00-00-00-00-00-01")
@@ -98,8 +101,10 @@ var _ = Describe("PendingProvisionForMAC", func() {
 		p := createProvision("ppm-p2", "ppm-m2",
 			isobootgithubiov1alpha1.ProvisionPhaseComplete)
 		defer func() {
-			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
+		}()
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
 		}()
 
 		// Wait for the provision to appear in the cache.
@@ -120,8 +125,10 @@ var _ = Describe("PendingProvisionForMAC", func() {
 		p := createProvision("ppm-p3", "ppm-m3",
 			isobootgithubiov1alpha1.ProvisionPhasePending)
 		defer func() {
-			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
+		}()
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
 		}()
 
 		var result *isobootgithubiov1alpha1.Provision
@@ -141,9 +148,11 @@ var _ = Describe("PendingProvisionForMAC", func() {
 		p2 := createProvision("ppm-p4b", "ppm-m4",
 			isobootgithubiov1alpha1.ProvisionPhaseComplete)
 		defer func() {
+			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
+		}()
+		defer func() {
 			Expect(k8sClient.Delete(ctx, p1)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, p2)).To(Succeed())
-			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
 		}()
 
 		var result *isobootgithubiov1alpha1.Provision
@@ -156,6 +165,22 @@ var _ = Describe("PendingProvisionForMAC", func() {
 		Expect(result.Name).To(Equal("ppm-p4a"))
 	})
 
+	It("returns error when multiple machines share MAC", func() {
+		m1 := createMachine("ppm-m6a", "aa-00-00-00-00-06")
+		m2 := createMachine("ppm-m6b", "aa-00-00-00-00-06")
+		defer func() {
+			Expect(k8sClient.Delete(ctx, m1)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, m2)).To(Succeed())
+		}()
+
+		Eventually(func() error {
+			_, err := PendingProvisionForMAC(
+				ctx, indexedClient, ns, "aa-00-00-00-00-06")
+			return err
+		}).Should(MatchError(ContainSubstring(
+			"multiple machines with MAC")))
+	})
+
 	It("returns error when multiple pending provisions", func() {
 		m := createMachine("ppm-m5", "aa-00-00-00-00-05")
 		p1 := createProvision("ppm-p5a", "ppm-m5",
@@ -163,9 +188,11 @@ var _ = Describe("PendingProvisionForMAC", func() {
 		p2 := createProvision("ppm-p5b", "ppm-m5",
 			isobootgithubiov1alpha1.ProvisionPhasePending)
 		defer func() {
+			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
+		}()
+		defer func() {
 			Expect(k8sClient.Delete(ctx, p1)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, p2)).To(Succeed())
-			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
 		}()
 
 		Eventually(func() error {
