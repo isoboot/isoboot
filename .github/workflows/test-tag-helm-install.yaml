@@ -333,10 +333,11 @@ jobs:
     - name: Download boot artifacts via PXE network (ns3 -> nginx on ns2)
       run: |
         KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
+        KIND_PXE_PORT=$(cat /tmp/kind-pxe-port)
         docker exec wget-client wget -O /tmp/dl-vmlinuz \
-          "http://${KIND_PXE_IP}:8080/static/rocky-10.1/kernel/vmlinuz"
+          "http://${KIND_PXE_IP}:${KIND_PXE_PORT}/static/rocky-10.1/kernel/vmlinuz"
         docker exec wget-client wget -O /tmp/dl-initrd \
-          "http://${KIND_PXE_IP}:8080/static/rocky-10.1/initrd/initrd.img"
+          "http://${KIND_PXE_IP}:${KIND_PXE_PORT}/static/rocky-10.1/initrd/initrd.img"
 
     - name: Verify downloaded artifact checksums
       run: |
