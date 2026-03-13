@@ -53,7 +53,7 @@ spec:
           DNS_IP=$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)
           [ -n "$DNS_IP" ] || { echo "FAIL: could not determine DNS resolver from /etc/resolv.conf"; exit 1; }
           echo "Using DNS resolver: $DNS_IP"
-          sed "s/__DNS_RESOLVER__/$DNS_IP/g" /config-template/nginx.conf > /config/nginx.conf
+          sed "s|__DNS_RESOLVER__|$DNS_IP|g" /config-template/nginx.conf > /config/nginx.conf
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false

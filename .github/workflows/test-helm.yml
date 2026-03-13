@@ -6,6 +6,8 @@ on:
     paths:
       - "charts/**"
       - "Dockerfile"
+      - "Dockerfile.httpd"
+      - "Dockerfile.dnsmasq"
       - "cmd/**"
       - "internal/**"
       - "api/**"
@@ -16,6 +18,8 @@ on:
     paths:
       - "charts/**"
       - "Dockerfile"
+      - "Dockerfile.httpd"
+      - "Dockerfile.dnsmasq"
       - "cmd/**"
       - "internal/**"
       - "api/**"
@@ -30,6 +34,8 @@ concurrency:
 env:
   KIND_VERSION: v0.31.0
   IMG: ghcr.io/isoboot/isoboot:${{ github.sha }}
+  IMG_HTTPD: ghcr.io/isoboot/isoboot-httpd:${{ github.sha }}
+  IMG_DNSMASQ: ghcr.io/isoboot/isoboot-dnsmasq:${{ github.sha }}
 
 jobs:
   helm-test:
@@ -41,7 +47,7 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build image
+    - name: Build controller image
       uses: docker/build-push-action@v6
       with:
         context: .
@@ -49,6 +55,26 @@ jobs:
         tags: ${{ env.IMG }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+    - name: Build httpd image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile.httpd
+        load: true
+        tags: ${{ env.IMG_HTTPD }}
+        cache-from: type=gha,scope=httpd
+        cache-to: type=gha,mode=max,scope=httpd
+
+    - name: Build dnsmasq image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile.dnsmasq
+        load: true
+        tags: ${{ env.IMG_DNSMASQ }}
+        cache-from: type=gha,scope=dnsmasq
+        cache-to: type=gha,mode=max,scope=dnsmasq
 
     - name: Install kind
       run: |
@@ -71,8 +97,11 @@ jobs:
             containerPath: /data/isoboot
         EOF
 
-    - name: Load image into Kind
-      run: kind load docker-image ${{ env.IMG }} --name helm-test
+    - name: Load images into Kind
+      run: |
+        kind load docker-image ${{ env.IMG }} --name helm-test
+        kind load docker-image ${{ env.IMG_HTTPD }} --name helm-test
+        kind load docker-image ${{ env.IMG_DNSMASQ }} --name helm-test
 
     - name: Install Helm
       uses: azure/setup-helm@v4
@@ -90,8 +119,17 @@ jobs:
           --set image.repository=ghcr.io/isoboot/isoboot \
           --set image.tag=${{ github.sha }} \
           --set image.pullPolicy=Never \
-          --wait \
+          --set httpd.image.repository=ghcr.io/isoboot/isoboot-httpd \
+          --set httpd.image.tag=${{ github.sha }} \
+          --set dnsmasq.image.repository=ghcr.io/isoboot/isoboot-dnsmasq \
+          --set dnsmasq.image.tag=${{ github.sha }} \
+          --set dnsmasq.subnet=10.0.0.0/8 \
           --timeout 120s
+
+    - name: Wait for controller and httpd
+      run: |
+        kubectl -n isoboot-system rollout status deployment/isoboot-controller-manager --timeout=120s
+        kubectl -n isoboot-system rollout status deployment/isoboot-httpd --timeout=120s
 
     - name: Verify controller is running
       run: kubectl -n isoboot-system get pods

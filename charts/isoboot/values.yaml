@@ -47,6 +47,7 @@ httpd:
     repository: ghcr.io/isoboot/isoboot-httpd
     # tag defaults to .Chart.AppVersion if omitted
     tag: ""
+  # No conflict with nginx.port — httpd uses ClusterIP networking, nginx uses hostNetwork.
   port: 8080
   resources:
     limits:

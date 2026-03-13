@@ -54,7 +54,7 @@ spec:
           HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -1)
           echo "Detected interface=$IFACE host_ip=$HOST_IP"
           echo -n "$HOST_IP" > /config/host-ip
-          mkdir -p "{{ .Values.dataDir }}/boot"
+          mkdir -p "{{ .Values.dataDir }}/boot" || { echo "FAIL: cannot create {{ .Values.dataDir }}/boot — ensure dataDir is writable by UID 65532"; exit 1; }
           printf '#!ipxe\nchain http://%s:{{ .Values.nginx.port }}/dynamic/conditional-boot?mac=${net0/mac}\n' "$HOST_IP" > "{{ .Values.dataDir }}/boot/boot.ipxe"
           echo "Generated boot.ipxe:"
           cat "{{ .Values.dataDir }}/boot/boot.ipxe"
@@ -79,8 +79,13 @@ spec:
           set -e
           TARBALL="{{ .Values.dataDir }}/artifacts/{{ include "isoboot.fullname" . }}-ipxe/ipxeboot.tar.gz"
           DEST="/ipxe"
-          echo "Waiting for iPXE tarball at $TARBALL..."
-          until [ -f "$TARBALL" ]; do sleep 2; done
+          echo "Waiting for iPXE tarball at $TARBALL (timeout 300s)..."
+          ELAPSED=0
+          until [ -f "$TARBALL" ]; do
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+            [ "$ELAPSED" -lt 300 ] || { echo "FAIL: timed out waiting for $TARBALL"; exit 1; }
+          done
           tar xzf "$TARBALL" -C "$DEST" --strip-components=2 ipxeboot/x86_64/
           echo "Extracted x86_64 iPXE files to $DEST:"
           ls -la "$DEST"
