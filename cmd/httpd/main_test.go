@@ -184,6 +184,19 @@ func TestConditionalBoot_InvalidMacFormat(t *testing.T) {
 	}
 }
 
+func TestConditionalBoot_ColonMacRejected(t *testing.T) {
+	handler := mustHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req.Host = testHost
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
 func TestConditionalBoot_MacInjection(t *testing.T) {
 	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff%0aboot", nil)
