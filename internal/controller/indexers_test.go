@@ -136,3 +136,100 @@ var _ = Describe("Provision status.phase indexer", func() {
 		Expect(list.Items).To(BeEmpty())
 	})
 })
+
+var _ = Describe("Machine spec.mac indexer", func() {
+	var (
+		indexedClient client.Client
+		mgrCancel     context.CancelFunc
+	)
+
+	BeforeEach(func() {
+		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+			Scheme:  scheme.Scheme,
+			Metrics: metricsserver.Options{BindAddress: "0"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(SetupIndexers(ctx, mgr)).To(Succeed())
+
+		indexedClient = mgr.GetClient()
+
+		var mgrCtx context.Context
+		mgrCtx, mgrCancel = context.WithCancel(ctx)
+		go func() {
+			defer GinkgoRecover()
+			Expect(mgr.Start(mgrCtx)).To(Succeed())
+		}()
+	})
+
+	AfterEach(func() {
+		mgrCancel()
+	})
+
+	machine := func(name, mac string) *isobootgithubiov1alpha1.Machine {
+		m := &isobootgithubiov1alpha1.Machine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "default",
+			},
+			Spec: isobootgithubiov1alpha1.MachineSpec{
+				MAC: mac,
+			},
+		}
+		Expect(k8sClient.Create(ctx, m)).To(Succeed())
+		return m
+	}
+
+	It("returns only machines with matching MAC", func() {
+		m1 := machine("idx-mac-a", "aa-bb-cc-dd-ee-01")
+		m2 := machine("idx-mac-b", "aa-bb-cc-dd-ee-02")
+		m3 := machine("idx-mac-c", "aa-bb-cc-dd-ee-01")
+
+		defer func() {
+			Expect(k8sClient.Delete(ctx, m1)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, m2)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, m3)).To(Succeed())
+		}()
+
+		var list isobootgithubiov1alpha1.MachineList
+		Eventually(func() int {
+			list = isobootgithubiov1alpha1.MachineList{}
+			err := indexedClient.List(ctx, &list,
+				client.MatchingFields{MachineSpecMACField: "aa-bb-cc-dd-ee-01"})
+			if err != nil {
+				return -1
+			}
+			return len(list.Items)
+		}).Should(Equal(2))
+
+		names := []string{list.Items[0].Name, list.Items[1].Name}
+		Expect(names).To(ContainElements("idx-mac-a", "idx-mac-c"))
+	})
+
+	It("returns empty list when no machines match", func() {
+		m := machine("idx-mac-other", "ff-ff-ff-ff-ff-ff")
+		defer func() {
+			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
+		}()
+
+		// Wait for the machine to appear in the cache before
+		// asserting that a different MAC returns 0.
+		Eventually(func() int {
+			var all isobootgithubiov1alpha1.MachineList
+			err := indexedClient.List(ctx, &all,
+				client.MatchingFields{
+					MachineSpecMACField: "ff-ff-ff-ff-ff-ff",
+				})
+			if err != nil {
+				return -1
+			}
+			return len(all.Items)
+		}).Should(Equal(1))
+
+		var list isobootgithubiov1alpha1.MachineList
+		Expect(indexedClient.List(ctx, &list,
+			client.MatchingFields{MachineSpecMACField: "00-00-00-00-00-00"})).
+			To(Succeed())
+		Expect(list.Items).To(BeEmpty())
+	})
+})
