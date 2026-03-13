@@ -91,6 +91,9 @@ var _ = Describe("BootConfig Controller", func() {
 			Entry("initrd without kernel", "initrd-only", isobootgithubiov1alpha1.BootConfigSpec{
 				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
 			}),
+			Entry("firmware only", "fw-only", isobootgithubiov1alpha1.BootConfigSpec{
+				Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: "my-firmware"},
+			}),
 			Entry("firmware with iso mode", "fw-with-iso", isobootgithubiov1alpha1.BootConfigSpec{
 				Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: "my-firmware"},
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{

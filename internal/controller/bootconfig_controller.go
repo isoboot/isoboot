@@ -174,7 +174,10 @@ func concatenateFiles(dst, srcA, srcB string) error {
 
 	// Remove any existing entries (stale symlinks or old concatenated files)
 	dir := filepath.Dir(dst)
-	entries, _ := os.ReadDir(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("reading dir %s: %w", dir, err)
+	}
 	for _, e := range entries {
 		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
 	}
@@ -227,7 +230,10 @@ func ensureSymlink(dir, filename, target string) error {
 		return nil // already correct
 	}
 	// Symlink is wrong or missing — clean all entries (stale refs, wrong target)
-	entries, _ := os.ReadDir(dir)
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		return fmt.Errorf("reading dir %s: %w", dir, readErr)
+	}
 	for _, e := range entries {
 		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
 	}
