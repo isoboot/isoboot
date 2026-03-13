@@ -132,10 +132,22 @@ spec:
           spec:
             description: spec defines the desired state of BootConfig
             properties:
-              firmwareRef:
-                type: string
-              initrdRef:
-                type: string
+              firmware:
+                properties:
+                  ref:
+                    minLength: 1
+                    type: string
+                required:
+                - ref
+                type: object
+              initrd:
+                properties:
+                  ref:
+                    minLength: 1
+                    type: string
+                required:
+                - ref
+                type: object
               iso:
                 properties:
                   artifactRef:
@@ -152,15 +164,23 @@ spec:
                 - initrdPath
                 - kernelPath
                 type: object
-              kernelRef:
-                type: string
+              kernel:
+                properties:
+                  args:
+                    type: string
+                  ref:
+                    minLength: 1
+                    type: string
+                required:
+                - ref
+                type: object
             type: object
             x-kubernetes-validations:
-            - message: must use either kernelRef+initrdRef or iso, not both
-              rule: (has(self.kernelRef) && has(self.initrdRef) && !has(self.iso))
-                || (!has(self.kernelRef) && !has(self.initrdRef) && has(self.iso))
-            - message: firmwareRef is not supported with iso mode
-              rule: '!has(self.iso) || !has(self.firmwareRef)'
+            - message: must use either kernel+initrd or iso, not both
+              rule: (has(self.kernel) && has(self.initrd) && !has(self.iso))
+                || (!has(self.kernel) && !has(self.initrd) && has(self.iso))
+            - message: firmware is not supported with iso mode
+              rule: '!has(self.iso) || !has(self.firmware)'
           status:
             description: status defines the observed state of BootConfig
             properties:
