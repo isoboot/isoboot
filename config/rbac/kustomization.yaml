@@ -34,4 +34,7 @@ resources:
 - provisionanswer_admin_role.yaml
 - provisionanswer_editor_role.yaml
 - provisionanswer_viewer_role.yaml
+- provision_admin_role.yaml
+- provision_editor_role.yaml
+- provision_viewer_role.yaml
 

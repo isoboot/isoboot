@@ -39,4 +39,11 @@ resources:
   kind: ProvisionAnswer
   path: github.com/isoboot/isoboot/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: isoboot.github.io
+  kind: Provision
+  path: github.com/isoboot/isoboot/api/v1alpha1
+  version: v1alpha1
 version: "3"
