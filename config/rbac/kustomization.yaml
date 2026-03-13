@@ -28,4 +28,7 @@ resources:
 - bootartifact_admin_role.yaml
 - bootartifact_editor_role.yaml
 - bootartifact_viewer_role.yaml
+- machine_admin_role.yaml
+- machine_editor_role.yaml
+- machine_viewer_role.yaml
 
