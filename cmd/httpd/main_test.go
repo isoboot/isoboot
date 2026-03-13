@@ -1,42 +1,67 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/isoboot/isoboot/internal/httpd"
 )
 
-const testHost = "192.168.1.1:8080"
-
-func mustHandler(t *testing.T) http.HandlerFunc {
-	t.Helper()
-	h, err := conditionalBootHandler(":8080")
-	if err != nil {
-		t.Fatalf("conditionalBootHandler: %v", err)
+func fixedDirective() bootDirectiveFunc {
+	return func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return &httpd.BootDirective{
+			KernelPath: "test-config/kernel/vmlinuz",
+			KernelArgs: "console=ttyS0",
+			InitrdPath: "test-config/initrd/initrd.img",
+		}, nil
 	}
-	return h
 }
 
-func TestConditionalBoot_ValidIPXEHeader(t *testing.T) {
-	handler := mustHandler(t)
+func noMatchDirective() bootDirectiveFunc {
+	return func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return nil, nil
+	}
+}
+
+func duplicateDirective() bootDirectiveFunc {
+	return func(_ context.Context, mac string) (*httpd.BootDirective, error) {
+		return nil, errors.New("multiple machines with MAC " + mac)
+	}
+}
+
+func errorDirective() bootDirectiveFunc {
+	return func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return nil, errors.New("listing machines: connection refused")
+	}
+}
+
+func TestConditionalBoot_BootDirective(t *testing.T) {
+	handler := conditionalBootHandler(fixedDirective())
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
 	w := httptest.NewRecorder()
 
 	handler(w, req)
 
+	if w.Result().StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got: %d", w.Result().StatusCode)
+	}
 	body, _ := io.ReadAll(w.Result().Body)
-	if !strings.HasPrefix(string(body), "#!ipxe\n") {
-		t.Errorf("expected body to start with #!ipxe header, got: %s", body)
+	expected := "kernel /static/test-config/kernel/vmlinuz console=ttyS0\n" +
+		"initrd /static/test-config/initrd/initrd.img\n" +
+		"boot\n"
+	if string(body) != expected {
+		t.Errorf("expected:\n%s\ngot:\n%s", expected, string(body))
 	}
 }
 
 func TestConditionalBoot_ContentType(t *testing.T) {
-	handler := mustHandler(t)
+	handler := conditionalBootHandler(fixedDirective())
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
 	w := httptest.NewRecorder()
 
 	handler(w, req)
@@ -47,90 +72,121 @@ func TestConditionalBoot_ContentType(t *testing.T) {
 	}
 }
 
-func TestConditionalBoot_BothForwardedHeaders(t *testing.T) {
-	handler := mustHandler(t)
+func TestConditionalBoot_NoMatch(t *testing.T) {
+	handler := conditionalBootHandler(noMatchDirective())
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
-	req.Header.Set("X-Forwarded-Host", "proxy.example.com")
-	req.Header.Set("X-Forwarded-Port", "443")
 	w := httptest.NewRecorder()
 
 	handler(w, req)
 
-	body, _ := io.ReadAll(w.Result().Body)
-	if !strings.Contains(string(body), "proxy.example.com:443") {
-		t.Errorf("expected forwarded host:port in response, got: %s", body)
+	if w.Result().StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got: %d", w.Result().StatusCode)
 	}
 }
 
-func TestConditionalBoot_FallbackToHostHeader(t *testing.T) {
-	handler := mustHandler(t)
+func TestConditionalBoot_DuplicateMatch(t *testing.T) {
+	handler := conditionalBootHandler(duplicateDirective())
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
 	w := httptest.NewRecorder()
 
 	handler(w, req)
 
-	body, _ := io.ReadAll(w.Result().Body)
-	if !strings.Contains(string(body), "192.168.1.1:8080") {
-		t.Errorf("expected host header host + listener port in response, got: %s", body)
+	if w.Result().StatusCode != http.StatusConflict {
+		t.Errorf("expected 409, got: %d", w.Result().StatusCode)
 	}
 }
 
-func TestConditionalBoot_HostWithPort_UsesListenerPort(t *testing.T) {
-	handler := mustHandler(t)
+func TestConditionalBoot_InternalError(t *testing.T) {
+	handler := conditionalBootHandler(errorDirective())
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = "192.168.101.2:9999"
 	w := httptest.NewRecorder()
 
 	handler(w, req)
 
-	body, _ := io.ReadAll(w.Result().Body)
-	if !strings.Contains(string(body), "192.168.101.2:8080") {
-		t.Errorf("expected host from Host header + listener port, got: %s", body)
+	if w.Result().StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected 500, got: %d", w.Result().StatusCode)
 	}
 }
 
-func TestConditionalBoot_OnlyForwardedHost(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
-	req.Header.Set("X-Forwarded-Host", "proxy.example.com")
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	body, _ := io.ReadAll(w.Result().Body)
-	if !strings.Contains(string(body), "proxy.example.com:8080") {
-		t.Errorf("expected forwarded host + listener port, got: %s", body)
-	}
-}
-
-func TestConditionalBoot_OnlyForwardedPort(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
-	req.Header.Set("X-Forwarded-Port", "443")
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	body, _ := io.ReadAll(w.Result().Body)
-	if !strings.Contains(string(body), "192.168.1.1:443") {
-		t.Errorf("expected host header host + forwarded port, got: %s", body)
-	}
-}
-
-func TestConditionalBoot_MissingHostHeader(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = ""
+func TestConditionalBoot_MissingMac(t *testing.T) {
+	handler := conditionalBootHandler(fixedDirective())
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot", nil)
 	w := httptest.NewRecorder()
 
 	handler(w, req)
 
 	if w.Result().StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBoot_EmptyMac(t *testing.T) {
+	handler := conditionalBootHandler(fixedDirective())
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=", nil)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBoot_InvalidMacFormat(t *testing.T) {
+	handler := conditionalBootHandler(fixedDirective())
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=not-a-mac", nil)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBoot_ColonMacRejected(t *testing.T) {
+	handler := conditionalBootHandler(fixedDirective())
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBoot_MacInjection(t *testing.T) {
+	handler := conditionalBootHandler(fixedDirective())
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff%0aboot", nil)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBoot_NoKernelArgs(t *testing.T) {
+	handler := conditionalBootHandler(func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return &httpd.BootDirective{
+			KernelPath: "config/kernel/vmlinuz",
+			InitrdPath: "config/initrd/initrd.img",
+		}, nil
+	})
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	body, _ := io.ReadAll(w.Result().Body)
+	if strings.Contains(string(body), "vmlinuz ") {
+		t.Errorf("unexpected trailing space after kernel path: %s", body)
+	}
+	expected := "kernel /static/config/kernel/vmlinuz\ninitrd /static/config/initrd/initrd.img\nboot\n"
+	if string(body) != expected {
+		t.Errorf("expected:\n%s\ngot:\n%s", expected, string(body))
 	}
 }
 
@@ -142,139 +198,5 @@ func TestHealthz(t *testing.T) {
 
 	if w.Result().StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_MissingMac(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot", nil)
-	req.Host = testHost
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_EmptyMac(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=", nil)
-	req.Host = testHost
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_InvalidMacFormat(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=not-a-mac", nil)
-	req.Host = testHost
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_ColonMacRejected(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
-	req.Host = testHost
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_MacInjection(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff%0aboot", nil)
-	req.Host = testHost
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_InvalidHost(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
-	req.Header.Set("X-Forwarded-Host", "evil.com/exploit#")
-	req.Header.Set("X-Forwarded-Port", "443")
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_InvalidPort(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
-	req.Header.Set("X-Forwarded-Port", "443/evil#")
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_PortOutOfRange(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
-	req.Header.Set("X-Forwarded-Port", "99999")
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_ForwardedHostWithPort(t *testing.T) {
-	handler := mustHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = testHost
-	req.Header.Set("X-Forwarded-Host", "proxy.example.com:443")
-	req.Header.Set("X-Forwarded-Port", "443")
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	body, _ := io.ReadAll(w.Result().Body)
-	if strings.Contains(string(body), "proxy.example.com:443:443") {
-		t.Errorf("expected port stripped from X-Forwarded-Host, got: %s", body)
-	}
-	if !strings.Contains(string(body), "proxy.example.com:443") {
-		t.Errorf("expected proxy.example.com:443 in response, got: %s", body)
-	}
-}
-
-func TestConditionalBootHandler_InvalidListenAddr(t *testing.T) {
-	_, err := conditionalBootHandler("bad-addr")
-	if err == nil {
-		t.Error("expected error for malformed listen address")
 	}
 }

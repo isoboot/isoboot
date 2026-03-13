@@ -124,6 +124,40 @@ subjects:
   name: {{ include "isoboot.fullname" . }}-controller-manager
   namespace: {{ .Release.Namespace }}
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "isoboot.fullname" . }}-httpd-role
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootartifacts
+  - bootconfigs
+  - machines
+  - provisions
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "isoboot.fullname" . }}-httpd-rolebinding
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "isoboot.fullname" . }}-httpd-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "isoboot.fullname" . }}-httpd
+  namespace: {{ .Release.Namespace }}
+---
 # metrics-reader: bind this role to any subject that needs to scrape /metrics
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

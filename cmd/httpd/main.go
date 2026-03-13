@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,23 +13,69 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
+	"github.com/isoboot/isoboot/internal/controller"
+	"github.com/isoboot/isoboot/internal/httpd"
 )
 
-var (
-	macRegexp = regexp.MustCompile(`^([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$`)
-	// Permits IPv6 bracket notation (e.g. [::1]) and hostnames; requires at least one alphanumeric.
-	hostRegexp = regexp.MustCompile(`^[a-zA-Z0-9.\[\]:-]*[a-zA-Z0-9][a-zA-Z0-9.\[\]:-]*$`)
-)
+var macRegexp = regexp.MustCompile(`^([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$`)
+
+type bootDirectiveFunc func(ctx context.Context, mac string) (*httpd.BootDirective, error)
 
 func main() {
 	listenAddr := flag.String("listen-addr", ":8080", "address to listen on")
+	namespace := flag.String("namespace", "default", "namespace to query")
 	flag.Parse()
 
-	handler, err := conditionalBootHandler(*listenAddr)
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+
+	sch := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(sch))
+	utilruntime.Must(isobootgithubiov1alpha1.AddToScheme(sch))
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:  sch,
+		Metrics: metricsserver.Options{BindAddress: "0"},
+	})
 	if err != nil {
-		slog.Error("invalid listen address", "error", err)
+		slog.Error("failed to create manager", "error", err)
 		os.Exit(1)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := controller.SetupIndexers(ctx, mgr); err != nil {
+		slog.Error("failed to set up indexers", "error", err)
+		os.Exit(1)
+	}
+
+	go func() {
+		if err := mgr.Start(ctx); err != nil {
+			slog.Error("manager error", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	if !mgr.GetCache().WaitForCacheSync(ctx) {
+		slog.Error("cache sync failed")
+		os.Exit(1)
+	}
+
+	c := mgr.GetClient()
+	ns := *namespace
+
+	handler := conditionalBootHandler(func(reqCtx context.Context, mac string) (*httpd.BootDirective, error) {
+		return httpd.BootDirectiveForMAC(reqCtx, c, ns, mac)
+	})
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /conditional-boot", handler)
@@ -63,19 +108,14 @@ func main() {
 	}
 
 	slog.Info("shutting down server")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer shutCancel()
+	if err := srv.Shutdown(shutCtx); err != nil {
 		slog.Error("shutdown error", "error", err)
 	}
 }
 
-func conditionalBootHandler(listenAddr string) (http.HandlerFunc, error) {
-	_, listenerPort, err := net.SplitHostPort(listenAddr)
-	if err != nil {
-		return nil, fmt.Errorf("parsing listen address %q: %w", listenAddr, err)
-	}
-
+func conditionalBootHandler(getDirective bootDirectiveFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		mac := r.URL.Query().Get("mac")
 		if mac == "" {
@@ -87,71 +127,37 @@ func conditionalBootHandler(listenAddr string) (http.HandlerFunc, error) {
 			return
 		}
 
-		host, port, source := resolveHostPort(r, listenerPort)
-		if host == "" {
-			http.Error(w, "missing Host header", http.StatusBadRequest)
-			return
-		}
-		if !hostRegexp.MatchString(host) {
-			http.Error(w, "invalid host", http.StatusBadRequest)
-			return
-		}
-		portNum, err := strconv.Atoi(port)
-		if err != nil || portNum < 1 || portNum > 65535 {
-			http.Error(w, "invalid port", http.StatusBadRequest)
+		directive, err := getDirective(r.Context(), mac)
+		if err != nil {
+			if httpd.IsDuplicateError(err) {
+				slog.Error("duplicate match", "mac", mac, "error", err)
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			slog.Error("boot directive lookup failed", "mac", mac, "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 
-		slog.Info("conditional-boot request",
-			"mac", mac,
-			"host", host,
-			"port", port,
-			"source", source,
-		)
+		if directive == nil {
+			http.Error(w, "no pending provision for MAC", http.StatusNotFound)
+			return
+		}
 
-		body := fmt.Sprintf(`#!ipxe
-chain http://%s:%s/boot?mac=%s
-`, host, port, mac)
+		slog.Info("conditional-boot request", "mac", mac)
+
+		kernelLine := fmt.Sprintf("kernel /static/%s", directive.KernelPath)
+		if directive.KernelArgs != "" {
+			kernelLine += " " + directive.KernelArgs
+		}
+		body := fmt.Sprintf("%s\ninitrd /static/%s\nboot\n",
+			kernelLine, directive.InitrdPath)
 
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprint(w, body)
-	}, nil
-}
-
-func resolveHostPort(r *http.Request, listenerPort string) (host, port, source string) {
-	fwdHost := r.Header.Get("X-Forwarded-Host")
-	fwdPort := r.Header.Get("X-Forwarded-Port")
-
-	// Strip port from X-Forwarded-Host if present (e.g. "proxy:443")
-	if h, _, err := net.SplitHostPort(fwdHost); err == nil {
-		fwdHost = h
 	}
-
-	if fwdHost != "" && fwdPort != "" {
-		return fwdHost, fwdPort, "forwarded"
-	}
-
-	hostHeader := r.Host
-	if hostHeader == "" {
-		return "", "", ""
-	}
-
-	headerHost, _, err := net.SplitHostPort(hostHeader)
-	if err != nil {
-		// Host header has no port (e.g. just "example.com")
-		headerHost = hostHeader
-	}
-
-	if fwdHost != "" {
-		return fwdHost, listenerPort, "forwarded-partial"
-	}
-	if fwdPort != "" {
-		return headerHost, fwdPort, "forwarded-partial"
-	}
-
-	return headerHost, listenerPort, "host-header"
 }
 
 func healthzHandler(w http.ResponseWriter, _ *http.Request) {

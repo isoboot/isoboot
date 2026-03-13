@@ -17,7 +17,8 @@ spec:
         {{- include "isoboot.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: httpd
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: "{{ include "isoboot.fullname" . }}-httpd"
+      automountServiceAccountToken: true
       terminationGracePeriodSeconds: 5
       securityContext:
         runAsUser: 65532
@@ -29,6 +30,7 @@ spec:
         image: "{{ .Values.httpd.image.repository }}:{{ .Values.httpd.image.tag | default .Chart.AppVersion }}"
         args:
         - "--listen-addr=:{{ .Values.httpd.port }}"
+        - "--namespace={{ .Release.Namespace }}"
         ports:
         - containerPort: {{ .Values.httpd.port }}
           protocol: TCP
