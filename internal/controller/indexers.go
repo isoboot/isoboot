@@ -29,6 +29,9 @@ import (
 // resources by status.phase.
 const ProvisionPhaseField = "status.phase"
 
+// +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions/status,verbs=get
+
 // SetupIndexers registers field indexes on the manager's cache.
 func SetupIndexers(ctx context.Context, mgr manager.Manager) error {
 	return mgr.GetFieldIndexer().IndexField(ctx,
