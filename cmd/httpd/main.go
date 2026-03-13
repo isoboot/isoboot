@@ -88,7 +88,8 @@ func conditionalBootHandler(listenAddr string) (http.HandlerFunc, error) {
 			http.Error(w, "invalid host", http.StatusBadRequest)
 			return
 		}
-		if _, err := strconv.Atoi(port); err != nil {
+		portNum, err := strconv.Atoi(port)
+		if err != nil || portNum < 1 || portNum > 65535 {
 			http.Error(w, "invalid port", http.StatusBadRequest)
 			return
 		}
@@ -114,6 +115,11 @@ chain http://%s:%s/boot?mac=%s
 func resolveHostPort(r *http.Request, listenerPort string) (host, port, source string) {
 	fwdHost := r.Header.Get("X-Forwarded-Host")
 	fwdPort := r.Header.Get("X-Forwarded-Port")
+
+	// Strip port from X-Forwarded-Host if present (e.g. "proxy:443")
+	if h, _, err := net.SplitHostPort(fwdHost); err == nil {
+		fwdHost = h
+	}
 
 	if fwdHost != "" && fwdPort != "" {
 		return fwdHost, fwdPort, "forwarded"

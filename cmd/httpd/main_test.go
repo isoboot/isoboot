@@ -226,6 +226,39 @@ func TestConditionalBoot_InvalidPort(t *testing.T) {
 	}
 }
 
+func TestConditionalBoot_PortOutOfRange(t *testing.T) {
+	handler := mustHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req.Host = testHost
+	req.Header.Set("X-Forwarded-Port", "99999")
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBoot_ForwardedHostWithPort(t *testing.T) {
+	handler := mustHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req.Host = testHost
+	req.Header.Set("X-Forwarded-Host", "proxy.example.com:443")
+	req.Header.Set("X-Forwarded-Port", "443")
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	body, _ := io.ReadAll(w.Result().Body)
+	if strings.Contains(string(body), "proxy.example.com:443:443") {
+		t.Errorf("expected port stripped from X-Forwarded-Host, got: %s", body)
+	}
+	if !strings.Contains(string(body), "proxy.example.com:443") {
+		t.Errorf("expected proxy.example.com:443 in response, got: %s", body)
+	}
+}
+
 func TestConditionalBootHandler_InvalidListenAddr(t *testing.T) {
 	_, err := conditionalBootHandler("bad-addr")
 	if err == nil {
