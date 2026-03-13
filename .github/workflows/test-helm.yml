@@ -145,7 +145,7 @@ jobs:
         echo "=== Pods ==="
         kubectl -n isoboot-system get pods -o wide
         echo "=== Controller logs ==="
-        kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --tail=50 || true
+        kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --all-containers --tail=50 || true
         echo "=== Events ==="
         kubectl -n isoboot-system get events --sort-by='.lastTimestamp' || true
         echo "=== Describe pod ==="
