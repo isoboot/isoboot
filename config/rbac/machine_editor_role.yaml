@@ -25,9 +25,4 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - isoboot.github.io
-  resources:
-  - machines/status
-  verbs:
-  - get
+

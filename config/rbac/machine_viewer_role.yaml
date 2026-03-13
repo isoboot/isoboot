@@ -21,9 +21,4 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - isoboot.github.io
-  resources:
-  - machines/status
-  verbs:
-  - get
+

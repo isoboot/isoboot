@@ -19,9 +19,4 @@ rules:
   - machines
   verbs:
   - '*'
-- apiGroups:
-  - isoboot.github.io
-  resources:
-  - machines/status
-  verbs:
-  - get
+
