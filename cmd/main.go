@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"net/http"
@@ -179,6 +180,13 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")
+		os.Exit(1)
+	}
+
+	ctx := context.Background()
+
+	if err := controller.SetupIndexers(ctx, mgr); err != nil {
+		setupLog.Error(err, "Failed to set up field indexers")
 		os.Exit(1)
 	}
 
