@@ -58,10 +58,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	mgrErrCh := make(chan error, 1)
 	go func() {
 		if err := mgr.Start(ctx); err != nil {
-			slog.Error("manager error", "error", err)
-			os.Exit(1)
+			mgrErrCh <- err
 		}
 	}()
 
@@ -89,11 +89,11 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	errCh := make(chan error, 1)
+	srvErrCh := make(chan error, 1)
 	go func() {
 		slog.Info("starting server", "addr", *listenAddr)
 		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
+			srvErrCh <- err
 		}
 	}()
 
@@ -101,7 +101,10 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
-	case err := <-errCh:
+	case err := <-mgrErrCh:
+		slog.Error("manager error", "error", err)
+		os.Exit(1)
+	case err := <-srvErrCh:
 		slog.Error("server error", "error", err)
 		os.Exit(1)
 	case <-quit:

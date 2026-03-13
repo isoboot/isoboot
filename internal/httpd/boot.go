@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net/url"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -106,7 +105,7 @@ func filenameFromURL(rawURL string) string {
 	if err != nil {
 		return "artifact"
 	}
-	name := filepath.Base(u.Path)
+	name := path.Base(u.Path)
 	if name == "" || name == "." || name == "/" || name == ".." {
 		return "artifact"
 	}
