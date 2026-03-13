@@ -1,8 +1,8 @@
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
 metadata:
-  name: {{ include "isoboot.fullname" . }}-ipxe
-  namespace: {{ .Release.Namespace }}
+  name: "{{ include "isoboot.fullname" . }}-ipxe"
+  namespace: "{{ .Release.Namespace }}"
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
   annotations:
