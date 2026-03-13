@@ -21,6 +21,7 @@
 
 ## Pull Requests
 
+- After pushing, check for `This branch has conflicts that must be resolved`. If conflicts exist, resolve them and push again.
 - After creating a new PR **or pushing to an existing PR**, post a comment: `@claude please review this PR`.
 - After posting the review request, watch the PR for 5 minutes. If Claude has not started the review, post `@claude please review this PR` again.
 - Repeat until you have posted 5 review requests in a row with no response. Then comment that Claude is not responding and `@twdamhore` should take a look.
