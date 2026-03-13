@@ -18,7 +18,7 @@ import (
 
 var (
 	macRegexp  = regexp.MustCompile(`^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$`)
-	hostRegexp = regexp.MustCompile(`^[a-zA-Z0-9.\[\]:-]+$`)
+	hostRegexp = regexp.MustCompile(`^[a-zA-Z0-9.\[\]:-]*[a-zA-Z0-9][a-zA-Z0-9.\[\]:-]*$`)
 )
 
 func main() {

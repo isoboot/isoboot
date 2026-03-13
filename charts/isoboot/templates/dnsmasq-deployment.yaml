@@ -54,6 +54,7 @@ spec:
           HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -1)
           echo "Detected interface=$IFACE host_ip=$HOST_IP"
           echo -n "$HOST_IP" > /config/host-ip
+          echo -n "$IFACE" > /config/iface
           mkdir -p "{{ .Values.dataDir }}/boot" || { echo "FAIL: cannot create {{ .Values.dataDir }}/boot — ensure dataDir is writable by UID 65532"; exit 1; }
           printf '#!ipxe\nchain http://%s:{{ .Values.nginx.port }}/dynamic/conditional-boot?mac=${net0/mac}\n' "$HOST_IP" > "{{ .Values.dataDir }}/boot/boot.ipxe"
           echo "Generated boot.ipxe:"
@@ -112,11 +113,10 @@ spec:
           set -e
           HOST_IP=$(cat /config/host-ip)
           [ -n "$HOST_IP" ] || { echo "FAIL: host-ip not set"; exit 1; }
-          SUBNET="{{ .Values.dnsmasq.subnet }}"
-          IFACE=$(ip -4 route show "$SUBNET" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
-          [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; ip -4 route show; exit 1; }
-          NETWORK=$(echo "$SUBNET" | cut -d/ -f1)
-          echo "Detected interface=$IFACE host_ip=$HOST_IP network=$NETWORK"
+          IFACE=$(cat /config/iface)
+          [ -n "$IFACE" ] || { echo "FAIL: iface not set"; exit 1; }
+          NETWORK=$(echo "{{ .Values.dnsmasq.subnet }}" | cut -d/ -f1)
+          echo "Using interface=$IFACE host_ip=$HOST_IP network=$NETWORK"
 
           exec dnsmasq \
             --no-daemon \

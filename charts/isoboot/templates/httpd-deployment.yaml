@@ -30,6 +30,7 @@ spec:
         - "--listen-addr=:{{ .Values.httpd.port }}"
         ports:
         - containerPort: {{ .Values.httpd.port }}
+          protocol: TCP
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false

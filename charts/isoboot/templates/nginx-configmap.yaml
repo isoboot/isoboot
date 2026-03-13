@@ -22,7 +22,7 @@ data:
             }
             location /dynamic/ {
                 resolver __DNS_RESOLVER__ valid=5s ipv6=off;
-                set $upstream "http://{{ include "isoboot.fullname" . }}-httpd.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.httpd.port }}";
+                set $upstream "http://{{ include "isoboot.fullname" . }}-httpd.{{ .Release.Namespace }}.svc.__CLUSTER_DOMAIN__:{{ .Values.httpd.port }}";
                 rewrite ^/dynamic/(.*) /$1 break;
                 proxy_pass $upstream;
                 proxy_connect_timeout 5s;
