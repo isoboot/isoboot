@@ -398,6 +398,65 @@ var _ = Describe("BootConfig Controller", func() {
 			Expect(string(content)).To(Equal("initrd-datafirmware-data"))
 		})
 
+		It("should be idempotent with firmware on repeated reconcile", func() {
+			kernelName := "bc-fwidem-kernel"
+			initrdName := "bc-fwidem-initrd"
+			firmwareName := "bc-fwidem-firmware"
+			bcName := "bc-fw-idempotent"
+
+			// Create kernel artifact and file
+			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
+			defer deleteArtifact(kernelName)
+			kernelDir := filepath.Join(dataDir, "artifacts", kernelName)
+			Expect(os.MkdirAll(kernelDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(kernelDir, "vmlinuz"), []byte("kernel-data"), 0o644)).To(Succeed())
+
+			// Create initrd artifact and file
+			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.gz")
+			defer deleteArtifact(initrdName)
+			initrdArtDir := filepath.Join(dataDir, "artifacts", initrdName)
+			Expect(os.MkdirAll(initrdArtDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(initrdArtDir, "initrd.gz"), []byte("initrd-data"), 0o644)).To(Succeed())
+
+			// Create firmware artifact and file
+			createArtifact(firmwareName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/firmware.cpio.gz")
+			defer deleteArtifact(firmwareName)
+			fwDir := filepath.Join(dataDir, "artifacts", firmwareName)
+			Expect(os.MkdirAll(fwDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(fwDir, "firmware.cpio.gz"), []byte("firmware-data"), 0o644)).To(Succeed())
+
+			bc := &isobootgithubiov1alpha1.BootConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},
+				Spec: isobootgithubiov1alpha1.BootConfigSpec{
+					Kernel:   &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: kernelName},
+					Initrd:   &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: initrdName},
+					Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: firmwareName},
+				},
+			}
+			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+			defer deleteResource(bcName)
+
+			// First reconcile
+			_, err := doReconcile(bcName)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Record mod time of concatenated file
+			combinedPath := filepath.Join(dataDir, "boot", bcName, "initrd", "initrd.gz")
+			info, err := os.Stat(combinedPath)
+			Expect(err).NotTo(HaveOccurred())
+			modTime := info.ModTime()
+
+			// Second reconcile — should not recreate the concatenated file
+			result, err := doReconcile(bcName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+			Expect(getStatus(bcName).Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+			info, err = os.Stat(combinedPath)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.ModTime()).To(Equal(modTime))
+		})
+
 		It("should set Pending when firmware artifact is not Ready", func() {
 			kernelName := "bc-fwpend-kernel"
 			initrdName := "bc-fwpend-initrd"
