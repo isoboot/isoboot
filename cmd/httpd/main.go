@@ -39,6 +39,7 @@ func main() {
 		Handler:      mux,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
@@ -85,6 +86,10 @@ func conditionalBootHandler(listenAddr string) (http.HandlerFunc, error) {
 		}
 		if !hostRegexp.MatchString(host) {
 			http.Error(w, "invalid host", http.StatusBadRequest)
+			return
+		}
+		if _, err := strconv.Atoi(port); err != nil {
+			http.Error(w, "invalid port", http.StatusBadRequest)
 			return
 		}
 

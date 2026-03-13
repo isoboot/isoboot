@@ -212,6 +212,20 @@ func TestConditionalBoot_InvalidHost(t *testing.T) {
 	}
 }
 
+func TestConditionalBoot_InvalidPort(t *testing.T) {
+	handler := mustHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req.Host = testHost
+	req.Header.Set("X-Forwarded-Port", "443/evil#")
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
 func TestConditionalBootHandler_InvalidListenAddr(t *testing.T) {
 	_, err := conditionalBootHandler("bad-addr")
 	if err == nil {
