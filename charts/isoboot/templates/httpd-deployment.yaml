@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-httpd"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: httpd
+  template:
+    metadata:
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: httpd
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: httpd
+        image: "{{ .Values.httpd.image.repository }}:{{ .Values.httpd.image.tag | default .Chart.AppVersion }}"
+        args:
+        - "--listen-addr=:{{ .Values.httpd.port }}"
+        ports:
+        - containerPort: {{ .Values.httpd.port }}
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .Values.httpd.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .Values.httpd.port }}
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        resources:
+          {{- toYaml .Values.httpd.resources | nindent 10 }}

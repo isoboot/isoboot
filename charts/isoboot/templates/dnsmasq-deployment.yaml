@@ -1,15 +1,11 @@
-{{- if .Values.dnsmasq.enabled }}
 {{- if not .Values.dnsmasq.subnet }}
-{{- fail "dnsmasq.subnet is required when dnsmasq.enabled is true" }}
-{{- end }}
-{{- if not .Values.nodeName }}
-{{- fail "nodeName is required" }}
+{{- fail "dnsmasq.subnet is required" }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "isoboot.fullname" . }}-dnsmasq
-  namespace: {{ .Release.Namespace }}
+  name: "{{ include "isoboot.fullname" . }}-dnsmasq"
+  namespace: "{{ .Release.Namespace }}"
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
 spec:
@@ -46,6 +42,35 @@ spec:
                 app.kubernetes.io/component: dnsmasq
             topologyKey: kubernetes.io/hostname
       initContainers:
+      - name: generate-boot-ipxe
+        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          SUBNET="{{ .Values.dnsmasq.subnet }}"
+          IFACE=$(ip -4 route show "$SUBNET" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
+          [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; ip -4 route show; exit 1; }
+          HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -1)
+          echo "Detected interface=$IFACE host_ip=$HOST_IP"
+          echo -n "$HOST_IP" > /config/host-ip
+          mkdir -p "{{ .Values.dataDir }}/boot"
+          printf '#!ipxe\nchain http://%s:{{ .Values.nginx.port }}/dynamic/conditional-boot?mac=${net0/mac}\n' "$HOST_IP" > "{{ .Values.dataDir }}/boot/boot.ipxe"
+          echo "Generated boot.ipxe:"
+          cat "{{ .Values.dataDir }}/boot/boot.ipxe"
+        securityContext:
+          runAsUser: 65532
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        volumeMounts:
+        - name: data
+          mountPath: "{{ .Values.dataDir }}"
+        - name: config
+          mountPath: /config
       - name: extract-ipxe
         image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}"
         command: ["/bin/sh", "-c"]
@@ -59,6 +84,14 @@ spec:
           tar xzf "$TARBALL" -C "$DEST" --strip-components=2 ipxeboot/x86_64/
           echo "Extracted x86_64 iPXE files to $DEST:"
           ls -la "$DEST"
+        securityContext:
+          runAsUser: 65532
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
         volumeMounts:
         - name: data
           mountPath: "{{ .Values.dataDir }}"
@@ -72,10 +105,11 @@ spec:
         args:
         - |
           set -e
+          HOST_IP=$(cat /config/host-ip)
+          [ -n "$HOST_IP" ] || { echo "FAIL: host-ip not set"; exit 1; }
           SUBNET="{{ .Values.dnsmasq.subnet }}"
           IFACE=$(ip -4 route show "$SUBNET" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
           [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; ip -4 route show; exit 1; }
-          HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -1)
           NETWORK=$(echo "$SUBNET" | cut -d/ -f1)
           echo "Detected interface=$IFACE host_ip=$HOST_IP network=$NETWORK"
 
@@ -129,6 +163,9 @@ spec:
         - name: ipxe
           mountPath: /ipxe
           readOnly: true
+        - name: config
+          mountPath: /config
+          readOnly: true
         - name: run
           mountPath: /var/lib/misc
       volumes:
@@ -138,6 +175,7 @@ spec:
           type: Directory
       - name: ipxe
         emptyDir: {}
+      - name: config
+        emptyDir: {}
       - name: run
         emptyDir: {}
-{{- end }}
