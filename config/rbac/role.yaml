@@ -42,7 +42,14 @@ rules:
   - isoboot.github.io
   resources:
   - bootconfigs
+  - provisions
   verbs:
   - get
   - list
   - watch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - provisions/status
+  verbs:
+  - get
