@@ -23,7 +23,7 @@
 
 - After pushing, check for `This branch has conflicts that must be resolved`. If conflicts exist, resolve them and push again.
 - After creating a new PR **or pushing to an existing PR**, post a comment: `@claude please review this PR`.
-- After posting the review request, watch the PR for 5 minutes. If Claude has not started the review, post `@claude please review this PR` again.
+- After posting the review request, watch the PR for 5 minutes using `gh pr view <number> --json comments` (not `--json reviews`). If Claude has not started the review, post `@claude please review this PR` again.
 - Repeat until you have posted 5 review requests in a row with no response. Then comment that Claude is not responding and `@twdamhore` should take a look.
 - When Claude posts a review, address all feedback (blocking, non-blocking, suggestions, and issues), push fixes, and request another review.
 - Repeat this review-fix loop until Claude posts a review with nothing actionable. Then request one more review to get 2 clean reviews in a row before stopping.

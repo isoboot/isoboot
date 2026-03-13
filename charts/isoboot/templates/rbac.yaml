@@ -36,6 +36,7 @@ rules:
   resources:
   - bootartifacts/status
   - bootconfigs/status
+  - provisions/status
   verbs:
   - get
   - patch
@@ -60,6 +61,14 @@ rules:
   - isoboot.github.io
   resources:
   - provisionanswers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - provisions
   verbs:
   - get
   - list

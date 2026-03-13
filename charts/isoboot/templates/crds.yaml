@@ -293,4 +293,118 @@ spec:
         type: object
     served: true
     storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+    "helm.sh/resource-policy": keep
+  name: provisions.isoboot.github.io
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  group: isoboot.github.io
+  names:
+    kind: Provision
+    listKind: ProvisionList
+    plural: provisions
+    shortNames:
+    - prov
+    singular: provision
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.machineRef
+      name: Machine
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Provision is the Schema for the provisions API.
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of Provision
+            properties:
+              bootConfigRef:
+                description: bootConfigRef is the name of the BootConfig resource
+                  for this provision.
+                minLength: 1
+                type: string
+              configMaps:
+                description: configMaps is an optional list of ConfigMap names to
+                  mount during provisioning.
+                items:
+                  type: string
+                type: array
+              machineId:
+                description: machineId is an optional machine identifier (32-character
+                  hex string).
+                pattern: ^[0-9a-f]{32}$
+                type: string
+              machineRef:
+                description: machineRef is the name of the Machine resource for this
+                  provision.
+                minLength: 1
+                type: string
+              provisionAnswerRef:
+                description: provisionAnswerRef is the name of the ProvisionAnswer
+                  resource for this provision.
+                minLength: 1
+                type: string
+              secrets:
+                description: secrets is an optional list of Secret names to mount
+                  during provisioning.
+                items:
+                  type: string
+                type: array
+            required:
+            - bootConfigRef
+            - machineRef
+            - provisionAnswerRef
+            type: object
+          status:
+            description: status defines the observed state of Provision
+            properties:
+              ip:
+                description: ip is the IP address assigned to the machine during provisioning.
+                type: string
+              lastUpdated:
+                description: lastUpdated is the timestamp of the last status update.
+                format: date-time
+                type: string
+              message:
+                description: message provides human-readable details about the current
+                  phase.
+                type: string
+              phase:
+                description: phase is the current phase of the provision.
+                enum:
+                - Pending
+                - WaitingForBootSource
+                - InProgress
+                - Complete
+                - Failed
+                - ConfigError
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
 {{- end }}
