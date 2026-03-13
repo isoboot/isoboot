@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -42,17 +43,23 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("starting server", "addr", *listenAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "error", err)
-			os.Exit(1)
+		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+
+	select {
+	case err := <-errCh:
+		slog.Error("server error", "error", err)
+		os.Exit(1)
+	case <-quit:
+	}
 
 	slog.Info("shutting down server")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
