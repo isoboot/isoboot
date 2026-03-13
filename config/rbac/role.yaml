@@ -42,6 +42,7 @@ rules:
   - isoboot.github.io
   resources:
   - bootconfigs
+  - machines
   - provisions
   verbs:
   - get

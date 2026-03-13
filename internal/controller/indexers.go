@@ -29,12 +29,17 @@ import (
 // resources by status.phase.
 const ProvisionPhaseField = "status.phase"
 
+// MachineSpecMACField is the field path used to index Machine
+// resources by spec.mac.
+const MachineSpecMACField = "spec.mac"
+
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions/status,verbs=get
+// +kubebuilder:rbac:groups=isoboot.github.io,resources=machines,verbs=get;list;watch
 
 // SetupIndexers registers field indexes on the manager's cache.
 func SetupIndexers(ctx context.Context, mgr manager.Manager) error {
-	return mgr.GetFieldIndexer().IndexField(ctx,
+	if err := mgr.GetFieldIndexer().IndexField(ctx,
 		&isobootgithubiov1alpha1.Provision{}, ProvisionPhaseField,
 		func(obj client.Object) []string {
 			p := obj.(*isobootgithubiov1alpha1.Provision)
@@ -42,5 +47,17 @@ func SetupIndexers(ctx context.Context, mgr manager.Manager) error {
 				return nil
 			}
 			return []string{string(p.Status.Phase)}
+		}); err != nil {
+		return err
+	}
+
+	return mgr.GetFieldIndexer().IndexField(ctx,
+		&isobootgithubiov1alpha1.Machine{}, MachineSpecMACField,
+		func(obj client.Object) []string {
+			m := obj.(*isobootgithubiov1alpha1.Machine)
+			if m.Spec.MAC == "" {
+				return nil
+			}
+			return []string{m.Spec.MAC}
 		})
 }
