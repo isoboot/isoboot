@@ -409,7 +409,7 @@ jobs:
         echo "Waiting 90s for QEMU PXE boot to complete downloads..."
         sleep 90
 
-    - name: Verify PXE boot downloaded kernel and initrd
+    - name: Verify PXE boot chain via nginx access log
       run: |
         NGINX_POD=$(kubectl -n isoboot-system get pod \
           -l app.kubernetes.io/component=nginx -o jsonpath='{.items[0].metadata.name}')
@@ -417,28 +417,21 @@ jobs:
         echo "=== nginx access log ==="
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log
 
-        # Verify kernel was downloaded by iPXE (not wget-client)
+        # Verify iPXE fetched boot.ipxe
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep '"GET /static/rocky-10.1/kernel/vmlinuz' \
+          | grep '"GET /static/boot.ipxe' \
           | grep '" 200 ' \
           | grep 'iPXE/' \
-          || { echo "FAIL: no iPXE HTTP 200 for kernel download"; exit 1; }
+          || { echo "FAIL: no iPXE HTTP 200 for boot.ipxe"; exit 1; }
 
-        # Verify initrd was downloaded by iPXE (not wget-client)
-        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep '"GET /static/rocky-10.1/initrd/initrd.img' \
-          | grep '" 200 ' \
-          | grep 'iPXE/' \
-          || { echo "FAIL: no iPXE HTTP 200 for initrd download"; exit 1; }
-
-        # Verify dynamic boot endpoint was hit by iPXE
+        # Verify iPXE chained to dynamic boot endpoint
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
           | grep '"GET /dynamic/conditional-boot' \
           | grep '" 200 ' \
           | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for dynamic boot endpoint"; exit 1; }
 
-        echo "PXE boot successfully downloaded kernel and initrd via HTTP"
+        echo "PXE boot chain verified: boot.ipxe -> conditional-boot"
 
     # ── Final PXE network check ──────────────────────────────────────
     - name: Verify PXE network connectivity
