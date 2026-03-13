@@ -131,6 +131,21 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} .
 	- $(CONTAINER_TOOL) buildx rm isoboot-builder
 
+.PHONY: build-httpd
+build-httpd: ## Build httpd binary.
+	go build -o bin/httpd ./cmd/httpd/
+
+.PHONY: docker-build-httpd
+docker-build-httpd: ## Build docker image with httpd.
+	$(CONTAINER_TOOL) build -t ${IMG}-httpd -f Dockerfile.httpd .
+
+.PHONY: docker-buildx-httpd
+docker-buildx-httpd: ## Build and push docker image for httpd for cross-platform support
+	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
+	$(CONTAINER_TOOL) buildx use isoboot-builder
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG}-httpd -f Dockerfile.httpd .
+	- $(CONTAINER_TOOL) buildx rm isoboot-builder
+
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
