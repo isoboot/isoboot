@@ -9,18 +9,30 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"syscall"
 	"time"
+)
+
+var (
+	macRegexp  = regexp.MustCompile(`^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$`)
+	hostRegexp = regexp.MustCompile(`^[a-zA-Z0-9.\[\]:-]+$`)
 )
 
 func main() {
 	listenAddr := flag.String("listen-addr", ":8080", "address to listen on")
 	flag.Parse()
 
+	handler, err := conditionalBootHandler(*listenAddr)
+	if err != nil {
+		slog.Error("invalid listen address", "error", err)
+		os.Exit(1)
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/conditional-boot", conditionalBootHandler(*listenAddr))
-	mux.HandleFunc("/healthz", healthzHandler)
+	mux.HandleFunc("GET /conditional-boot", handler)
+	mux.HandleFunc("GET /healthz", healthzHandler)
 
 	srv := &http.Server{
 		Addr:         *listenAddr,
@@ -38,7 +50,7 @@ func main() {
 	}()
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGTERM)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	slog.Info("shutting down server")
@@ -49,8 +61,11 @@ func main() {
 	}
 }
 
-func conditionalBootHandler(listenAddr string) http.HandlerFunc {
-	_, listenerPort, _ := net.SplitHostPort(listenAddr)
+func conditionalBootHandler(listenAddr string) (http.HandlerFunc, error) {
+	_, listenerPort, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return nil, fmt.Errorf("parsing listen address %q: %w", listenAddr, err)
+	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		mac := r.URL.Query().Get("mac")
@@ -58,10 +73,18 @@ func conditionalBootHandler(listenAddr string) http.HandlerFunc {
 			http.Error(w, "missing required parameter: mac", http.StatusBadRequest)
 			return
 		}
+		if !macRegexp.MatchString(mac) {
+			http.Error(w, "invalid mac address format", http.StatusBadRequest)
+			return
+		}
 
 		host, port, source := resolveHostPort(r, listenerPort)
 		if host == "" {
 			http.Error(w, "missing Host header", http.StatusBadRequest)
+			return
+		}
+		if !hostRegexp.MatchString(host) {
+			http.Error(w, "invalid host", http.StatusBadRequest)
 			return
 		}
 
@@ -80,7 +103,7 @@ chain http://%s:%s/boot?mac=%s
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprint(w, body)
-	}
+	}, nil
 }
 
 func resolveHostPort(r *http.Request, listenerPort string) (host, port, source string) {

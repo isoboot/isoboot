@@ -10,8 +10,17 @@ import (
 
 const testHost = "192.168.1.1:8080"
 
+func mustHandler(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	h, err := conditionalBootHandler(":8080")
+	if err != nil {
+		t.Fatalf("conditionalBootHandler: %v", err)
+	}
+	return h
+}
+
 func TestConditionalBoot_ValidIPXEHeader(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
 	req.Host = testHost
 	w := httptest.NewRecorder()
@@ -25,7 +34,7 @@ func TestConditionalBoot_ValidIPXEHeader(t *testing.T) {
 }
 
 func TestConditionalBoot_ContentType(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
 	req.Host = testHost
 	w := httptest.NewRecorder()
@@ -39,7 +48,7 @@ func TestConditionalBoot_ContentType(t *testing.T) {
 }
 
 func TestConditionalBoot_BothForwardedHeaders(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Host", "proxy.example.com")
@@ -55,7 +64,7 @@ func TestConditionalBoot_BothForwardedHeaders(t *testing.T) {
 }
 
 func TestConditionalBoot_FallbackToHostHeader(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
 	req.Host = testHost
 	w := httptest.NewRecorder()
@@ -69,7 +78,7 @@ func TestConditionalBoot_FallbackToHostHeader(t *testing.T) {
 }
 
 func TestConditionalBoot_HostWithPort_UsesListenerPort(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
 	req.Host = "192.168.101.2:9999"
 	w := httptest.NewRecorder()
@@ -83,7 +92,7 @@ func TestConditionalBoot_HostWithPort_UsesListenerPort(t *testing.T) {
 }
 
 func TestConditionalBoot_OnlyForwardedHost(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Host", "proxy.example.com")
@@ -98,7 +107,7 @@ func TestConditionalBoot_OnlyForwardedHost(t *testing.T) {
 }
 
 func TestConditionalBoot_OnlyForwardedPort(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
 	req.Host = testHost
 	req.Header.Set("X-Forwarded-Port", "443")
@@ -113,7 +122,7 @@ func TestConditionalBoot_OnlyForwardedPort(t *testing.T) {
 }
 
 func TestConditionalBoot_MissingHostHeader(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
 	req.Host = ""
 	w := httptest.NewRecorder()
@@ -137,7 +146,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestConditionalBoot_MissingMac(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot", nil)
 	req.Host = testHost
 	w := httptest.NewRecorder()
@@ -150,7 +159,7 @@ func TestConditionalBoot_MissingMac(t *testing.T) {
 }
 
 func TestConditionalBoot_EmptyMac(t *testing.T) {
-	handler := conditionalBootHandler(":8080")
+	handler := mustHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=", nil)
 	req.Host = testHost
 	w := httptest.NewRecorder()
@@ -159,5 +168,53 @@ func TestConditionalBoot_EmptyMac(t *testing.T) {
 
 	if w.Result().StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBoot_InvalidMacFormat(t *testing.T) {
+	handler := mustHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=not-a-mac", nil)
+	req.Host = testHost
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBoot_MacInjection(t *testing.T) {
+	handler := mustHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff%0aboot", nil)
+	req.Host = testHost
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBoot_InvalidHost(t *testing.T) {
+	handler := mustHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
+	req.Host = testHost
+	req.Header.Set("X-Forwarded-Host", "evil.com/exploit#")
+	req.Header.Set("X-Forwarded-Port", "443")
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestConditionalBootHandler_InvalidListenAddr(t *testing.T) {
+	_, err := conditionalBootHandler("bad-addr")
+	if err == nil {
+		t.Error("expected error for malformed listen address")
 	}
 }
