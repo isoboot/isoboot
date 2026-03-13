@@ -49,13 +49,17 @@ var _ = Describe("BootConfig Controller", func() {
 				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			},
 			Entry("mode A: kernel and initrd", "valid-mode-a", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef: new("my-kernel"),
-				InitrdRef: new("my-initrd"),
+				Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel"},
+				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
 			}),
 			Entry("mode A: with firmware", "valid-mode-a-fw", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef:   new("my-kernel"),
-				InitrdRef:   new("my-initrd"),
-				FirmwareRef: new("my-firmware"),
+				Kernel:   &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel"},
+				Initrd:   &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
+				Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: "my-firmware"},
+			}),
+			Entry("mode A: with kernel args", "valid-mode-a-args", isobootgithubiov1alpha1.BootConfigSpec{
+				Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel", Args: "-- quiet"},
+				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
 			}),
 			Entry("mode B: iso", "valid-mode-b", isobootgithubiov1alpha1.BootConfigSpec{
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
@@ -73,22 +77,22 @@ var _ = Describe("BootConfig Controller", func() {
 			},
 			Entry("neither mode", "no-mode", isobootgithubiov1alpha1.BootConfigSpec{}),
 			Entry("both modes", "both-modes", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef: new("my-kernel"),
-				InitrdRef: new("my-initrd"),
+				Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel"},
+				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
 					ArtifactRef: "my-iso",
 					KernelPath:  "casper/vmlinuz",
 					InitrdPath:  "casper/initrd",
 				},
 			}),
-			Entry("kernelRef without initrdRef", "kernel-only", isobootgithubiov1alpha1.BootConfigSpec{
-				KernelRef: new("my-kernel"),
+			Entry("kernel without initrd", "kernel-only", isobootgithubiov1alpha1.BootConfigSpec{
+				Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel"},
 			}),
-			Entry("initrdRef without kernelRef", "initrd-only", isobootgithubiov1alpha1.BootConfigSpec{
-				InitrdRef: new("my-initrd"),
+			Entry("initrd without kernel", "initrd-only", isobootgithubiov1alpha1.BootConfigSpec{
+				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
 			}),
-			Entry("firmwareRef with iso mode", "fw-with-iso", isobootgithubiov1alpha1.BootConfigSpec{
-				FirmwareRef: new("my-firmware"),
+			Entry("firmware with iso mode", "fw-with-iso", isobootgithubiov1alpha1.BootConfigSpec{
+				Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: "my-firmware"},
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
 					ArtifactRef: "my-iso",
 					KernelPath:  "casper/vmlinuz",
@@ -159,8 +163,8 @@ var _ = Describe("BootConfig Controller", func() {
 			bc := &isobootgithubiov1alpha1.BootConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
-					KernelRef: new(kernelRef),
-					InitrdRef: new(initrdRef),
+					Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: kernelRef},
+					Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: initrdRef},
 				},
 			}
 			ExpectWithOffset(1, k8sClient.Create(ctx, bc)).To(Succeed())
@@ -330,6 +334,103 @@ var _ = Describe("BootConfig Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 			Expect(getStatus(bcName).Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+		})
+
+		It("should concatenate initrd + firmware when firmware is set", func() {
+			kernelName := "bc-fw-kernel"
+			initrdName := "bc-fw-initrd"
+			firmwareName := "bc-fw-firmware"
+			bcName := "bc-firmware"
+
+			// Create kernel artifact and file
+			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
+			defer deleteArtifact(kernelName)
+			kernelDir := filepath.Join(dataDir, "artifacts", kernelName)
+			Expect(os.MkdirAll(kernelDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(kernelDir, "vmlinuz"), []byte("kernel-data"), 0o644)).To(Succeed())
+
+			// Create initrd artifact and file
+			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.gz")
+			defer deleteArtifact(initrdName)
+			initrdDir := filepath.Join(dataDir, "artifacts", initrdName)
+			Expect(os.MkdirAll(initrdDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(initrdDir, "initrd.gz"), []byte("initrd-data"), 0o644)).To(Succeed())
+
+			// Create firmware artifact and file
+			createArtifact(firmwareName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/firmware.cpio.gz")
+			defer deleteArtifact(firmwareName)
+			fwDir := filepath.Join(dataDir, "artifacts", firmwareName)
+			Expect(os.MkdirAll(fwDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(fwDir, "firmware.cpio.gz"), []byte("firmware-data"), 0o644)).To(Succeed())
+
+			// Create BootConfig with firmware
+			bc := &isobootgithubiov1alpha1.BootConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},
+				Spec: isobootgithubiov1alpha1.BootConfigSpec{
+					Kernel:   &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: kernelName},
+					Initrd:   &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: initrdName},
+					Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: firmwareName},
+				},
+			}
+			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+			defer deleteResource(bcName)
+
+			result, err := doReconcile(bcName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+			Expect(getStatus(bcName).Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+			// Kernel should be a symlink
+			kernelLink := filepath.Join(dataDir, "boot", bcName, "kernel", "vmlinuz")
+			target, err := os.Readlink(kernelLink)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(target).To(Equal(filepath.Join("..", "..", "..", "artifacts", kernelName, "vmlinuz")))
+
+			// Initrd should be a regular file (concatenated), not a symlink
+			combinedPath := filepath.Join(dataDir, "boot", bcName, "initrd", "initrd.gz")
+			info, err := os.Lstat(combinedPath)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Mode().IsRegular()).To(BeTrue())
+
+			// Verify concatenated content
+			content, err := os.ReadFile(combinedPath)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(content)).To(Equal("initrd-datafirmware-data"))
+		})
+
+		It("should set Pending when firmware artifact is not Ready", func() {
+			kernelName := "bc-fwpend-kernel"
+			initrdName := "bc-fwpend-initrd"
+			firmwareName := "bc-fwpend-firmware"
+			bcName := "bc-fw-pending"
+
+			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
+			defer deleteArtifact(kernelName)
+
+			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.gz")
+			defer deleteArtifact(initrdName)
+
+			createArtifact(firmwareName, isobootgithubiov1alpha1.BootArtifactPhaseDownloading, "https://example.com/firmware.cpio.gz")
+			defer deleteArtifact(firmwareName)
+
+			bc := &isobootgithubiov1alpha1.BootConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},
+				Spec: isobootgithubiov1alpha1.BootConfigSpec{
+					Kernel:   &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: kernelName},
+					Initrd:   &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: initrdName},
+					Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: firmwareName},
+				},
+			}
+			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+			defer deleteResource(bcName)
+
+			result, err := doReconcile(bcName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).NotTo(BeZero())
+
+			status := getStatus(bcName)
+			Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhasePending))
+			Expect(status.Message).To(ContainSubstring("firmware"))
 		})
 	})
 

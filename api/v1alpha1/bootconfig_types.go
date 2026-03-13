@@ -38,25 +38,55 @@ type BootConfigISOSpec struct {
 	InitrdPath string `json:"initrdPath"`
 }
 
+// BootConfigKernelSpec defines the kernel configuration for a BootConfig.
+type BootConfigKernelSpec struct {
+	// ref is the name of the BootArtifact for the kernel.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Ref string `json:"ref"`
+
+	// args is the kernel boot arguments template string.
+	// May contain Go template variables for interpolation at provision time.
+	// +optional
+	Args string `json:"args,omitempty"`
+}
+
+// BootConfigInitrdSpec defines the initrd configuration for a BootConfig.
+type BootConfigInitrdSpec struct {
+	// ref is the name of the BootArtifact for the initrd.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Ref string `json:"ref"`
+}
+
+// BootConfigFirmwareSpec defines the firmware configuration for a BootConfig.
+type BootConfigFirmwareSpec struct {
+	// ref is the name of the BootArtifact for the firmware archive.
+	// When set, the controller concatenates initrd + firmware into the served initrd.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Ref string `json:"ref"`
+}
+
 // BootConfigSpec defines the desired state of BootConfig.
 // A BootConfig groups BootArtifacts into a servable PXE boot directory.
 // The directory name is metadata.name.
-// Two mutually exclusive modes: direct refs (kernelRef + initrdRef) or ISO extraction (iso).
-// +kubebuilder:validation:XValidation:rule="(has(self.kernelRef) && has(self.initrdRef) && !has(self.iso)) || (!has(self.kernelRef) && !has(self.initrdRef) && has(self.iso))",message="must use either kernelRef+initrdRef or iso, not both"
-// +kubebuilder:validation:XValidation:rule="!has(self.iso) || !has(self.firmwareRef)",message="firmwareRef is not supported with iso mode"
+// Two mutually exclusive modes: direct refs (kernel + initrd) or ISO extraction (iso).
+// +kubebuilder:validation:XValidation:rule="(has(self.kernel) && has(self.initrd) && !has(self.iso)) || (!has(self.kernel) && !has(self.initrd) && has(self.iso))",message="must use either kernel+initrd or iso, not both"
+// +kubebuilder:validation:XValidation:rule="!has(self.iso) || !has(self.firmware)",message="firmware is not supported with iso mode"
 type BootConfigSpec struct {
-	// kernelRef is the name of the BootArtifact for the kernel (mode A).
+	// kernel defines the kernel artifact and boot arguments (mode A).
 	// +optional
-	KernelRef *string `json:"kernelRef,omitempty"`
+	Kernel *BootConfigKernelSpec `json:"kernel,omitempty"`
 
-	// initrdRef is the name of the BootArtifact for the initrd (mode A).
+	// initrd defines the initrd artifact (mode A).
 	// +optional
-	InitrdRef *string `json:"initrdRef,omitempty"`
+	Initrd *BootConfigInitrdSpec `json:"initrd,omitempty"`
 
-	// firmwareRef is the name of the BootArtifact for the firmware archive (mode A only).
-	// When set, the controller creates no-firmware/ and with-firmware/ subdirectories.
+	// firmware defines the firmware archive artifact (mode A only).
+	// When set, the controller concatenates initrd + firmware into the served initrd.
 	// +optional
-	FirmwareRef *string `json:"firmwareRef,omitempty"`
+	Firmware *BootConfigFirmwareSpec `json:"firmware,omitempty"`
 
 	// iso defines ISO extraction configuration (mode B).
 	// +optional
