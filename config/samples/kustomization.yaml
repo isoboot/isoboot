@@ -3,4 +3,5 @@ resources:
 - v1alpha1_bootartifact.yaml
 - v1alpha1_bootconfig.yaml
 - v1alpha1_machine.yaml
+- v1alpha1_provisionanswer.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
