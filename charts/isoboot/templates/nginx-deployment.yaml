@@ -4,8 +4,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "isoboot.fullname" . }}-nginx
-  namespace: {{ .Release.Namespace }}
+  name: "{{ include "isoboot.fullname" . }}-nginx"
+  namespace: "{{ .Release.Namespace }}"
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
 spec:
@@ -22,6 +22,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -42,11 +43,39 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+      - name: resolve-dns
+        image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          DNS_IP=$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)
+          [ -n "$DNS_IP" ] || { echo "FAIL: could not determine DNS resolver from /etc/resolv.conf"; exit 1; }
+          echo "Using DNS resolver: $DNS_IP"
+          CLUSTER_DOMAIN=$(awk '/^search/ {for(i=2;i<=NF;i++) if($i ~ /^svc\./) {sub(/^svc\./, "", $i); print $i; exit}}' /etc/resolv.conf)
+          [ -n "$CLUSTER_DOMAIN" ] || CLUSTER_DOMAIN="cluster.local"
+          echo "Using cluster domain: $CLUSTER_DOMAIN"
+          sed "s|__DNS_RESOLVER__|$DNS_IP|g; s|__CLUSTER_DOMAIN__|$CLUSTER_DOMAIN|g" /config-template/nginx.conf > /config/nginx.conf
+        securityContext:
+          runAsUser: 65532
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        volumeMounts:
+        - name: config-template
+          mountPath: /config-template
+          readOnly: true
+        - name: config
+          mountPath: /config
       containers:
       - name: nginx
         image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
         ports:
         - containerPort: {{ .Values.nginx.port }}
+          protocol: TCP
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false
@@ -78,9 +107,11 @@ spec:
         - name: run
           mountPath: /var/run
       volumes:
-      - name: config
+      - name: config-template
         configMap:
-          name: {{ include "isoboot.fullname" . }}-nginx-config
+          name: "{{ include "isoboot.fullname" . }}-nginx-config"
+      - name: config
+        emptyDir: {}
       - name: data
         hostPath:
           path: "{{ .Values.dataDir }}"

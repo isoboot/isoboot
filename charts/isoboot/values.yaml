@@ -42,9 +42,23 @@ resources:
     cpu: 10m
     memory: 64Mi
 
+httpd:
+  image:
+    repository: ghcr.io/isoboot/isoboot-httpd
+    # tag defaults to .Chart.AppVersion if omitted
+    tag: ""
+  # No conflict with nginx.port — httpd uses ClusterIP networking, nginx uses hostNetwork.
+  port: 8080
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
 dnsmasq:
-  enabled: false
-  # subnet is required when dnsmasq is enabled (e.g. "192.168.101.0/24").
+  # subnet is required (e.g. "192.168.101.0/24").
   subnet: ""
   ipxe:
     url: "https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz"

@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	macRegexp  = regexp.MustCompile(`^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$`)
-	hostRegexp = regexp.MustCompile(`^[a-zA-Z0-9.\[\]:-]+$`)
+	macRegexp = regexp.MustCompile(`^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$`)
+	// Permits IPv6 bracket notation (e.g. [::1]) and hostnames; requires at least one alphanumeric.
+	hostRegexp = regexp.MustCompile(`^[a-zA-Z0-9.\[\]:-]*[a-zA-Z0-9][a-zA-Z0-9.\[\]:-]*$`)
 )
 
 func main() {

@@ -1,9 +1,8 @@
-{{- if .Values.dnsmasq.enabled }}
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
 metadata:
-  name: {{ include "isoboot.fullname" . }}-ipxe
-  namespace: {{ .Release.Namespace }}
+  name: "{{ include "isoboot.fullname" . }}-ipxe"
+  namespace: "{{ .Release.Namespace }}"
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
   annotations:
@@ -12,4 +11,3 @@ metadata:
 spec:
   url: "{{ .Values.dnsmasq.ipxe.url }}"
   sha512: "{{ .Values.dnsmasq.ipxe.sha512 }}"
-{{- end }}
