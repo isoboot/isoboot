@@ -25,5 +25,7 @@ metadata:
   labels:
     app.kubernetes.io/name: isoboot
 spec:
-  kernelRef: rocky-10.1-kernel
-  initrdRef: rocky-10.1-initrd
+  kernel:
+    ref: rocky-10.1-kernel
+  initrd:
+    ref: rocky-10.1-initrd

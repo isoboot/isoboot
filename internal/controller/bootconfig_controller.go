@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -61,38 +62,49 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// Only Mode A (direct refs) for now
-	if bc.Spec.KernelRef == nil || bc.Spec.InitrdRef == nil {
+	if bc.Spec.Kernel == nil || bc.Spec.Initrd == nil {
 		log.V(1).Info("Skipping BootConfig without direct refs")
 		return ctrl.Result{}, nil
 	}
 
-	if bc.Spec.FirmwareRef != nil {
-		return r.setError(ctx, &bc, "firmwareRef is not yet supported")
-	}
-
 	// Look up referenced BootArtifacts
-	kernelArtifact, err := r.getArtifact(ctx, *bc.Spec.KernelRef, bc.Namespace)
+	kernelArtifact, err := r.getArtifact(ctx, bc.Spec.Kernel.Ref, bc.Namespace)
 	if err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
-		return r.setError(ctx, &bc, fmt.Sprintf("kernel artifact %q not found", *bc.Spec.KernelRef))
+		return r.setError(ctx, &bc, fmt.Sprintf("kernel artifact %q not found", bc.Spec.Kernel.Ref))
 	}
 
-	initrdArtifact, err := r.getArtifact(ctx, *bc.Spec.InitrdRef, bc.Namespace)
+	initrdArtifact, err := r.getArtifact(ctx, bc.Spec.Initrd.Ref, bc.Namespace)
 	if err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
-		return r.setError(ctx, &bc, fmt.Sprintf("initrd artifact %q not found", *bc.Spec.InitrdRef))
+		return r.setError(ctx, &bc, fmt.Sprintf("initrd artifact %q not found", bc.Spec.Initrd.Ref))
 	}
 
 	// Check if all artifacts are Ready
 	if kernelArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for kernel artifact %q to be Ready", *bc.Spec.KernelRef))
+		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for kernel artifact %q to be Ready", bc.Spec.Kernel.Ref))
 	}
 	if initrdArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for initrd artifact %q to be Ready", *bc.Spec.InitrdRef))
+		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for initrd artifact %q to be Ready", bc.Spec.Initrd.Ref))
+	}
+
+	// Optionally look up firmware artifact
+	var firmwareArtifact *isobootgithubiov1alpha1.BootArtifact
+	if bc.Spec.Firmware != nil {
+		firmwareArtifact, err = r.getArtifact(ctx, bc.Spec.Firmware.Ref, bc.Namespace)
+		if err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return ctrl.Result{}, err
+			}
+			return r.setError(ctx, &bc, fmt.Sprintf("firmware artifact %q not found", bc.Spec.Firmware.Ref))
+		}
+		if firmwareArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
+			return r.setPending(ctx, &bc, fmt.Sprintf("waiting for firmware artifact %q to be Ready", bc.Spec.Firmware.Ref))
+		}
 	}
 
 	// Assemble boot directory with symlinks
@@ -111,15 +123,28 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.setError(ctx, &bc, fmt.Sprintf("creating initrd dir: %v", err))
 	}
 
-	// Create symlinks (relative paths), removing stale entries from ref changes
+	// Create kernel symlink
 	kernelTarget := filepath.Join("..", "..", "..", "artifacts", kernelArtifact.Name, kernelFilename)
 	if err := ensureSymlink(kernelDir, kernelFilename, kernelTarget); err != nil {
 		return r.setError(ctx, &bc, fmt.Sprintf("creating kernel symlink: %v", err))
 	}
 
-	initrdTarget := filepath.Join("..", "..", "..", "artifacts", initrdArtifact.Name, initrdFilename)
-	if err := ensureSymlink(initrdDir, initrdFilename, initrdTarget); err != nil {
-		return r.setError(ctx, &bc, fmt.Sprintf("creating initrd symlink: %v", err))
+	if firmwareArtifact != nil {
+		// Firmware mode: concatenate initrd + firmware into initrd dir
+		firmwareFilename := filenameFromURL(firmwareArtifact.Spec.URL)
+		initrdPath := filepath.Join(r.DataDir, "artifacts", initrdArtifact.Name, initrdFilename)
+		firmwarePath := filepath.Join(r.DataDir, "artifacts", firmwareArtifact.Name, firmwareFilename)
+		combinedPath := filepath.Join(initrdDir, initrdFilename)
+
+		if err := concatenateFiles(combinedPath, initrdPath, firmwarePath); err != nil {
+			return r.setError(ctx, &bc, fmt.Sprintf("concatenating initrd + firmware: %v", err))
+		}
+	} else {
+		// No firmware: symlink initrd directly
+		initrdTarget := filepath.Join("..", "..", "..", "artifacts", initrdArtifact.Name, initrdFilename)
+		if err := ensureSymlink(initrdDir, initrdFilename, initrdTarget); err != nil {
+			return r.setError(ctx, &bc, fmt.Sprintf("creating initrd symlink: %v", err))
+		}
 	}
 
 	if bc.Status.Phase != isobootgithubiov1alpha1.BootConfigPhaseReady {
@@ -127,6 +152,64 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	return r.setReady(ctx, &bc)
+}
+
+// concatenateFiles writes the concatenation of srcA and srcB to dst atomically.
+func concatenateFiles(dst, srcA, srcB string) error {
+	// Check if the concatenated file already exists and is newer than both sources
+	dstInfo, dstErr := os.Stat(dst)
+	if dstErr == nil {
+		srcAInfo, err := os.Stat(srcA)
+		if err != nil {
+			return fmt.Errorf("stat initrd: %w", err)
+		}
+		srcBInfo, err := os.Stat(srcB)
+		if err != nil {
+			return fmt.Errorf("stat firmware: %w", err)
+		}
+		if dstInfo.ModTime().After(srcAInfo.ModTime()) && dstInfo.ModTime().After(srcBInfo.ModTime()) {
+			return nil // already up to date
+		}
+	}
+
+	// Remove any existing entries (stale symlinks or old concatenated files)
+	dir := filepath.Dir(dst)
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+	}
+
+	tmp, err := os.CreateTemp(dir, ".concat-*")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath) // clean up on error
+	}()
+
+	for _, src := range []string{srcA, srcB} {
+		f, err := os.Open(src)
+		if err != nil {
+			return fmt.Errorf("opening %s: %w", src, err)
+		}
+		_, err = io.Copy(tmp, f)
+		_ = f.Close()
+		if err != nil {
+			return fmt.Errorf("copying %s: %w", src, err)
+		}
+	}
+
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, dst); err != nil {
+		return fmt.Errorf("renaming temp file: %w", err)
+	}
+
+	return nil
 }
 
 func (r *BootConfigReconciler) getArtifact(ctx context.Context, name, namespace string) (*isobootgithubiov1alpha1.BootArtifact, error) {
@@ -198,8 +281,9 @@ func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, o
 	var requests []reconcile.Request
 	for i := range configs.Items {
 		bc := &configs.Items[i]
-		if (bc.Spec.KernelRef != nil && *bc.Spec.KernelRef == obj.GetName()) ||
-			(bc.Spec.InitrdRef != nil && *bc.Spec.InitrdRef == obj.GetName()) {
+		if (bc.Spec.Kernel != nil && bc.Spec.Kernel.Ref == obj.GetName()) ||
+			(bc.Spec.Initrd != nil && bc.Spec.Initrd.Ref == obj.GetName()) ||
+			(bc.Spec.Firmware != nil && bc.Spec.Firmware.Ref == obj.GetName()) {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: client.ObjectKeyFromObject(bc),
 			})

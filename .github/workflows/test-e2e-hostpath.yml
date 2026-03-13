@@ -126,8 +126,10 @@ jobs:
           metadata:
             name: ${{ env.BOOTCONFIG_NAME }}
           spec:
-            kernelRef: "${{ env.VMLINUZ_NAME }}"
-            initrdRef: "${{ env.INITRD_NAME }}"
+            kernel:
+              ref: "${{ env.VMLINUZ_NAME }}"
+            initrd:
+              ref: "${{ env.INITRD_NAME }}"
           EOF
 
       - name: Wait for BootConfig Ready phase
@@ -168,8 +170,10 @@ jobs:
           metadata:
             name: ${{ env.BOOTCONFIG_NAME }}
           spec:
-            kernelRef: "${{ env.VMLINUZ_NAME }}"
-            initrdRef: "${{ env.INITRD_NAME }}"
+            kernel:
+              ref: "${{ env.VMLINUZ_NAME }}"
+            initrd:
+              ref: "${{ env.INITRD_NAME }}"
           EOF
 
       - name: Wait for recreated BootConfig Ready phase
@@ -273,8 +277,10 @@ jobs:
           metadata:
             name: ${{ env.BOOTCONFIG_NAME }}
           spec:
-            kernelRef: "${{ env.VMLINUZ_NAME }}"
-            initrdRef: "${{ env.INITRD_NAME }}"
+            kernel:
+              ref: "${{ env.VMLINUZ_NAME }}"
+            initrd:
+              ref: "${{ env.INITRD_NAME }}"
           EOF
 
       - name: Wait for BootConfig Ready phase (second cluster)
@@ -310,8 +316,10 @@ jobs:
           metadata:
             name: ${{ env.BOOTCONFIG_NAME }}
           spec:
-            kernelRef: "${{ env.VMLINUZ_NAME }}"
-            initrdRef: "${{ env.INITRD_NAME }}"
+            kernel:
+              ref: "${{ env.VMLINUZ_NAME }}"
+            initrd:
+              ref: "${{ env.INITRD_NAME }}"
           EOF
 
       - name: Wait for recreated BootConfig Ready phase (second cluster)
