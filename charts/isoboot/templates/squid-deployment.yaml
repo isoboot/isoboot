@@ -16,6 +16,8 @@ spec:
       labels:
         {{- include "isoboot.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: squid
+      annotations:
+        checksum/squid-config: {{ include (print $.Template.BasePath "/squid-configmap.yaml") . | sha256sum }}
     spec:
       automountServiceAccountToken: false
       hostNetwork: true
@@ -45,33 +47,21 @@ spec:
         args:
         - |
           set -e
-          cat > /config/squid.conf <<'CONF'
-          acl localnet src {{ .Values.squid.acl }}
-          http_access allow localnet
-          http_access allow localhost
-          http_access deny all
-          http_port {{ .Values.squid.port }}
-          maximum_object_size {{ .Values.squid.maxObjectSize }}
-          cache_dir ufs /var/cache/squid {{ .Values.squid.cacheSizeMB }} 16 256
-          access_log stdio:/dev/stdout
-          cache_log /dev/stderr
-          pid_filename /run/squid/squid.pid
-          CONF
-          echo "Generated squid.conf:"
-          cat /config/squid.conf
           echo "Initializing cache directory..."
-          squid -z --foreground -f /config/squid.conf 2>&1
+          squid -z --foreground -f /etc/squid/squid.conf 2>&1
           echo "Cache initialized."
         securityContext:
           runAsUser: 0
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
             - "ALL"
         volumeMounts:
         - name: config
-          mountPath: /config
+          mountPath: /etc/squid/squid.conf
+          subPath: squid.conf
+          readOnly: true
         - name: cache
           mountPath: /var/cache/squid
         - name: run
@@ -79,7 +69,7 @@ spec:
       containers:
       - name: squid
         image: "{{ .Values.squid.image.repository }}:{{ .Values.squid.image.tag | default .Chart.AppVersion }}"
-        command: ["squid", "--foreground", "-f", "/config/squid.conf"]
+        command: ["squid", "--foreground", "-f", "/etc/squid/squid.conf"]
         securityContext:
           runAsUser: 0
           allowPrivilegeEscalation: false
@@ -102,7 +92,8 @@ spec:
           {{- toYaml .Values.squid.resources | nindent 10 }}
         volumeMounts:
         - name: config
-          mountPath: /config
+          mountPath: /etc/squid/squid.conf
+          subPath: squid.conf
           readOnly: true
         - name: cache
           mountPath: /var/cache/squid
@@ -112,9 +103,8 @@ spec:
           mountPath: /run/squid
       volumes:
       - name: config
-        hostPath:
-          path: "{{ .Values.dataDir }}/squid/config"
-          type: DirectoryOrCreate
+        configMap:
+          name: "{{ include "isoboot.fullname" . }}-squid"
       - name: cache
         hostPath:
           path: "{{ .Values.dataDir }}/squid/cache"

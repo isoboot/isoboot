@@ -63,9 +63,9 @@ squid:
     # tag defaults to .Chart.AppVersion if omitted
     tag: ""
   port: 3128
-  acl: "0.0.0.0/0"
-  maxObjectSize: "4096 MB"
-  cacheSizeMB: 10000
+  maxObjectSize: "1024 MB"
+  cacheMemMB: 0
+  cacheSizeMB: 8000
   resources:
     limits:
       cpu: 500m
