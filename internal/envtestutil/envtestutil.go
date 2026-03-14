@@ -17,6 +17,7 @@ limitations under the License.
 package envtestutil
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -35,6 +36,7 @@ func GetFirstFoundBinaryDir(basePath string) string {
 	dir := filepath.Join(basePath, "bin", "k8s")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		log.Printf("Failed to read directory %s: %v", dir, err)
 		return ""
 	}
 	for _, entry := range entries {

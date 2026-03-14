@@ -23,11 +23,9 @@ import (
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
-const testNS = "default"
-
 func createMachine(name, mac string) *isobootgithubiov1alpha1.Machine {
 	m := &isobootgithubiov1alpha1.Machine{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNS},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
 		Spec:       isobootgithubiov1alpha1.MachineSpec{MAC: mac},
 	}
 	ExpectWithOffset(1, k8sClient.Create(ctx, m)).To(Succeed())
@@ -39,7 +37,7 @@ func createProvision(
 	phase isobootgithubiov1alpha1.ProvisionPhase,
 ) *isobootgithubiov1alpha1.Provision {
 	p := &isobootgithubiov1alpha1.Provision{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNS},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
 		Spec: isobootgithubiov1alpha1.ProvisionSpec{
 			MachineRef:         machineRef,
 			BootConfigRef:      bootConfigRef,
