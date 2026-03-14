@@ -7,6 +7,13 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  - secrets
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
@@ -43,6 +50,7 @@ rules:
   resources:
   - bootconfigs
   - machines
+  - provisionautomations
   - provisions
   verbs:
   - get
