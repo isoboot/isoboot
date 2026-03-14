@@ -110,8 +110,8 @@ jobs:
 
       - name: Wait for Ready phase
         run: |
-          ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
-          ./test/e2e/wait-for-bootartifact.sh "${{ env.INITRD_NAME }}"
+          ./test/e2e/wait-for-resource.sh bootartifact "${{ env.VMLINUZ_NAME }}"
+          ./test/e2e/wait-for-resource.sh bootartifact "${{ env.INITRD_NAME }}"
 
       - name: Verify files and SHA-256 on host disk
         run: |
@@ -133,7 +133,7 @@ jobs:
           EOF
 
       - name: Wait for BootConfig Ready phase
-        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+        run: ./test/e2e/wait-for-resource.sh bootconfig "${{ env.BOOTCONFIG_NAME }}"
 
       - name: Verify BootConfig symlinks on host disk
         run: |
@@ -177,7 +177,7 @@ jobs:
           EOF
 
       - name: Wait for recreated BootConfig Ready phase
-        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+        run: ./test/e2e/wait-for-resource.sh bootconfig "${{ env.BOOTCONFIG_NAME }}"
 
       - name: Verify recreated BootConfig symlinks
         run: |
@@ -254,8 +254,8 @@ jobs:
 
       - name: Wait for Ready phase (second cluster)
         run: |
-          ./test/e2e/wait-for-bootartifact.sh "${{ env.VMLINUZ_NAME }}"
-          ./test/e2e/wait-for-bootartifact.sh "${{ env.INITRD_NAME }}"
+          ./test/e2e/wait-for-resource.sh bootartifact "${{ env.VMLINUZ_NAME }}"
+          ./test/e2e/wait-for-resource.sh bootartifact "${{ env.INITRD_NAME }}"
 
       - name: Verify files were not re-downloaded
         run: |
@@ -284,7 +284,7 @@ jobs:
           EOF
 
       - name: Wait for BootConfig Ready phase (second cluster)
-        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+        run: ./test/e2e/wait-for-resource.sh bootconfig "${{ env.BOOTCONFIG_NAME }}"
 
       - name: Verify BootConfig symlinks (second cluster)
         run: |
@@ -323,7 +323,7 @@ jobs:
           EOF
 
       - name: Wait for recreated BootConfig Ready phase (second cluster)
-        run: ./test/e2e/wait-for-bootconfig.sh "${{ env.BOOTCONFIG_NAME }}"
+        run: ./test/e2e/wait-for-resource.sh bootconfig "${{ env.BOOTCONFIG_NAME }}"
 
       - name: Verify recreated BootConfig symlinks (second cluster)
         run: |
