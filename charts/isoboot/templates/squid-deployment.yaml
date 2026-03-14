@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-squid"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: squid
+  template:
+    metadata:
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: squid
+      annotations:
+        checksum/squid-config: {{ include (print $.Template.BasePath "/squid-configmap.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchFields:
+              - key: metadata.name
+                operator: In
+                values:
+                - "{{ .Values.nodeName }}"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                {{- include "isoboot.selectorLabels" . | nindent 16 }}
+                app.kubernetes.io/component: squid
+            topologyKey: kubernetes.io/hostname
+      initContainers:
+      - name: init-cache
+        image: "{{ .Values.squid.image.repository }}:{{ .Values.squid.image.tag | default .Chart.AppVersion }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "Initializing cache directory..."
+          squid -z --foreground -f /etc/squid/squid.conf 2>&1
+          echo "Cache initialized."
+        securityContext:
+          runAsUser: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - "ALL"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/squid/squid.conf
+          subPath: squid.conf
+          readOnly: true
+        - name: cache
+          mountPath: /var/cache/squid
+        - name: run
+          mountPath: /run/squid
+      containers:
+      - name: squid
+        image: "{{ .Values.squid.image.repository }}:{{ .Values.squid.image.tag | default .Chart.AppVersion }}"
+        command: ["squid", "--foreground", "-f", "/etc/squid/squid.conf"]
+        # Squid on Alpine requires root for cache directory ownership and worker process management.
+        securityContext:
+          runAsUser: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.squid.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: {{ .Values.squid.port }}
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.squid.resources | nindent 10 }}
+        volumeMounts:
+        - name: config
+          mountPath: /etc/squid/squid.conf
+          subPath: squid.conf
+          readOnly: true
+        - name: cache
+          mountPath: /var/cache/squid
+        - name: logs
+          mountPath: /var/log/squid
+        - name: run
+          mountPath: /run/squid
+      volumes:
+      - name: config
+        configMap:
+          name: "{{ include "isoboot.fullname" . }}-squid"
+      - name: cache
+        hostPath:
+          path: "{{ .Values.dataDir }}/squid/cache"
+          type: DirectoryOrCreate
+      - name: logs
+        hostPath:
+          path: "{{ .Values.dataDir }}/squid/logs"
+          type: DirectoryOrCreate
+      - name: run
+        emptyDir: {}

@@ -1,3 +1,4 @@
-FROM alpine:3.23
+ARG ALPINE_VERSION=3.23
+FROM alpine:${ALPINE_VERSION}
 RUN apk add --no-cache dnsmasq iproute2
 ENTRYPOINT ["dnsmasq", "-k"]
