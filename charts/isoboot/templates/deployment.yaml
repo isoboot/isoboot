@@ -51,7 +51,7 @@ spec:
         args:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=:8443
-        - "--data-dir={{ .Values.dataDir }}"
+        - "--data-dir={{ .Values.dataDir }}/nginx/static"
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: "{{ .Values.image.pullPolicy }}"
         securityContext:
