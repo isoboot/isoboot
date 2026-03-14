@@ -40,6 +40,9 @@ const MachineSpecMACField = "spec.mac"
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions/status,verbs=get
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=machines,verbs=get;list;watch
+// +kubebuilder:rbac:groups=isoboot.github.io,resources=provisionautomations,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // SetupIndexers registers field indexes on the manager's cache.
 func SetupIndexers(ctx context.Context, mgr manager.Manager) error {
