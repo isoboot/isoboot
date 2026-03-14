@@ -19,47 +19,12 @@ package httpd
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
 var _ = Describe("PendingProvisionForMAC", func() {
 	const ns = "default"
-
-	createMachine := func(name, mac string) *isobootgithubiov1alpha1.Machine {
-		m := &isobootgithubiov1alpha1.Machine{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: ns,
-			},
-			Spec: isobootgithubiov1alpha1.MachineSpec{MAC: mac},
-		}
-		Expect(k8sClient.Create(ctx, m)).To(Succeed())
-		return m
-	}
-
-	createProvision := func(
-		name, machineRef string, phase isobootgithubiov1alpha1.ProvisionPhase,
-	) *isobootgithubiov1alpha1.Provision {
-		p := &isobootgithubiov1alpha1.Provision{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: ns,
-			},
-			Spec: isobootgithubiov1alpha1.ProvisionSpec{
-				MachineRef:         machineRef,
-				BootConfigRef:      "bootconfig-1",
-				ProvisionAnswerRef: "answer-1",
-			},
-		}
-		Expect(k8sClient.Create(ctx, p)).To(Succeed())
-		if phase != "" {
-			p.Status.Phase = phase
-			Expect(k8sClient.Status().Update(ctx, p)).To(Succeed())
-		}
-		return p
-	}
 
 	It("returns nil when no machine exists for MAC", func() {
 		// Create and delete a sentinel machine so we can confirm the
@@ -98,7 +63,7 @@ var _ = Describe("PendingProvisionForMAC", func() {
 
 	It("returns nil when provision exists but is not pending", func() {
 		m := createMachine("ppm-m2", "aa-00-00-00-00-02")
-		p := createProvision("ppm-p2", "ppm-m2",
+		p := createProvision("ppm-p2", "ppm-m2", "bootconfig-1",
 			isobootgithubiov1alpha1.ProvisionPhaseComplete)
 		defer func() {
 			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
@@ -122,7 +87,7 @@ var _ = Describe("PendingProvisionForMAC", func() {
 
 	It("returns the provision when exactly one pending match", func() {
 		m := createMachine("ppm-m3", "aa-00-00-00-00-03")
-		p := createProvision("ppm-p3", "ppm-m3",
+		p := createProvision("ppm-p3", "ppm-m3", "bootconfig-1",
 			isobootgithubiov1alpha1.ProvisionPhasePending)
 		defer func() {
 			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
@@ -143,9 +108,9 @@ var _ = Describe("PendingProvisionForMAC", func() {
 
 	It("returns pending provision and ignores complete", func() {
 		m := createMachine("ppm-m4", "aa-00-00-00-00-04")
-		p1 := createProvision("ppm-p4a", "ppm-m4",
+		p1 := createProvision("ppm-p4a", "ppm-m4", "bootconfig-1",
 			isobootgithubiov1alpha1.ProvisionPhasePending)
-		p2 := createProvision("ppm-p4b", "ppm-m4",
+		p2 := createProvision("ppm-p4b", "ppm-m4", "bootconfig-1",
 			isobootgithubiov1alpha1.ProvisionPhaseComplete)
 		defer func() {
 			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
@@ -183,9 +148,9 @@ var _ = Describe("PendingProvisionForMAC", func() {
 
 	It("returns error when multiple pending provisions", func() {
 		m := createMachine("ppm-m5", "aa-00-00-00-00-05")
-		p1 := createProvision("ppm-p5a", "ppm-m5",
+		p1 := createProvision("ppm-p5a", "ppm-m5", "bootconfig-1",
 			isobootgithubiov1alpha1.ProvisionPhasePending)
-		p2 := createProvision("ppm-p5b", "ppm-m5",
+		p2 := createProvision("ppm-p5b", "ppm-m5", "bootconfig-1",
 			isobootgithubiov1alpha1.ProvisionPhasePending)
 		defer func() {
 			Expect(k8sClient.Delete(ctx, m)).To(Succeed())

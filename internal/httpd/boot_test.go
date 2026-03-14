@@ -31,35 +31,6 @@ var _ = Describe("BootDirectiveForMAC", func() {
 
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-	createMachine := func(name, mac string) *isobootgithubiov1alpha1.Machine {
-		m := &isobootgithubiov1alpha1.Machine{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Spec:       isobootgithubiov1alpha1.MachineSpec{MAC: mac},
-		}
-		Expect(k8sClient.Create(ctx, m)).To(Succeed())
-		return m
-	}
-
-	createProvision := func(
-		name, machineRef, bootConfigRef string,
-		phase isobootgithubiov1alpha1.ProvisionPhase,
-	) *isobootgithubiov1alpha1.Provision {
-		p := &isobootgithubiov1alpha1.Provision{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Spec: isobootgithubiov1alpha1.ProvisionSpec{
-				MachineRef:         machineRef,
-				BootConfigRef:      bootConfigRef,
-				ProvisionAnswerRef: "answer-1",
-			},
-		}
-		Expect(k8sClient.Create(ctx, p)).To(Succeed())
-		if phase != "" {
-			p.Status.Phase = phase
-			Expect(k8sClient.Status().Update(ctx, p)).To(Succeed())
-		}
-		return p
-	}
-
 	createBootConfig := func(
 		name, kernelRef, initrdRef, kernelArgs string,
 	) *isobootgithubiov1alpha1.BootConfig {

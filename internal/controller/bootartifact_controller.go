@@ -25,7 +25,6 @@ import (
 	"hash"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +38,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
+	"github.com/isoboot/isoboot/internal/urlutil"
 )
 
 // BootArtifactReconciler reconciles a BootArtifact object
@@ -253,20 +253,8 @@ func (r *BootArtifactReconciler) setFailure(ctx context.Context, artifact *isobo
 }
 
 func (r *BootArtifactReconciler) filePath(artifact *isobootgithubiov1alpha1.BootArtifact) string {
-	filename := filenameFromURL(artifact.Spec.URL)
+	filename := urlutil.FilenameFromURL(artifact.Spec.URL)
 	return filepath.Join(r.DataDir, "artifacts", artifact.Name, filename)
-}
-
-func filenameFromURL(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "artifact"
-	}
-	name := filepath.Base(u.Path)
-	if name == "" || name == "." || name == "/" || name == ".." {
-		return "artifact"
-	}
-	return name
 }
 
 func expectedHash(artifact *isobootgithubiov1alpha1.BootArtifact) string {

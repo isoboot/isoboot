@@ -41,22 +41,36 @@ func errorDirective() bootDirectiveFunc {
 	}
 }
 
-func TestConditionalBoot_BootDirective(t *testing.T) {
-	handler := conditionalBootHandler(fixedDirective())
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got: %d", w.Result().StatusCode)
+func TestConditionalBoot_StatusCodes(t *testing.T) {
+	tests := []struct {
+		name       string
+		directive  bootDirectiveFunc
+		url        string
+		wantStatus int
+	}{
+		{"ok", fixedDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusOK},
+		{"no match", noMatchDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusNotFound},
+		{"duplicate", duplicateDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusConflict},
+		{"internal error", errorDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusInternalServerError},
+		{"missing mac", fixedDirective(), "/conditional-boot", http.StatusBadRequest},
+		{"empty mac", fixedDirective(), "/conditional-boot?mac=", http.StatusBadRequest},
+		{"invalid mac format", fixedDirective(), "/conditional-boot?mac=not-a-mac", http.StatusBadRequest},
+		{"colon mac rejected", fixedDirective(), "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", http.StatusBadRequest},
+		{"mac injection", fixedDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff%0aboot", http.StatusBadRequest},
 	}
-	body, _ := io.ReadAll(w.Result().Body)
-	expected := "#!ipxe\nkernel /static/test-config/kernel/vmlinuz console=ttyS0\n" +
-		"initrd /static/test-config/initrd/initrd.img\n" +
-		"boot\n"
-	if string(body) != expected {
-		t.Errorf("expected:\n%s\ngot:\n%s", expected, string(body))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := conditionalBootHandler(tt.directive)
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			w := httptest.NewRecorder()
+
+			handler(w, req)
+
+			if w.Result().StatusCode != tt.wantStatus {
+				t.Errorf("expected %d, got: %d", tt.wantStatus, w.Result().StatusCode)
+			}
+		})
 	}
 }
 
@@ -73,99 +87,19 @@ func TestConditionalBoot_ContentType(t *testing.T) {
 	}
 }
 
-func TestConditionalBoot_NoMatch(t *testing.T) {
-	handler := conditionalBootHandler(noMatchDirective())
+func TestConditionalBoot_BootDirective(t *testing.T) {
+	handler := conditionalBootHandler(fixedDirective())
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
 	handler(w, req)
 
-	if w.Result().StatusCode != http.StatusNotFound {
-		t.Errorf("expected 404, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_DuplicateMatch(t *testing.T) {
-	handler := conditionalBootHandler(duplicateDirective())
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusConflict {
-		t.Errorf("expected 409, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_InternalError(t *testing.T) {
-	handler := conditionalBootHandler(errorDirective())
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected 500, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_MissingMac(t *testing.T) {
-	handler := conditionalBootHandler(fixedDirective())
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot", nil)
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_EmptyMac(t *testing.T) {
-	handler := conditionalBootHandler(fixedDirective())
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=", nil)
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_InvalidMacFormat(t *testing.T) {
-	handler := conditionalBootHandler(fixedDirective())
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=not-a-mac", nil)
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_ColonMacRejected(t *testing.T) {
-	handler := conditionalBootHandler(fixedDirective())
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa:bb:cc:dd:ee:ff", nil)
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
-	}
-}
-
-func TestConditionalBoot_MacInjection(t *testing.T) {
-	handler := conditionalBootHandler(fixedDirective())
-	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff%0aboot", nil)
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Result().StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got: %d", w.Result().StatusCode)
+	body, _ := io.ReadAll(w.Result().Body)
+	expected := "#!ipxe\nkernel /static/test-config/kernel/vmlinuz console=ttyS0\n" +
+		"initrd /static/test-config/initrd/initrd.img\n" +
+		"boot\n"
+	if string(body) != expected {
+		t.Errorf("expected:\n%s\ngot:\n%s", expected, string(body))
 	}
 }
 

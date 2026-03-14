@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
+	"github.com/isoboot/isoboot/internal/urlutil"
 )
 
 // BootConfigReconciler reconciles a BootConfig object
@@ -110,8 +111,8 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Assemble boot directory with symlinks
 	bootDir := filepath.Join(r.DataDir, "boot", bc.Name)
 
-	kernelFilename := filenameFromURL(kernelArtifact.Spec.URL)
-	initrdFilename := filenameFromURL(initrdArtifact.Spec.URL)
+	kernelFilename := urlutil.FilenameFromURL(kernelArtifact.Spec.URL)
+	initrdFilename := urlutil.FilenameFromURL(initrdArtifact.Spec.URL)
 
 	kernelDir := filepath.Join(bootDir, "kernel")
 	initrdDir := filepath.Join(bootDir, "initrd")
@@ -131,7 +132,7 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	if firmwareArtifact != nil {
 		// Firmware mode: concatenate initrd + firmware into initrd dir
-		firmwareFilename := filenameFromURL(firmwareArtifact.Spec.URL)
+		firmwareFilename := urlutil.FilenameFromURL(firmwareArtifact.Spec.URL)
 		initrdPath := filepath.Join(r.DataDir, "artifacts", initrdArtifact.Name, initrdFilename)
 		firmwarePath := filepath.Join(r.DataDir, "artifacts", firmwareArtifact.Name, firmwareFilename)
 		combinedPath := filepath.Join(initrdDir, initrdFilename)

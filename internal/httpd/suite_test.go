@@ -18,7 +18,6 @@ package httpd
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -37,6 +36,7 @@ import (
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/controller"
+	"github.com/isoboot/isoboot/internal/envtestutil"
 )
 
 var (
@@ -67,7 +67,7 @@ var _ = BeforeSuite(func() {
 		ErrorIfCRDPathMissing: true,
 	}
 
-	if dir := getFirstFoundEnvTestBinaryDir(); dir != "" {
+	if dir := envtestutil.GetFirstFoundBinaryDir(filepath.Join("..", "..")); dir != "" {
 		testEnv.BinaryAssetsDirectory = dir
 	}
 
@@ -104,17 +104,3 @@ var _ = AfterSuite(func() {
 		return testEnv.Stop()
 	}, time.Minute, time.Second).Should(Succeed())
 })
-
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
-	}
-	return ""
-}
