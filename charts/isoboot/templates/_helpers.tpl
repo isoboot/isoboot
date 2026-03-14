@@ -43,7 +43,7 @@ affinity:
     - labelSelector:
         matchLabels:
           {{- include "isoboot.selectorLabels" .context | nindent 10 }}
-          app.kubernetes.io/component: {{ .component }}
+          app.kubernetes.io/component: "{{ .component }}"
       topologyKey: kubernetes.io/hostname
 {{- end -}}
 
