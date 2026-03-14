@@ -52,10 +52,10 @@ spec:
           echo "Detected interface=$IFACE host_ip=$HOST_IP"
           echo -n "$HOST_IP" > /config/host-ip
           echo -n "$IFACE" > /config/iface
-          mkdir -p "{{ .Values.dataDir }}/boot" || { echo "FAIL: cannot create {{ .Values.dataDir }}/boot — ensure dataDir is writable by UID 65532"; exit 1; }
-          printf '#!ipxe\nchain http://%s:{{ .Values.nginx.port }}/dynamic/conditional-boot?mac=${net0/mac:hexhyp} || sanboot --no-describe --drive 0x80\n' "$HOST_IP" > "{{ .Values.dataDir }}/boot/boot.ipxe"
+          mkdir -p "{{ .Values.dataDir }}/nginx/static/boot" || { echo "FAIL: cannot create {{ .Values.dataDir }}/nginx/static/boot — ensure dataDir is writable by UID 65532"; exit 1; }
+          printf '#!ipxe\nchain http://%s:{{ .Values.nginx.port }}/dynamic/conditional-boot?mac=${net0/mac:hexhyp} || sanboot --no-describe --drive 0x80\n' "$HOST_IP" > "{{ .Values.dataDir }}/nginx/static/boot/boot.ipxe"
           echo "Generated boot.ipxe:"
-          cat "{{ .Values.dataDir }}/boot/boot.ipxe"
+          cat "{{ .Values.dataDir }}/nginx/static/boot/boot.ipxe"
         securityContext:
           runAsUser: 65532
           runAsNonRoot: true
@@ -75,7 +75,7 @@ spec:
         args:
         - |
           set -e
-          TARBALL="{{ .Values.dataDir }}/artifacts/{{ include "isoboot.fullname" . }}-ipxe/ipxeboot.tar.gz"
+          TARBALL="{{ .Values.dataDir }}/nginx/static/artifacts/{{ include "isoboot.fullname" . }}-ipxe/ipxeboot.tar.gz"
           DEST="/ipxe"
           echo "Waiting for iPXE tarball at $TARBALL (timeout 300s)..."
           ELAPSED=0
