@@ -5,6 +5,6 @@ resources:
 - bases/isoboot.github.io_bootartifacts.yaml
 - bases/isoboot.github.io_bootconfigs.yaml
 - bases/isoboot.github.io_machines.yaml
-- bases/isoboot.github.io_provisionanswers.yaml
+- bases/isoboot.github.io_provisionautomations.yaml
 - bases/isoboot.github.io_provisions.yaml
 # +kubebuilder:scaffold:crdkustomizeresource

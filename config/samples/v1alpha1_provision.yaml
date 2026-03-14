@@ -8,4 +8,4 @@ metadata:
 spec:
   machineRef: machine-sample
   bootConfigRef: rocky-9
-  provisionAnswerRef: provisionanswer-sample
+  provisionAutomationRef: provisionautomation-sample

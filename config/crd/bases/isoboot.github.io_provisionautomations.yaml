@@ -4,16 +4,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: provisionanswers.isoboot.github.io
+  name: provisionautomations.isoboot.github.io
 spec:
   group: isoboot.github.io
   names:
-    kind: ProvisionAnswer
-    listKind: ProvisionAnswerList
-    plural: provisionanswers
+    kind: ProvisionAutomation
+    listKind: ProvisionAutomationList
+    plural: provisionautomations
     shortNames:
     - pa
-    singular: provisionanswer
+    singular: provisionautomation
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -23,7 +23,8 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ProvisionAnswer is the Schema for the provisionanswers API.
+        description: ProvisionAutomation is the Schema for the provisionautomations
+          API.
         properties:
           apiVersion:
             description: |-
@@ -43,7 +44,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of ProvisionAnswer
+            description: spec defines the desired state of ProvisionAutomation
             properties:
               files:
                 additionalProperties:

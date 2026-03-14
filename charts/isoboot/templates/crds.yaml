@@ -262,18 +262,18 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
     "helm.sh/resource-policy": keep
-  name: provisionanswers.isoboot.github.io
+  name: provisionautomations.isoboot.github.io
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
 spec:
   group: isoboot.github.io
   names:
-    kind: ProvisionAnswer
-    listKind: ProvisionAnswerList
-    plural: provisionanswers
+    kind: ProvisionAutomation
+    listKind: ProvisionAutomationList
+    plural: provisionautomations
     shortNames:
     - pa
-    singular: provisionanswer
+    singular: provisionautomation
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -283,7 +283,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ProvisionAnswer is the Schema for the provisionanswers API.
+        description: ProvisionAutomation is the Schema for the provisionautomations API.
         properties:
           apiVersion:
             type: string
@@ -292,7 +292,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of ProvisionAnswer
+            description: spec defines the desired state of ProvisionAutomation
             properties:
               files:
                 additionalProperties:
@@ -379,8 +379,8 @@ spec:
                   provision.
                 minLength: 1
                 type: string
-              provisionAnswerRef:
-                description: provisionAnswerRef is the name of the ProvisionAnswer
+              provisionAutomationRef:
+                description: provisionAutomationRef is the name of the ProvisionAutomation
                   resource for this provision.
                 minLength: 1
                 type: string
@@ -393,7 +393,7 @@ spec:
             required:
             - bootConfigRef
             - machineRef
-            - provisionAnswerRef
+            - provisionAutomationRef
             type: object
           status:
             description: status defines the observed state of Provision

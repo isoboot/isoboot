@@ -31,9 +31,9 @@ resources:
 - machine_admin_role.yaml
 - machine_editor_role.yaml
 - machine_viewer_role.yaml
-- provisionanswer_admin_role.yaml
-- provisionanswer_editor_role.yaml
-- provisionanswer_viewer_role.yaml
+- provisionautomation_admin_role.yaml
+- provisionautomation_editor_role.yaml
+- provisionautomation_viewer_role.yaml
 - provision_admin_role.yaml
 - provision_editor_role.yaml
 - provision_viewer_role.yaml

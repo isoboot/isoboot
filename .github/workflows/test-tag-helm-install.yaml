@@ -364,9 +364,9 @@ jobs:
           mac: "52-54-00-00-00-01"
         ---
         apiVersion: isoboot.github.io/v1alpha1
-        kind: ProvisionAnswer
+        kind: ProvisionAutomation
         metadata:
-          name: test-answer
+          name: test-automation
         spec:
           files:
             kickstart.cfg: "# test"
@@ -378,7 +378,7 @@ jobs:
         spec:
           machineRef: test-machine
           bootConfigRef: rocky-10.1
-          provisionAnswerRef: test-answer
+          provisionAutomationRef: test-automation
         ---
         apiVersion: isoboot.github.io/v1alpha1
         kind: Provision
@@ -387,7 +387,7 @@ jobs:
         spec:
           machineRef: qemu-machine
           bootConfigRef: rocky-10.1
-          provisionAnswerRef: test-answer
+          provisionAutomationRef: test-automation
         EOF
         kubectl -n isoboot-system patch provision test-provision \
           --subresource=status --type=merge -p '{"status":{"phase":"Pending"}}'
