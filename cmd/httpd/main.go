@@ -29,6 +29,7 @@ import (
 var macRegexp = regexp.MustCompile(`^([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$`)
 
 type bootDirectiveFunc func(ctx context.Context, mac string) (*httpd.BootDirective, error)
+type renderAutomationFunc func(ctx context.Context, provisionName, fileName string) (string, error)
 
 func main() {
 	listenAddr := flag.String("listen-addr", ":8080", "address to listen on")
@@ -77,8 +78,16 @@ func main() {
 		return httpd.BootDirectiveForMAC(reqCtx, c, ns, mac)
 	})
 
+	renderFile := func(
+		reqCtx context.Context, provisionName, fileName string,
+	) (string, error) {
+		return httpd.RenderAutomationFile(reqCtx, c, ns, provisionName, fileName)
+	}
+	automationHandler := automationFileHandler(renderFile)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /conditional-boot", handler)
+	mux.HandleFunc("GET /dynamic/automation/{provisionName}/{fileName}", automationHandler)
 	mux.HandleFunc("GET /healthz", healthzHandler)
 
 	srv := &http.Server{
@@ -155,6 +164,26 @@ func conditionalBootHandler(getDirective bootDirectiveFunc) http.HandlerFunc {
 		}
 		body := fmt.Sprintf("#!ipxe\n%s\ninitrd /static/%s\nboot\n",
 			kernelLine, directive.InitrdPath)
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, body)
+	}
+}
+
+func automationFileHandler(render renderAutomationFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		provisionName := r.PathValue("provisionName")
+		fileName := r.PathValue("fileName")
+
+		body, err := render(r.Context(), provisionName, fileName)
+		if err != nil {
+			slog.Error("automation render failed",
+				"provision", provisionName, "file", fileName, "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
