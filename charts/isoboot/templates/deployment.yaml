@@ -4,8 +4,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "isoboot.fullname" . }}-controller-manager
-  namespace: {{ .Release.Namespace }}
+  name: "{{ include "isoboot.fullname" . }}-controller-manager"
+  namespace: "{{ .Release.Namespace }}"
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
 spec:
@@ -22,7 +22,7 @@ spec:
         {{- include "isoboot.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: controller
     spec:
-      serviceAccountName: {{ include "isoboot.fullname" . }}-controller-manager
+      serviceAccountName: "{{ include "isoboot.fullname" . }}-controller-manager"
       terminationGracePeriodSeconds: 10
       affinity:
         nodeAffinity:
