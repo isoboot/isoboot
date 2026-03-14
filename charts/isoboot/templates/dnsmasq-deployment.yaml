@@ -1,3 +1,4 @@
+{{- include "isoboot.requireNodeName" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,22 +23,7 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchFields:
-              - key: metadata.name
-                operator: In
-                values:
-                - "{{ .Values.nodeName }}"
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                {{- include "isoboot.selectorLabels" . | nindent 16 }}
-                app.kubernetes.io/component: dnsmasq
-            topologyKey: kubernetes.io/hostname
+      {{- include "isoboot.affinity" (dict "context" . "component" "dnsmasq") | nindent 6 }}
       initContainers:
       - name: generate-boot-ipxe
         image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}"
