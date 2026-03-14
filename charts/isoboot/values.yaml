@@ -57,6 +57,23 @@ httpd:
       cpu: 10m
       memory: 32Mi
 
+squid:
+  image:
+    repository: ghcr.io/isoboot/isoboot-squid
+    # tag defaults to .Chart.AppVersion if omitted
+    tag: ""
+  port: 3128
+  acl: "0.0.0.0/0"
+  maxObjectSize: "4096 MB"
+  cacheSizeMB: 10000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
 dnsmasq:
   # subnet is required (e.g. "192.168.101.0/24").
   subnet: ""

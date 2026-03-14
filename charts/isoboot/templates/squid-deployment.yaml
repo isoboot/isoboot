@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-squid"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: squid
+  template:
+    metadata:
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: squid
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchFields:
+              - key: metadata.name
+                operator: In
+                values:
+                - "{{ .Values.nodeName }}"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                {{- include "isoboot.selectorLabels" . | nindent 16 }}
+                app.kubernetes.io/component: squid
+            topologyKey: kubernetes.io/hostname
+      initContainers:
+      - name: init-cache
+        image: "{{ .Values.squid.image.repository }}:{{ .Values.squid.image.tag | default .Chart.AppVersion }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          cat > /config/squid.conf <<'CONF'
+          acl localnet src {{ .Values.squid.acl }}
+          http_access allow localnet
+          http_access allow localhost
+          http_access deny all
+          http_port {{ .Values.squid.port }}
+          maximum_object_size {{ .Values.squid.maxObjectSize }}
+          cache_dir ufs /var/cache/squid {{ .Values.squid.cacheSizeMB }} 16 256
+          access_log stdio:/dev/stdout
+          cache_log /dev/stderr
+          pid_filename /run/squid/squid.pid
+          CONF
+          echo "Generated squid.conf:"
+          cat /config/squid.conf
+          echo "Initializing cache directory..."
+          squid -z --foreground -f /config/squid.conf 2>&1
+          echo "Cache initialized."
+        securityContext:
+          runAsUser: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - "ALL"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: cache
+          mountPath: /var/cache/squid
+        - name: run
+          mountPath: /run/squid
+      containers:
+      - name: squid
+        image: "{{ .Values.squid.image.repository }}:{{ .Values.squid.image.tag | default .Chart.AppVersion }}"
+        command: ["squid", "--foreground", "-f", "/config/squid.conf"]
+        securityContext:
+          runAsUser: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+            add:
+            - NET_BIND_SERVICE
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.squid.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: {{ .Values.squid.port }}
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.squid.resources | nindent 10 }}
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: cache
+          mountPath: /var/cache/squid
+        - name: logs
+          mountPath: /var/log/squid
+        - name: run
+          mountPath: /run/squid
+      volumes:
+      - name: config
+        hostPath:
+          path: "{{ .Values.dataDir }}/squid/config"
+          type: DirectoryOrCreate
+      - name: cache
+        hostPath:
+          path: "{{ .Values.dataDir }}/squid/cache"
+          type: DirectoryOrCreate
+      - name: logs
+        hostPath:
+          path: "{{ .Values.dataDir }}/squid/logs"
+          type: DirectoryOrCreate
+      - name: run
+        emptyDir: {}

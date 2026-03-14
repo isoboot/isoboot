@@ -13,6 +13,7 @@ endif
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
+ALPINE_VERSION ?= 3.23
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -144,6 +145,28 @@ docker-buildx-httpd: ## Build and push docker image for httpd for cross-platform
 	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
 	$(CONTAINER_TOOL) buildx use isoboot-builder
 	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG}-httpd -f Dockerfile.httpd .
+	- $(CONTAINER_TOOL) buildx rm isoboot-builder
+
+.PHONY: docker-build-dnsmasq
+docker-build-dnsmasq: ## Build docker image with dnsmasq.
+	$(CONTAINER_TOOL) build --build-arg ALPINE_VERSION=$(ALPINE_VERSION) -t ${IMG}-dnsmasq -f Dockerfile.dnsmasq .
+
+.PHONY: docker-buildx-dnsmasq
+docker-buildx-dnsmasq: ## Build and push docker image for dnsmasq for cross-platform support
+	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
+	$(CONTAINER_TOOL) buildx use isoboot-builder
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --build-arg ALPINE_VERSION=$(ALPINE_VERSION) --tag ${IMG}-dnsmasq -f Dockerfile.dnsmasq .
+	- $(CONTAINER_TOOL) buildx rm isoboot-builder
+
+.PHONY: docker-build-squid
+docker-build-squid: ## Build docker image with squid.
+	$(CONTAINER_TOOL) build --build-arg ALPINE_VERSION=$(ALPINE_VERSION) -t ${IMG}-squid -f Dockerfile.squid .
+
+.PHONY: docker-buildx-squid
+docker-buildx-squid: ## Build and push docker image for squid for cross-platform support
+	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
+	$(CONTAINER_TOOL) buildx use isoboot-builder
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --build-arg ALPINE_VERSION=$(ALPINE_VERSION) --tag ${IMG}-squid -f Dockerfile.squid .
 	- $(CONTAINER_TOOL) buildx rm isoboot-builder
 
 .PHONY: build-installer
