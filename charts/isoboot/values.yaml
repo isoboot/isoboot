@@ -64,6 +64,7 @@ squid:
     tag: ""
   port: 3128
   maxObjectSize: "1024 MB"
+  # 0 uses squid's compiled-in default (typically 256 MB).
   cacheMemMB: 0
   cacheSizeMB: 8000
   resources:

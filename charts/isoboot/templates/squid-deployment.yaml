@@ -70,6 +70,7 @@ spec:
       - name: squid
         image: "{{ .Values.squid.image.repository }}:{{ .Values.squid.image.tag | default .Chart.AppVersion }}"
         command: ["squid", "--foreground", "-f", "/etc/squid/squid.conf"]
+        # Squid on Alpine requires root for cache directory ownership and worker process management.
         securityContext:
           runAsUser: 0
           allowPrivilegeEscalation: false
