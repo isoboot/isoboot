@@ -100,18 +100,6 @@ var _ = Describe("BootArtifact Controller", func() {
 		)
 	})
 
-	Context("filenameFromURL", func() {
-		DescribeTable("should extract filename",
-			func(rawURL, expected string) {
-				Expect(filenameFromURL(rawURL)).To(Equal(expected))
-			},
-			Entry("simple", "https://example.com/images/vmlinuz", "vmlinuz"),
-			Entry("nested", "https://example.com/a/b/c/initrd.img", "initrd.img"),
-			Entry("root", "https://example.com/", "artifact"),
-			Entry("no path", "https://example.com", "artifact"),
-		)
-	})
-
 	Context("Reconcile", func() {
 		var (
 			ctx        context.Context

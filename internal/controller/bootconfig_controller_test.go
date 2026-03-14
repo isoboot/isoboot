@@ -173,6 +173,26 @@ var _ = Describe("BootConfig Controller", func() {
 			ExpectWithOffset(1, k8sClient.Create(ctx, bc)).To(Succeed())
 		}
 
+		// Creates kernel, initrd, and firmware artifacts as Ready with files on disk; returns cleanup func
+		setupFirmwareTriple := func(kernelName, initrdName, firmwareName string) func() {
+			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
+			dir := filepath.Join(dataDir, "artifacts", kernelName)
+			ExpectWithOffset(1, os.MkdirAll(dir, 0o755)).To(Succeed())
+			ExpectWithOffset(1, os.WriteFile(filepath.Join(dir, "vmlinuz"), []byte("kernel-data"), 0o644)).To(Succeed())
+
+			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.gz")
+			dir = filepath.Join(dataDir, "artifacts", initrdName)
+			ExpectWithOffset(1, os.MkdirAll(dir, 0o755)).To(Succeed())
+			ExpectWithOffset(1, os.WriteFile(filepath.Join(dir, "initrd.gz"), []byte("initrd-data"), 0o644)).To(Succeed())
+
+			createArtifact(firmwareName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/firmware.cpio.gz")
+			dir = filepath.Join(dataDir, "artifacts", firmwareName)
+			ExpectWithOffset(1, os.MkdirAll(dir, 0o755)).To(Succeed())
+			ExpectWithOffset(1, os.WriteFile(filepath.Join(dir, "firmware.cpio.gz"), []byte("firmware-data"), 0o644)).To(Succeed())
+
+			return func() { deleteArtifact(kernelName); deleteArtifact(initrdName); deleteArtifact(firmwareName) }
+		}
+
 		// Creates both artifacts as Ready with files on disk; returns cleanup func
 		setupReadyPair := func(kernelName, initrdName string) func() {
 			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
@@ -345,26 +365,8 @@ var _ = Describe("BootConfig Controller", func() {
 			firmwareName := "bc-fw-firmware"
 			bcName := "bc-firmware"
 
-			// Create kernel artifact and file
-			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
-			defer deleteArtifact(kernelName)
-			kernelDir := filepath.Join(dataDir, "artifacts", kernelName)
-			Expect(os.MkdirAll(kernelDir, 0o755)).To(Succeed())
-			Expect(os.WriteFile(filepath.Join(kernelDir, "vmlinuz"), []byte("kernel-data"), 0o644)).To(Succeed())
-
-			// Create initrd artifact and file
-			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.gz")
-			defer deleteArtifact(initrdName)
-			initrdDir := filepath.Join(dataDir, "artifacts", initrdName)
-			Expect(os.MkdirAll(initrdDir, 0o755)).To(Succeed())
-			Expect(os.WriteFile(filepath.Join(initrdDir, "initrd.gz"), []byte("initrd-data"), 0o644)).To(Succeed())
-
-			// Create firmware artifact and file
-			createArtifact(firmwareName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/firmware.cpio.gz")
-			defer deleteArtifact(firmwareName)
-			fwDir := filepath.Join(dataDir, "artifacts", firmwareName)
-			Expect(os.MkdirAll(fwDir, 0o755)).To(Succeed())
-			Expect(os.WriteFile(filepath.Join(fwDir, "firmware.cpio.gz"), []byte("firmware-data"), 0o644)).To(Succeed())
+			cleanup := setupFirmwareTriple(kernelName, initrdName, firmwareName)
+			defer cleanup()
 
 			// Create BootConfig with firmware
 			bc := &isobootgithubiov1alpha1.BootConfig{
@@ -407,26 +409,8 @@ var _ = Describe("BootConfig Controller", func() {
 			firmwareName := "bc-fwidem-firmware"
 			bcName := "bc-fw-idempotent"
 
-			// Create kernel artifact and file
-			createArtifact(kernelName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/vmlinuz")
-			defer deleteArtifact(kernelName)
-			kernelDir := filepath.Join(dataDir, "artifacts", kernelName)
-			Expect(os.MkdirAll(kernelDir, 0o755)).To(Succeed())
-			Expect(os.WriteFile(filepath.Join(kernelDir, "vmlinuz"), []byte("kernel-data"), 0o644)).To(Succeed())
-
-			// Create initrd artifact and file
-			createArtifact(initrdName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/initrd.gz")
-			defer deleteArtifact(initrdName)
-			initrdArtDir := filepath.Join(dataDir, "artifacts", initrdName)
-			Expect(os.MkdirAll(initrdArtDir, 0o755)).To(Succeed())
-			Expect(os.WriteFile(filepath.Join(initrdArtDir, "initrd.gz"), []byte("initrd-data"), 0o644)).To(Succeed())
-
-			// Create firmware artifact and file
-			createArtifact(firmwareName, isobootgithubiov1alpha1.BootArtifactPhaseReady, "https://example.com/firmware.cpio.gz")
-			defer deleteArtifact(firmwareName)
-			fwDir := filepath.Join(dataDir, "artifacts", firmwareName)
-			Expect(os.MkdirAll(fwDir, 0o755)).To(Succeed())
-			Expect(os.WriteFile(filepath.Join(fwDir, "firmware.cpio.gz"), []byte("firmware-data"), 0o644)).To(Succeed())
+			cleanup := setupFirmwareTriple(kernelName, initrdName, firmwareName)
+			defer cleanup()
 
 			bc := &isobootgithubiov1alpha1.BootConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},

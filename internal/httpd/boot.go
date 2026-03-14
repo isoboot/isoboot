@@ -20,12 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"path"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
+	"github.com/isoboot/isoboot/internal/urlutil"
 )
 
 // BootDirective holds the data needed to construct an iPXE boot script.
@@ -86,24 +86,12 @@ func BootDirectiveForMAC(
 			bc.Spec.Initrd.Ref, err)
 	}
 
-	kernelFile := filenameFromURL(kernelArtifact.Spec.URL)
-	initrdFile := filenameFromURL(initrdArtifact.Spec.URL)
+	kernelFile := urlutil.FilenameFromURL(kernelArtifact.Spec.URL)
+	initrdFile := urlutil.FilenameFromURL(initrdArtifact.Spec.URL)
 
 	return &BootDirective{
 		KernelPath: path.Join(bc.Name, "kernel", kernelFile),
 		KernelArgs: bc.Spec.Kernel.Args,
 		InitrdPath: path.Join(bc.Name, "initrd", initrdFile),
 	}, nil
-}
-
-func filenameFromURL(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "artifact"
-	}
-	name := path.Base(u.Path)
-	if name == "" || name == "." || name == "/" || name == ".." {
-		return "artifact"
-	}
-	return name
 }
