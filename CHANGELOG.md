@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.0.1-rc5
+
+- Add automation file render endpoint
+- Rename ProvisionAnswer to ProvisionAutomation
+- Add squid caching proxy deployment
+- Namespace dataDir by component
+- Quote all interpolated Helm values
+- Extract shared Helm templates
+- Consolidate wait-for scripts
+- Deduplicate Go code
+- Remove scaffolding and dead code
+
+## v0.0.1-rc4
+
+- Implement /conditional-boot endpoint with E2E test
+- Add PendingProvisionForMAC function
+- Add Machine MAC address and Provision phase indexers
+- Use dash-separated MAC addresses
+- Add iPXE sanboot fallback on chain fail
+- Restructure BootConfig spec, add firmware concat
+- Add Provision, Machine, and ProvisionAnswer CRDs
+- Add httpd Go server with nginx proxy and dnsmasq init container
+- Add httpd build and dynamic boot E2E CI
+
 ## v0.0.1-rc3
 
 - Add dnsmasq proxyDHCP + QEMU PXE boot E2E test
