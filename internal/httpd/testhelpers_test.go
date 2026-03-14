@@ -39,9 +39,9 @@ func createProvision(
 	p := &isobootgithubiov1alpha1.Provision{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
 		Spec: isobootgithubiov1alpha1.ProvisionSpec{
-			MachineRef:         machineRef,
-			BootConfigRef:      bootConfigRef,
-			ProvisionAnswerRef: "answer-1",
+			MachineRef:             machineRef,
+			BootConfigRef:          bootConfigRef,
+			ProvisionAutomationRef: "automation-1",
 		},
 	}
 	ExpectWithOffset(1, k8sClient.Create(ctx, p)).To(Succeed())

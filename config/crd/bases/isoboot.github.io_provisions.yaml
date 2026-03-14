@@ -72,8 +72,8 @@ spec:
                   provision.
                 minLength: 1
                 type: string
-              provisionAnswerRef:
-                description: provisionAnswerRef is the name of the ProvisionAnswer
+              provisionAutomationRef:
+                description: provisionAutomationRef is the name of the ProvisionAutomation
                   resource for this provision.
                 minLength: 1
                 type: string
@@ -86,7 +86,7 @@ spec:
             required:
             - bootConfigRef
             - machineRef
-            - provisionAnswerRef
+            - provisionAutomationRef
             type: object
           status:
             description: status defines the observed state of Provision

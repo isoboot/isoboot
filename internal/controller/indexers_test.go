@@ -68,9 +68,9 @@ var _ = Describe("Provision status.phase indexer", func() {
 				Namespace: "default",
 			},
 			Spec: isobootgithubiov1alpha1.ProvisionSpec{
-				MachineRef:         "machine-1",
-				BootConfigRef:      "bootconfig-1",
-				ProvisionAnswerRef: "answer-1",
+				MachineRef:             "machine-1",
+				BootConfigRef:          "bootconfig-1",
+				ProvisionAutomationRef: "automation-1",
 			},
 		}
 		Expect(k8sClient.Create(ctx, p)).To(Succeed())
@@ -175,9 +175,9 @@ var _ = Describe("Provision spec.machineRef indexer", func() {
 				Namespace: "default",
 			},
 			Spec: isobootgithubiov1alpha1.ProvisionSpec{
-				MachineRef:         machineRef,
-				BootConfigRef:      "bootconfig-1",
-				ProvisionAnswerRef: "answer-1",
+				MachineRef:             machineRef,
+				BootConfigRef:          "bootconfig-1",
+				ProvisionAutomationRef: "automation-1",
 			},
 		}
 		Expect(k8sClient.Create(ctx, p)).To(Succeed())

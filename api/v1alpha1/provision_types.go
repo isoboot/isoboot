@@ -32,10 +32,10 @@ type ProvisionSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	BootConfigRef string `json:"bootConfigRef"`
 
-	// provisionAnswerRef is the name of the ProvisionAnswer resource for this provision.
+	// provisionAutomationRef is the name of the ProvisionAutomation resource for this provision.
 	// +required
 	// +kubebuilder:validation:MinLength=1
-	ProvisionAnswerRef string `json:"provisionAnswerRef"`
+	ProvisionAutomationRef string `json:"provisionAutomationRef"`
 
 	// configMaps is an optional list of ConfigMap names to mount during provisioning.
 	// +optional

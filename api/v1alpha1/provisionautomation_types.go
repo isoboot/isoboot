@@ -20,8 +20,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ProvisionAnswerSpec defines the desired state of ProvisionAnswer.
-type ProvisionAnswerSpec struct {
+// ProvisionAutomationSpec defines the desired state of ProvisionAutomation.
+type ProvisionAutomationSpec struct {
 	// files is a map of filename to template content with Go template placeholders.
 	// +required
 	// +kubebuilder:validation:MinProperties=1
@@ -33,28 +33,28 @@ type ProvisionAnswerSpec struct {
 // +kubebuilder:resource:shortName=pa
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// ProvisionAnswer is the Schema for the provisionanswers API.
-type ProvisionAnswer struct {
+// ProvisionAutomation is the Schema for the provisionautomations API.
+type ProvisionAutomation struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// metadata is a standard object metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec defines the desired state of ProvisionAnswer
+	// spec defines the desired state of ProvisionAutomation
 	// +required
-	Spec ProvisionAnswerSpec `json:"spec"`
+	Spec ProvisionAutomationSpec `json:"spec"`
 }
 
 // +kubebuilder:object:root=true
 
-// ProvisionAnswerList contains a list of ProvisionAnswer
-type ProvisionAnswerList struct {
+// ProvisionAutomationList contains a list of ProvisionAutomation
+type ProvisionAutomationList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []ProvisionAnswer `json:"items"`
+	Items           []ProvisionAutomation `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ProvisionAnswer{}, &ProvisionAnswerList{})
+	SchemeBuilder.Register(&ProvisionAutomation{}, &ProvisionAutomationList{})
 }
