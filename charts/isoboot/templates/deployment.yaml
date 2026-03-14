@@ -1,6 +1,4 @@
-{{- if not .Values.nodeName }}
-{{- fail "nodeName is required" }}
-{{- end }}
+{{- include "isoboot.requireNodeName" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,22 +22,7 @@ spec:
     spec:
       serviceAccountName: "{{ include "isoboot.fullname" . }}-controller-manager"
       terminationGracePeriodSeconds: 10
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchFields:
-              - key: metadata.name
-                operator: In
-                values:
-                - "{{ .Values.nodeName }}"
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                {{- include "isoboot.selectorLabels" . | nindent 16 }}
-                app.kubernetes.io/component: controller
-            topologyKey: kubernetes.io/hostname
+      {{- include "isoboot.affinity" (dict "context" . "component" "controller") | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -54,12 +37,7 @@ spec:
         - "--data-dir={{ .Values.dataDir }}/nginx/static"
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: "{{ .Values.image.pullPolicy }}"
-        securityContext:
-          readOnlyRootFilesystem: true
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - "ALL"
+        {{- include "isoboot.restrictedSecurityContext" . | nindent 8 }}
         livenessProbe:
           httpGet:
             path: /healthz

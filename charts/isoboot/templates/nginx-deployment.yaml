@@ -1,6 +1,4 @@
-{{- if not .Values.nodeName }}
-{{- fail "nodeName is required" }}
-{{- end }}
+{{- include "isoboot.requireNodeName" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,22 +21,7 @@ spec:
       automountServiceAccountToken: false
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchFields:
-              - key: metadata.name
-                operator: In
-                values:
-                - "{{ .Values.nodeName }}"
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                {{- include "isoboot.selectorLabels" . | nindent 16 }}
-                app.kubernetes.io/component: nginx
-            topologyKey: kubernetes.io/hostname
+      {{- include "isoboot.affinity" (dict "context" . "component" "nginx") | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -76,12 +59,7 @@ spec:
         ports:
         - containerPort: {{ .Values.nginx.port }}
           protocol: TCP
-        securityContext:
-          readOnlyRootFilesystem: true
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - "ALL"
+        {{- include "isoboot.restrictedSecurityContext" . | nindent 8 }}
         livenessProbe:
           tcpSocket:
             port: {{ .Values.nginx.port }}
