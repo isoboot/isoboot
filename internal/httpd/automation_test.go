@@ -109,7 +109,8 @@ var _ = Describe("RenderAutomationFile", func() {
 
 		_, err := RenderAutomationFile(
 			ctx, k8sClient, ns, "ra-p2", "missing.cfg")
-		Expect(err).To(MatchError(ContainSubstring("file \"missing.cfg\" not found")))
+		Expect(err).To(MatchError(ContainSubstring("missing.cfg")))
+		Expect(IsAutomationNotFound(err)).To(BeTrue())
 	})
 
 	It("renders a static template without data", func() {

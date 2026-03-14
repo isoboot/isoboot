@@ -179,6 +179,10 @@ func automationFileHandler(render renderAutomationFunc) http.HandlerFunc {
 
 		body, err := render(r.Context(), provisionName, fileName)
 		if err != nil {
+			if httpd.IsAutomationNotFound(err) {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
 			slog.Error("automation render failed",
 				"provision", provisionName, "file", fileName, "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)

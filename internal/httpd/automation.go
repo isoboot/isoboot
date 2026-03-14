@@ -19,20 +19,32 @@ package httpd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
+// ErrFileNotFound indicates the requested file does not exist in the
+// ProvisionAutomation spec.
+var ErrFileNotFound = errors.New("file not found")
+
 // TemplateData holds the merged data passed to automation file templates.
 type TemplateData struct {
 	ConfigMaps map[string]string
 	Secrets    map[string]string
+}
+
+// IsAutomationNotFound reports whether err indicates a not-found condition
+// (missing Provision, ProvisionAutomation, or file within the automation).
+func IsAutomationNotFound(err error) bool {
+	return apierrors.IsNotFound(err) || errors.Is(err, ErrFileNotFound)
 }
 
 // RenderAutomationFile looks up a Provision by name, fetches the referenced
@@ -60,8 +72,8 @@ func RenderAutomationFile(
 
 	tmplContent, ok := pa.Spec.Files[fileName]
 	if !ok {
-		return "", fmt.Errorf("file %q not found in provision automation %q",
-			fileName, pa.Name)
+		return "", fmt.Errorf("%w: %q in provision automation %q",
+			ErrFileNotFound, fileName, pa.Name)
 	}
 
 	data, err := buildTemplateData(ctx, c, ns, &provision)
@@ -69,7 +81,8 @@ func RenderAutomationFile(
 		return "", err
 	}
 
-	tmpl, err := template.New(fileName).Parse(tmplContent)
+	tmpl, err := template.New(fileName).
+		Option("missingkey=error").Parse(tmplContent)
 	if err != nil {
 		return "", fmt.Errorf("parsing template %q: %w", fileName, err)
 	}
