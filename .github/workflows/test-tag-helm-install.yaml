@@ -269,12 +269,12 @@ jobs:
 
     # ── Rocky Linux 10.1 boot artifacts ──────────────────────────────
     - name: Apply Rocky Linux 10.1 example manifest
-      run: kubectl apply -f examples/rocky-10.1.yaml
+      run: kubectl -n isoboot-system apply -f examples/rocky-10.1.yaml
 
     - name: Wait for BootArtifacts Ready
       run: |
-        ./test/e2e/wait-for-bootartifact.sh rocky-10.1-kernel
-        ./test/e2e/wait-for-bootartifact.sh rocky-10.1-initrd
+        ./test/e2e/wait-for-bootartifact.sh -n isoboot-system rocky-10.1-kernel
+        ./test/e2e/wait-for-bootartifact.sh -n isoboot-system rocky-10.1-initrd
 
     - name: Verify artifact SHA-256 on host disk
       run: |
@@ -282,7 +282,7 @@ jobs:
         echo "${{ env.INITRD_SHA256 }}  /tmp/isoboot-data/artifacts/rocky-10.1-initrd/initrd.img" | sha256sum -c
 
     - name: Wait for BootConfig Ready
-      run: ./test/e2e/wait-for-bootconfig.sh rocky-10.1
+      run: ./test/e2e/wait-for-bootconfig.sh -n isoboot-system rocky-10.1
 
     - name: Verify BootConfig symlinks on host disk
       run: |
@@ -346,6 +346,54 @@ jobs:
         docker exec wget-client sh -c \
           "echo '${INITRD_SHA256}  /tmp/dl-initrd' | sha256sum -c"
 
+    - name: Create Machine and Provision resources
+      run: |
+        kubectl -n isoboot-system apply -f - <<'EOF'
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Machine
+        metadata:
+          name: test-machine
+        spec:
+          mac: "00-11-22-33-44-55"
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Machine
+        metadata:
+          name: qemu-machine
+        spec:
+          mac: "52-54-00-00-00-01"
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: ProvisionAnswer
+        metadata:
+          name: test-answer
+        spec:
+          files:
+            kickstart.cfg: "# test"
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Provision
+        metadata:
+          name: test-provision
+        spec:
+          machineRef: test-machine
+          bootConfigRef: rocky-10.1
+          provisionAnswerRef: test-answer
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Provision
+        metadata:
+          name: qemu-provision
+        spec:
+          machineRef: qemu-machine
+          bootConfigRef: rocky-10.1
+          provisionAnswerRef: test-answer
+        EOF
+        kubectl -n isoboot-system patch provision test-provision \
+          --subresource=status --type=merge -p '{"status":{"phase":"Pending"}}'
+        kubectl -n isoboot-system patch provision qemu-provision \
+          --subresource=status --type=merge -p '{"status":{"phase":"Pending"}}'
+
     - name: Verify dynamic boot endpoint
       run: |
         KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
@@ -358,8 +406,8 @@ jobs:
           || { echo "FAIL: missing #!ipxe header"; exit 1; }
         docker exec wget-client grep 'rocky-10.1' /tmp/dynamic-boot \
           || { echo "FAIL: missing rocky-10.1"; exit 1; }
-        docker exec wget-client sh -c "grep '${KIND_PXE_IP}:${KIND_PXE_PORT}' /tmp/dynamic-boot" \
-          || { echo "FAIL: missing host:port"; exit 1; }
+        docker exec wget-client grep '/static/' /tmp/dynamic-boot \
+          || { echo "FAIL: missing /static/ paths"; exit 1; }
 
     # ── PXE boot test: ns4 QEMU VM ──────────────────────────────────
     - name: PXE boot QEMU VM (ns4 — UEFI)
@@ -395,7 +443,7 @@ jobs:
           -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2 \
           -netdev tap,id=pxe0,ifname=tap-ns4,script=no,downscript=no \
-          -device virtio-net-pci,netdev=pxe0,bootindex=1 \
+          -device virtio-net-pci,netdev=pxe0,bootindex=1,mac=52:54:00:00:00:01 \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -467,9 +515,9 @@ jobs:
         echo "=== dnsmasq container logs ==="
         docker logs dhcp-srv 2>/dev/null || true
         echo "=== BootArtifact status ==="
-        kubectl get bootartifact -o yaml 2>/dev/null || true
+        kubectl -n isoboot-system get bootartifact -o yaml 2>/dev/null || true
         echo "=== BootConfig status ==="
-        kubectl get bootconfig -o yaml 2>/dev/null || true
+        kubectl -n isoboot-system get bootconfig -o yaml 2>/dev/null || true
         echo "=== Controller logs ==="
         kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --tail=100 2>/dev/null || true
         echo "=== httpd logs ==="
