@@ -172,15 +172,26 @@ func conditionalBootHandler(getDirective bootDirectiveFunc) http.HandlerFunc {
 	}
 }
 
+var nameRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
+
 func automationFileHandler(render renderAutomationFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		provisionName := r.PathValue("provisionName")
 		fileName := r.PathValue("fileName")
 
+		if !nameRegexp.MatchString(provisionName) || len(provisionName) > 253 {
+			http.Error(w, "invalid provision name", http.StatusBadRequest)
+			return
+		}
+		if fileName == "" {
+			http.Error(w, "missing file name", http.StatusBadRequest)
+			return
+		}
+
 		body, err := render(r.Context(), provisionName, fileName)
 		if err != nil {
 			if httpd.IsAutomationNotFound(err) {
-				http.Error(w, err.Error(), http.StatusNotFound)
+				http.Error(w, "not found", http.StatusNotFound)
 				return
 			}
 			slog.Error("automation render failed",
