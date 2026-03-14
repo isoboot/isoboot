@@ -52,7 +52,7 @@ func TestConditionalBoot_BootDirective(t *testing.T) {
 		t.Errorf("expected 200, got: %d", w.Result().StatusCode)
 	}
 	body, _ := io.ReadAll(w.Result().Body)
-	expected := "kernel /static/test-config/kernel/vmlinuz console=ttyS0\n" +
+	expected := "#!ipxe\nkernel /static/test-config/kernel/vmlinuz console=ttyS0\n" +
 		"initrd /static/test-config/initrd/initrd.img\n" +
 		"boot\n"
 	if string(body) != expected {
@@ -185,7 +185,7 @@ func TestConditionalBoot_NoKernelArgs(t *testing.T) {
 	if strings.Contains(string(body), "vmlinuz ") {
 		t.Errorf("unexpected trailing space after kernel path: %s", body)
 	}
-	expected := "kernel /static/config/kernel/vmlinuz\ninitrd /static/config/initrd/initrd.img\nboot\n"
+	expected := "#!ipxe\nkernel /static/config/kernel/vmlinuz\ninitrd /static/config/initrd/initrd.img\nboot\n"
 	if string(body) != expected {
 		t.Errorf("expected:\n%s\ngot:\n%s", expected, string(body))
 	}

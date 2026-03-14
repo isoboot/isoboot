@@ -153,7 +153,7 @@ func conditionalBootHandler(getDirective bootDirectiveFunc) http.HandlerFunc {
 		if directive.KernelArgs != "" {
 			kernelLine += " " + directive.KernelArgs
 		}
-		body := fmt.Sprintf("%s\ninitrd /static/%s\nboot\n",
+		body := fmt.Sprintf("#!ipxe\n%s\ninitrd /static/%s\nboot\n",
 			kernelLine, directive.InitrdPath)
 
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
