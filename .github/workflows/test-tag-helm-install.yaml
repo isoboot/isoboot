@@ -182,8 +182,8 @@ jobs:
     # ── k3s cluster ──────────────────────────────────────────────────
     - name: Create host data directory
       run: |
-        sudo mkdir -p /tmp/isoboot-data
-        sudo chown 65532:65532 /tmp/isoboot-data
+        sudo mkdir -p /data/isoboot
+        sudo chown 65532:65532 /data/isoboot
 
     - name: Install k3s
       run: |
@@ -268,8 +268,8 @@ jobs:
 
     - name: Verify artifact SHA-256 on host disk
       run: |
-        echo "${{ env.VMLINUZ_SHA256 }}  /tmp/isoboot-data/nginx/static/artifacts/rocky-10.1-kernel/vmlinuz" | sha256sum -c
-        echo "${{ env.INITRD_SHA256 }}  /tmp/isoboot-data/nginx/static/artifacts/rocky-10.1-initrd/initrd.img" | sha256sum -c
+        echo "${{ env.VMLINUZ_SHA256 }}  /data/isoboot/nginx/static/artifacts/rocky-10.1-kernel/vmlinuz" | sha256sum -c
+        echo "${{ env.INITRD_SHA256 }}  /data/isoboot/nginx/static/artifacts/rocky-10.1-initrd/initrd.img" | sha256sum -c
 
     - name: Wait for BootConfig Ready
       run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig rocky-10.1
@@ -277,27 +277,27 @@ jobs:
     - name: Verify BootConfig symlinks on host disk
       run: |
         # Verify kernel symlink
-        target=$(readlink /tmp/isoboot-data/nginx/static/boot/rocky-10.1/kernel/vmlinuz)
+        target=$(readlink /data/isoboot/nginx/static/boot/rocky-10.1/kernel/vmlinuz)
         echo "kernel symlink target: $target"
         [ "$target" = "../../../artifacts/rocky-10.1-kernel/vmlinuz" ] || { echo "FAIL: wrong kernel target"; exit 1; }
 
         # Verify initrd symlink
-        target=$(readlink /tmp/isoboot-data/nginx/static/boot/rocky-10.1/initrd/initrd.img)
+        target=$(readlink /data/isoboot/nginx/static/boot/rocky-10.1/initrd/initrd.img)
         echo "initrd symlink target: $target"
         [ "$target" = "../../../artifacts/rocky-10.1-initrd/initrd.img" ] || { echo "FAIL: wrong initrd target"; exit 1; }
 
         # Verify symlinks resolve to actual files
-        test -f /tmp/isoboot-data/nginx/static/boot/rocky-10.1/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
-        test -f /tmp/isoboot-data/nginx/static/boot/rocky-10.1/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
+        test -f /data/isoboot/nginx/static/boot/rocky-10.1/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
+        test -f /data/isoboot/nginx/static/boot/rocky-10.1/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
 
     # ── Verify auto-generated boot script ─────────────────────────
     - name: Verify boot.ipxe auto-generated
       run: |
-        test -f /tmp/isoboot-data/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe not found"; exit 1; }
-        grep 'chain' /tmp/isoboot-data/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing chain directive"; exit 1; }
-        grep 'conditional-boot' /tmp/isoboot-data/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing conditional-boot"; exit 1; }
+        test -f /data/isoboot/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe not found"; exit 1; }
+        grep 'chain' /data/isoboot/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing chain directive"; exit 1; }
+        grep 'conditional-boot' /data/isoboot/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing conditional-boot"; exit 1; }
         echo "boot.ipxe auto-generated correctly:"
-        cat /tmp/isoboot-data/nginx/static/boot/boot.ipxe
+        cat /data/isoboot/nginx/static/boot/boot.ipxe
 
     # ── PXE download test: ns3 wget client ─────────────────────────
     - name: Start wget client container (ns3)
@@ -528,7 +528,7 @@ jobs:
         echo "=== Events ==="
         kubectl -n isoboot-system get events --sort-by='.lastTimestamp' 2>/dev/null || true
         echo "=== Host data directory ==="
-        find /tmp/isoboot-data -type f -o -type l 2>/dev/null || true
+        find /data/isoboot -type f -o -type l 2>/dev/null || true
         echo "=== Describe pods ==="
         kubectl -n isoboot-system describe pod -l app.kubernetes.io/name=isoboot 2>/dev/null || true
 
