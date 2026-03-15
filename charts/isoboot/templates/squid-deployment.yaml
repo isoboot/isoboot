@@ -28,9 +28,9 @@ spec:
       {{- include "isoboot.affinity" (dict "context" . "component" "squid") | nindent 6 }}
       initContainers:
       - name: fix-permissions
-        image: "{{ .Values.squid.image.repository }}:{{ .Values.squid.image.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.alpineImage }}"
         command: ["/bin/sh", "-c"]
-        args: ["chown squid:squid /var/cache/squid /var/log/squid /run/squid"]
+        args: ["chown 31:31 /var/cache/squid /var/log/squid /run/squid"]
         securityContext:
           runAsUser: 0
           runAsGroup: 0
