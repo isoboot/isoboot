@@ -97,6 +97,19 @@ jobs:
         cache-from: type=gha,scope=httpd
         cache-to: type=gha,mode=max,scope=httpd
 
+    - name: Build and push squid image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile.squid
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.IMAGE }}-squid:${{ steps.version.outputs.version }}
+          ${{ !contains(steps.version.outputs.version, '-') && format('{0}-squid:latest', env.IMAGE) || '' }}
+        cache-from: type=gha,scope=squid
+        cache-to: type=gha,mode=max,scope=squid
+
     - uses: azure/setup-helm@v4
 
     - name: Package and push Helm chart
