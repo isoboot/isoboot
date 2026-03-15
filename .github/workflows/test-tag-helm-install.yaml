@@ -20,14 +20,13 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/isoboot/isoboot
-  KIND_VERSION: v0.31.0
   # Rocky Linux 10.1 — SHA-256 digests from .treeinfo
   VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
   INITRD_SHA256: "07ec303514509b4ddbfe8df90f65dddaf48519f25b416a2a5368903fe39c627a"
 
 jobs:
   release-and-test:
-    name: Release & E2E DHCP + Kind + Rocky 10.1
+    name: Release & E2E DHCP + k3s + Rocky 10.1
     # isc-dhcp-client may be removed from future ubuntu-latest — accepted risk.
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -121,7 +120,7 @@ jobs:
         helm package charts/isoboot --destination /tmp/charts
         helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${REGISTRY}/isoboot/charts
 
-    # ── PXE network: ns1=DHCP server, ns2=Kind node, ns3=wget client ──
+    # ── PXE network: ns1=DHCP server, host=k3s node, ns3=wget client ──
     - name: Install network tools
       run: sudo apt-get update -qq && sudo apt-get install -y -qq isc-dhcp-client qemu-system-x86 qemu-utils ovmf
 
@@ -131,11 +130,6 @@ jobs:
           | sudo tee /etc/udev/rules.d/99-kvm4all.rules
         sudo udevadm control --reload-rules
         sudo udevadm trigger --name-match=kvm
-
-    - name: Install kind
-      run: |
-        curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VERSION }}/kind-linux-amd64
-        chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
 
     - name: Create PXE bridge
       run: |
@@ -185,58 +179,49 @@ jobs:
         docker exec dhcp-srv pgrep dnsmasq || { echo "FAIL: dnsmasq not running"; docker logs dhcp-srv; exit 1; }
         echo "DHCP server running at 192.168.101.1 (ns1)"
 
-    # ── Kind cluster ─────────────────────────────────────────────────
+    # ── k3s cluster ──────────────────────────────────────────────────
     - name: Create host data directory
       run: |
-        sudo mkdir -p /tmp/isoboot-data
-        sudo chown 65532:65532 /tmp/isoboot-data
+        sudo mkdir -p /data/isoboot
+        sudo chown 65532:65532 /data/isoboot
 
-    - name: Create Kind cluster
+    - name: Install k3s
       run: |
-        cat <<EOF | kind create cluster --name pxe-test --config=-
-        kind: Cluster
-        apiVersion: kind.x-k8s.io/v1alpha4
-        nodes:
-        - role: control-plane
-          extraMounts:
-          - hostPath: /tmp/isoboot-data
-            containerPath: /data/isoboot
-        EOF
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" INSTALL_K3S_CHANNEL="stable" sh -
+        sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+        echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$GITHUB_ENV"
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        kubectl wait --for=condition=Ready node --all --timeout=120s
 
-    - name: Connect Kind node to PXE bridge (ns2 — DHCP client)
+    - name: Allow PXE bridge traffic through iptables
       run: |
-        KIND_CONTAINER=$(docker ps -qf "name=pxe-test-control-plane")
-        KIND_PID=$(docker inspect -f '{{.State.Pid}}' "$KIND_CONTAINER")
+        # k3s loads br_netfilter and sets bridge-nf-call-iptables=1,
+        # which routes bridge frames through iptables. Without these
+        # rules, k3s FORWARD chain drops DHCP and HTTP on br-pxe.
+        sudo iptables -I FORWARD -i br-pxe -j ACCEPT
+        sudo iptables -I FORWARD -o br-pxe -j ACCEPT
 
-        # Link Kind container netns so ip-netns can manage it
-        sudo mkdir -p /var/run/netns
-        sudo ln -sf /proc/$KIND_PID/ns/net /var/run/netns/ns2
+    - name: Connect host to PXE bridge (DHCP client)
+      run: |
+        sudo dhclient -v br-pxe
 
-        # Attach veth to bridge
-        sudo ip link add veth-ns2 type veth peer name veth-ns2-br
-        sudo ip link set veth-ns2-br master br-pxe
-        sudo ip link set veth-ns2-br up
-        sudo ip link set veth-ns2 netns "$KIND_PID"
-        sudo ip netns exec ns2 ip link set veth-ns2 up
-
-        # Get DHCP lease from dnsmasq
-        sudo ip netns exec ns2 dhclient -v veth-ns2
+        # Remove DHCP-assigned default route to avoid breaking internet
+        sudo ip route del default via 192.168.101.1 dev br-pxe 2>/dev/null || true
 
         # Show and capture assigned IP
-        sudo ip netns exec ns2 ip addr show veth-ns2
-        KIND_PXE_IP=$(sudo ip netns exec ns2 ip -4 -o addr show veth-ns2 | grep -oP '192\.168\.101\.\d+' | head -1)
-        [ -n "$KIND_PXE_IP" ] || { echo "FAIL: dhclient did not obtain a 192.168.101.x lease"; exit 1; }
-        echo "Kind node got DHCP IP: $KIND_PXE_IP (ns2)"
-        echo "$KIND_PXE_IP" > /tmp/kind-pxe-ip
-        echo "8080" > /tmp/kind-pxe-port
+        PXE_IP=$(ip -4 -o addr show br-pxe | grep -oP '192\.168\.101\.\d+' | head -1)
+        [ -n "$PXE_IP" ] || { echo "FAIL: dhclient did not obtain a 192.168.101.x lease"; exit 1; }
+        echo "k3s host got DHCP IP: $PXE_IP on br-pxe"
+        echo "$PXE_IP" > /tmp/pxe-ip
+        echo "8080" > /tmp/pxe-port
 
-        # Verify bidirectional connectivity (ns2 <-> ns1)
-        sudo ip netns exec ns2 ping -c 3 192.168.101.1
-        sudo ip netns exec ns1 ping -c 3 "$KIND_PXE_IP"
-        echo "PXE network OK: ns1(.1) <-> ns2($KIND_PXE_IP)"
+        # Verify bidirectional connectivity
+        ping -c 3 192.168.101.1
+        sudo ip netns exec ns1 ping -c 3 "$PXE_IP"
+        echo "PXE network OK: ns1(.1) <-> host($PXE_IP)"
 
     # ── Deploy isoboot from GHCR ─────────────────────────────────────
-    - name: Get Kind node name
+    - name: Get k3s node name
       id: node
       run: echo "name=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')" >> "$GITHUB_OUTPUT"
 
@@ -291,8 +276,8 @@ jobs:
 
     - name: Verify artifact SHA-256 on host disk
       run: |
-        echo "${{ env.VMLINUZ_SHA256 }}  /tmp/isoboot-data/nginx/static/artifacts/rocky-10.1-kernel/vmlinuz" | sha256sum -c
-        echo "${{ env.INITRD_SHA256 }}  /tmp/isoboot-data/nginx/static/artifacts/rocky-10.1-initrd/initrd.img" | sha256sum -c
+        echo "${{ env.VMLINUZ_SHA256 }}  /data/isoboot/nginx/static/artifacts/rocky-10.1-kernel/vmlinuz" | sha256sum -c
+        echo "${{ env.INITRD_SHA256 }}  /data/isoboot/nginx/static/artifacts/rocky-10.1-initrd/initrd.img" | sha256sum -c
 
     - name: Wait for BootConfig Ready
       run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig rocky-10.1
@@ -300,27 +285,27 @@ jobs:
     - name: Verify BootConfig symlinks on host disk
       run: |
         # Verify kernel symlink
-        target=$(readlink /tmp/isoboot-data/nginx/static/boot/rocky-10.1/kernel/vmlinuz)
+        target=$(readlink /data/isoboot/nginx/static/boot/rocky-10.1/kernel/vmlinuz)
         echo "kernel symlink target: $target"
         [ "$target" = "../../../artifacts/rocky-10.1-kernel/vmlinuz" ] || { echo "FAIL: wrong kernel target"; exit 1; }
 
         # Verify initrd symlink
-        target=$(readlink /tmp/isoboot-data/nginx/static/boot/rocky-10.1/initrd/initrd.img)
+        target=$(readlink /data/isoboot/nginx/static/boot/rocky-10.1/initrd/initrd.img)
         echo "initrd symlink target: $target"
         [ "$target" = "../../../artifacts/rocky-10.1-initrd/initrd.img" ] || { echo "FAIL: wrong initrd target"; exit 1; }
 
         # Verify symlinks resolve to actual files
-        test -f /tmp/isoboot-data/nginx/static/boot/rocky-10.1/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
-        test -f /tmp/isoboot-data/nginx/static/boot/rocky-10.1/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
+        test -f /data/isoboot/nginx/static/boot/rocky-10.1/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
+        test -f /data/isoboot/nginx/static/boot/rocky-10.1/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
 
     # ── Verify auto-generated boot script ─────────────────────────
     - name: Verify boot.ipxe auto-generated
       run: |
-        test -f /tmp/isoboot-data/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe not found"; exit 1; }
-        grep 'chain' /tmp/isoboot-data/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing chain directive"; exit 1; }
-        grep 'conditional-boot' /tmp/isoboot-data/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing conditional-boot"; exit 1; }
+        test -f /data/isoboot/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe not found"; exit 1; }
+        grep 'chain' /data/isoboot/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing chain directive"; exit 1; }
+        grep 'conditional-boot' /data/isoboot/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing conditional-boot"; exit 1; }
         echo "boot.ipxe auto-generated correctly:"
-        cat /tmp/isoboot-data/nginx/static/boot/boot.ipxe
+        cat /data/isoboot/nginx/static/boot/boot.ipxe
 
     # ── PXE download test: ns3 wget client ─────────────────────────
     - name: Start wget client container (ns3)
@@ -343,14 +328,14 @@ jobs:
         sudo ip netns exec ns3 ip addr show veth-ns3
         echo "wget client ready (ns3)"
 
-    - name: Download boot artifacts via PXE network (ns3 -> nginx on ns2)
+    - name: Download boot artifacts via PXE network (ns3 -> nginx on host)
       run: |
-        KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
-        KIND_PXE_PORT=$(cat /tmp/kind-pxe-port)
+        PXE_IP=$(cat /tmp/pxe-ip)
+        PXE_PORT=$(cat /tmp/pxe-port)
         docker exec wget-client wget -O /tmp/dl-vmlinuz \
-          "http://${KIND_PXE_IP}:${KIND_PXE_PORT}/static/rocky-10.1/kernel/vmlinuz"
+          "http://${PXE_IP}:${PXE_PORT}/static/rocky-10.1/kernel/vmlinuz"
         docker exec wget-client wget -O /tmp/dl-initrd \
-          "http://${KIND_PXE_IP}:${KIND_PXE_PORT}/static/rocky-10.1/initrd/initrd.img"
+          "http://${PXE_IP}:${PXE_PORT}/static/rocky-10.1/initrd/initrd.img"
 
     - name: Verify downloaded artifact checksums
       run: |
@@ -409,10 +394,10 @@ jobs:
 
     - name: Verify dynamic boot endpoint
       run: |
-        KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
-        KIND_PXE_PORT=$(cat /tmp/kind-pxe-port)
+        PXE_IP=$(cat /tmp/pxe-ip)
+        PXE_PORT=$(cat /tmp/pxe-port)
         docker exec wget-client wget -qO /tmp/dynamic-boot \
-          "http://${KIND_PXE_IP}:${KIND_PXE_PORT}/dynamic/conditional-boot?mac=00-11-22-33-44-55"
+          "http://${PXE_IP}:${PXE_PORT}/dynamic/conditional-boot?mac=00-11-22-33-44-55"
         echo "=== dynamic boot response ==="
         docker exec wget-client cat /tmp/dynamic-boot
         docker exec wget-client grep '#!ipxe' /tmp/dynamic-boot \
@@ -504,11 +489,11 @@ jobs:
     # ── Final PXE network check ──────────────────────────────────────
     - name: Verify PXE network connectivity
       run: |
-        KIND_PXE_IP=$(cat /tmp/kind-pxe-ip)
-        sudo ip netns exec ns1 ping -c 3 "$KIND_PXE_IP"
-        sudo ip netns exec ns2 ping -c 3 192.168.101.1
+        PXE_IP=$(cat /tmp/pxe-ip)
+        sudo ip netns exec ns1 ping -c 3 "$PXE_IP"
+        ping -c 3 192.168.101.1
         sudo ip netns exec ns3 ping -c 3 192.168.101.1
-        echo "PXE network fully operational (ns1, ns2, ns3)"
+        echo "PXE network fully operational (ns1, host, ns3)"
 
     # ── Failure diagnostics ──────────────────────────────────────────
     - name: Collect logs on failure
@@ -519,8 +504,8 @@ jobs:
         bridge link show master br-pxe 2>/dev/null || true
         echo "=== DHCP server (ns1) ==="
         sudo ip netns exec ns1 ip addr 2>/dev/null || true
-        echo "=== Kind node (ns2) ==="
-        sudo ip netns exec ns2 ip addr 2>/dev/null || true
+        echo "=== k3s host ==="
+        ip route 2>/dev/null || true
         echo "=== wget client (ns3) ==="
         sudo ip netns exec ns3 ip addr 2>/dev/null || true
         echo "=== dnsmasq DHCP logs ==="
@@ -551,7 +536,7 @@ jobs:
         echo "=== Events ==="
         kubectl -n isoboot-system get events --sort-by='.lastTimestamp' 2>/dev/null || true
         echo "=== Host data directory ==="
-        find /tmp/isoboot-data -type f -o -type l 2>/dev/null || true
+        find /data/isoboot -type f -o -type l 2>/dev/null || true
         echo "=== Describe pods ==="
         kubectl -n isoboot-system describe pod -l app.kubernetes.io/name=isoboot 2>/dev/null || true
 
@@ -560,7 +545,7 @@ jobs:
       run: |
         [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
         sudo ip link del tap-ns4 2>/dev/null || true
-        kind delete cluster --name pxe-test 2>/dev/null || true
+        /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
         docker rm -f dhcp-srv wget-client 2>/dev/null || true
-        sudo rm -f /var/run/netns/ns1 /var/run/netns/ns2 /var/run/netns/ns3
+        sudo rm -f /var/run/netns/ns1 /var/run/netns/ns3
         sudo ip link del br-pxe 2>/dev/null || true
