@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.1-rc6
+
+- Migrate E2E from KinD to k3s
+- Add squid image push to tag workflow
+- Fix E2E host paths for Helm deploy
+
 ## v0.0.1-rc5
 
 - Add automation file render endpoint
