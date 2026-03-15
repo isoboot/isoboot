@@ -197,6 +197,9 @@ jobs:
       run: |
         sudo dhclient -v br-pxe
 
+        # Remove DHCP-assigned default route to avoid breaking internet
+        sudo ip route del default via 192.168.101.1 dev br-pxe 2>/dev/null || true
+
         # Show and capture assigned IP
         PXE_IP=$(ip -4 -o addr show br-pxe | grep -oP '192\.168\.101\.\d+' | head -1)
         [ -n "$PXE_IP" ] || { echo "FAIL: dhclient did not obtain a 192.168.101.x lease"; exit 1; }
