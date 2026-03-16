@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.1-rc7
+
+- Run squid as non-root (UID 31) with drop ALL capabilities
+- Use lightweight alpine init container for directory permissions
+- Consolidate alpine version into single `.alpine-version` file
+
 ## v0.0.1-rc6
 
 - Migrate E2E from KinD to k3s
