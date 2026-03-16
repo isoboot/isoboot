@@ -68,6 +68,7 @@ const (
 type ProvisionStatus struct {
 	// phase is the current phase of the provision.
 	// +optional
+	// +kubebuilder:default=Pending
 	Phase ProvisionPhase `json:"phase,omitempty"`
 
 	// message provides human-readable details about the current phase.
