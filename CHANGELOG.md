@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.1-rc8
+
+- Default new Provision phase to Pending via reconciler
+
 ## v0.0.1-rc7
 
 - Run squid as non-root (UID 31) with drop ALL capabilities
