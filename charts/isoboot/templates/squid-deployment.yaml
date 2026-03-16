@@ -27,6 +27,25 @@ spec:
           type: RuntimeDefault
       {{- include "isoboot.affinity" (dict "context" . "component" "squid") | nindent 6 }}
       initContainers:
+      - name: fix-permissions
+        image: "{{ .Values.alpineImage }}"
+        command: ["/bin/sh", "-c"]
+        args: ["chown 31:31 /var/cache/squid /var/log/squid /run/squid"]
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+            add: ["CHOWN"]
+        volumeMounts:
+        - name: cache
+          mountPath: /var/cache/squid
+        - name: logs
+          mountPath: /var/log/squid
+        - name: run
+          mountPath: /run/squid
       - name: init-cache
         image: "{{ .Values.squid.image.repository }}:{{ .Values.squid.image.tag | default .Chart.AppVersion }}"
         command: ["/bin/sh", "-c"]
@@ -37,12 +56,12 @@ spec:
           squid -z --foreground -f /etc/squid/squid.conf 2>&1
           echo "Cache initialized."
         securityContext:
-          runAsUser: 0
+          runAsUser: 31
+          runAsGroup: 31
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
-            drop:
-            - "ALL"
+            drop: ["ALL"]
         volumeMounts:
         - name: config
           mountPath: /etc/squid/squid.conf
@@ -56,9 +75,9 @@ spec:
       - name: squid
         image: "{{ .Values.squid.image.repository }}:{{ .Values.squid.image.tag | default .Chart.AppVersion }}"
         command: ["squid", "--foreground", "-f", "/etc/squid/squid.conf"]
-        # Squid on Alpine requires root for cache directory ownership and worker process management.
         securityContext:
-          runAsUser: 0
+          runAsUser: 31
+          runAsGroup: 31
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:

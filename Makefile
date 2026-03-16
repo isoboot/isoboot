@@ -13,7 +13,7 @@ endif
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
-ALPINE_VERSION ?= 3.23
+ALPINE_VERSION ?= $(shell cat .alpine-version)
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.

@@ -7,6 +7,7 @@ nameOverride: ""
 # All data is stored on this node via hostPath.
 nodeName: ""
 
+alpineImage: alpine:3.23
 image:
   repository: ghcr.io/isoboot/isoboot
   # tag defaults to .Chart.AppVersion if omitted
