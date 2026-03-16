@@ -410,6 +410,7 @@ spec:
                   phase.
                 type: string
               phase:
+                default: Pending
                 description: phase is the current phase of the provision.
                 enum:
                 - Pending
