@@ -87,10 +87,11 @@ func main() {
 
 	c := mgr.GetClient()
 	ns := *namespace
+	proxyPort := os.Getenv("PROXY_PORT")
 
 	handler := conditionalBootHandler(func(reqCtx context.Context, mac string) (*httpd.BootDirective, error) {
 		return httpd.BootDirectiveForMAC(reqCtx, c, ns, mac)
-	})
+	}, proxyPort)
 
 	renderFile := func(
 		reqCtx context.Context, provisionName, fileName string,
@@ -141,7 +142,7 @@ func main() {
 	}
 }
 
-func conditionalBootHandler(getDirective bootDirectiveFunc) http.HandlerFunc {
+func conditionalBootHandler(getDirective bootDirectiveFunc, proxyPort string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		mac := r.URL.Query().Get("mac")
 		if mac == "" {
@@ -177,6 +178,10 @@ func conditionalBootHandler(getDirective bootDirectiveFunc) http.HandlerFunc {
 			if host == "" {
 				host = r.Host
 			}
+			nodeIP := host
+			if h, _, err := net.SplitHostPort(nodeIP); err == nil {
+				nodeIP = h
+			}
 			if port := r.Header.Get("X-Forwarded-Port"); port != "" {
 				h, _, _ := net.SplitHostPort(host)
 				if h != "" {
@@ -186,9 +191,14 @@ func conditionalBootHandler(getDirective bootDirectiveFunc) http.HandlerFunc {
 			}
 			baseURL := fmt.Sprintf("http://%s/dynamic/automation/%s",
 				host, directive.ProvisionName)
+			proxyURL := ""
+			if proxyPort != "" {
+				proxyURL = fmt.Sprintf("http://%s:%s", nodeIP, proxyPort)
+			}
 			rendered, err := httpd.RenderKernelArgs(
 				directive.KernelArgs, httpd.KernelArgsData{
 					ProvisionAutomationBaseURL: baseURL,
+					ProxyURL:                   proxyURL,
 				})
 			if err != nil {
 				slog.Error("kernel args template failed",
