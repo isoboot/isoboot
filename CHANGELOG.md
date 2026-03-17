@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.1-rc11
+
+- Drop /dynamic prefix from Go httpd automation route
+
 ## v0.0.1-rc10
 
 - Use X-Forwarded-Host/Port for kernel args base URL
