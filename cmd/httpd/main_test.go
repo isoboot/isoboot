@@ -62,7 +62,7 @@ func TestConditionalBoot_StatusCodes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := conditionalBootHandler(tt.directive)
+			handler := conditionalBootHandler(tt.directive, "")
 			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
 			w := httptest.NewRecorder()
 
@@ -76,7 +76,7 @@ func TestConditionalBoot_StatusCodes(t *testing.T) {
 }
 
 func TestConditionalBoot_ContentType(t *testing.T) {
-	handler := conditionalBootHandler(fixedDirective())
+	handler := conditionalBootHandler(fixedDirective(), "")
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -89,7 +89,7 @@ func TestConditionalBoot_ContentType(t *testing.T) {
 }
 
 func TestConditionalBoot_BootDirective(t *testing.T) {
-	handler := conditionalBootHandler(fixedDirective())
+	handler := conditionalBootHandler(fixedDirective(), "")
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -110,7 +110,7 @@ func TestConditionalBoot_NoKernelArgs(t *testing.T) {
 			KernelPath: "config/kernel/vmlinuz",
 			InitrdPath: "config/initrd/initrd.img",
 		}, nil
-	})
+	}, "")
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 
@@ -134,7 +134,7 @@ func TestConditionalBoot_TemplateRendering(t *testing.T) {
 			InitrdPath:    "config/initrd/initrd.img",
 			ProvisionName: "my-provision",
 		}, nil
-	})
+	}, "")
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Header.Set("X-Forwarded-Host", "10.0.0.1")
 	req.Header.Set("X-Forwarded-Port", "8080")
@@ -160,7 +160,7 @@ func TestConditionalBoot_TemplateRenderingFallback(t *testing.T) {
 			InitrdPath:    "config/initrd/initrd.img",
 			ProvisionName: "my-provision",
 		}, nil
-	})
+	}, "")
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = "10.0.0.1:8080"
 	w := httptest.NewRecorder()
@@ -177,6 +177,34 @@ func TestConditionalBoot_TemplateRenderingFallback(t *testing.T) {
 	}
 }
 
+func TestConditionalBoot_ProxyURL(t *testing.T) {
+	handler := conditionalBootHandler(func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return &httpd.BootDirective{
+			KernelPath:    "config/kernel/vmlinuz",
+			KernelArgs:    "ip=dhcp inst.proxy={{.ProxyURL}} inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg",
+			InitrdPath:    "config/initrd/initrd.img",
+			ProvisionName: "my-provision",
+		}, nil
+	}, "3128")
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	req.Header.Set("X-Forwarded-Host", "10.0.0.1")
+	req.Header.Set("X-Forwarded-Port", "8080")
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got: %d", w.Result().StatusCode)
+	}
+	body, _ := io.ReadAll(w.Result().Body)
+	if !strings.Contains(string(body), "inst.proxy=http://10.0.0.1:3128") {
+		t.Errorf("expected body to contain inst.proxy=http://10.0.0.1:3128, got:\n%s", body)
+	}
+	if !strings.Contains(string(body), "inst.ks=http://10.0.0.1:8080/dynamic/automation/my-provision/ks.cfg") {
+		t.Errorf("expected body to contain inst.ks URL, got:\n%s", body)
+	}
+}
+
 func TestConditionalBoot_TemplateError(t *testing.T) {
 	handler := conditionalBootHandler(func(_ context.Context, _ string) (*httpd.BootDirective, error) {
 		return &httpd.BootDirective{
@@ -185,7 +213,7 @@ func TestConditionalBoot_TemplateError(t *testing.T) {
 			InitrdPath:    "config/initrd/initrd.img",
 			ProvisionName: "my-provision",
 		}, nil
-	})
+	}, "")
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	w := httptest.NewRecorder()
 

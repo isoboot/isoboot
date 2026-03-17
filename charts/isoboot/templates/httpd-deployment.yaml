@@ -31,6 +31,9 @@ spec:
         args:
         - "--listen-addr=:{{ .Values.httpd.port }}"
         - "--namespace={{ .Release.Namespace }}"
+        env:
+        - name: PROXY_PORT
+          value: "{{ .Values.squid.port }}"
         ports:
         - containerPort: {{ .Values.httpd.port }}
           protocol: TCP

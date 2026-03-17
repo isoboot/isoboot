@@ -166,6 +166,18 @@ var _ = Describe("RenderKernelArgs", func() {
 			"ip=dhcp inst.ks=http://10.0.0.1:8080/dynamic/automation/my-provision/ks.cfg"))
 	})
 
+	It("renders ProxyURL", func() {
+		result, err := RenderKernelArgs(
+			"ip=dhcp inst.proxy={{.ProxyURL}} inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg",
+			KernelArgsData{
+				ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
+				ProxyURL:                   "http://10.0.0.1:3128",
+			})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal(
+			"ip=dhcp inst.proxy=http://10.0.0.1:3128 inst.ks=http://10.0.0.1:8080/dynamic/automation/my-provision/ks.cfg"))
+	})
+
 	It("returns empty string for empty input", func() {
 		result, err := RenderKernelArgs("", data)
 		Expect(err).NotTo(HaveOccurred())
