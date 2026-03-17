@@ -158,6 +158,23 @@ func conditionalBootHandler(getDirective bootDirectiveFunc) http.HandlerFunc {
 
 		slog.Info("conditional-boot request", "mac", mac)
 
+		if directive.KernelArgs != "" {
+			baseURL := fmt.Sprintf("http://%s/dynamic/automation/%s",
+				r.Host, directive.ProvisionName)
+			rendered, err := httpd.RenderKernelArgs(
+				directive.KernelArgs, httpd.KernelArgsData{
+					ProvisionAutomationBaseURL: baseURL,
+				})
+			if err != nil {
+				slog.Error("kernel args template failed",
+					"mac", mac, "error", err)
+				http.Error(w, "internal error",
+					http.StatusInternalServerError)
+				return
+			}
+			directive.KernelArgs = rendered
+		}
+
 		kernelLine := fmt.Sprintf("kernel /static/%s", directive.KernelPath)
 		if directive.KernelArgs != "" {
 			kernelLine += " " + directive.KernelArgs
