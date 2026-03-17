@@ -27,6 +27,6 @@ metadata:
 spec:
   kernel:
     ref: rocky-10.1-kernel
-    args: "ip=dhcp inst.repo=http://repo.almalinux.org/almalinux/10.1/BaseOS/x86_64/os inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg"
+    args: "ip=dhcp inst.repo=https://download.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg"
   initrd:
     ref: rocky-10.1-initrd
