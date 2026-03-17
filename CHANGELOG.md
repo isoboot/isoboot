@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.1-rc9
+
+- Add kernel args template rendering with `{{.ProvisionAutomationBaseURL}}`
+- Add kernel args to rocky-10.1 example
+
 ## v0.0.1-rc8
 
 - Default new Provision phase to Pending via reconciler
