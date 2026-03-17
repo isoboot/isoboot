@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.1-rc12
+
+- Add httpd RBAC for automation endpoint
+- Bypass cache for types without indexers (least privilege)
+- Sync Helm manager-role with generated role.yaml
+
 ## v0.0.1-rc11
 
 - Drop /dynamic prefix from Go httpd automation route
