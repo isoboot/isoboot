@@ -99,6 +99,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 		Expect(result.KernelPath).To(Equal("bd-bc1/kernel/vmlinuz"))
 		Expect(result.KernelArgs).To(Equal("console=ttyS0"))
 		Expect(result.InitrdPath).To(Equal("bd-bc1/initrd/initrd.img"))
+		Expect(result.ProvisionName).To(Equal("bd-p1"))
 	})
 
 	It("returns directive with empty kernel args", func() {
@@ -143,6 +144,44 @@ var _ = Describe("BootDirectiveForMAC", func() {
 				ctx, indexedClient, ns, "bb-00-00-00-00-03")
 			return err
 		}).Should(MatchError(ContainSubstring("getting boot config")))
+	})
+})
+
+var _ = Describe("RenderKernelArgs", func() {
+	data := KernelArgsData{
+		ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
+	}
+
+	It("passes through plain string unchanged", func() {
+		result, err := RenderKernelArgs("console=ttyS0 ip=dhcp", data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal("console=ttyS0 ip=dhcp"))
+	})
+
+	It("renders ProvisionAutomationBaseURL", func() {
+		result, err := RenderKernelArgs(
+			"ip=dhcp inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg", data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal(
+			"ip=dhcp inst.ks=http://10.0.0.1:8080/dynamic/automation/my-provision/ks.cfg"))
+	})
+
+	It("returns empty string for empty input", func() {
+		result, err := RenderKernelArgs("", data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeEmpty())
+	})
+
+	It("returns error for invalid template syntax", func() {
+		_, err := RenderKernelArgs("{{.Foo", data)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("parsing kernel args template"))
+	})
+
+	It("returns error for unknown variable", func() {
+		_, err := RenderKernelArgs("{{.UnknownVar}}", data)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("executing kernel args template"))
 	})
 })
 

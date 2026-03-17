@@ -17,10 +17,12 @@ limitations under the License.
 package httpd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"path"
+	"text/template"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -30,9 +32,31 @@ import (
 
 // BootDirective holds the data needed to construct an iPXE boot script.
 type BootDirective struct {
-	KernelPath string
-	KernelArgs string
-	InitrdPath string
+	KernelPath    string
+	KernelArgs    string
+	InitrdPath    string
+	ProvisionName string
+}
+
+// KernelArgsData holds the template data for kernel args rendering.
+type KernelArgsData struct {
+	ProvisionAutomationBaseURL string
+}
+
+// RenderKernelArgs renders kernel args as a Go template with the given data.
+func RenderKernelArgs(args string, data KernelArgsData) (string, error) {
+	tmpl, err := template.New("kernelArgs").
+		Option("missingkey=error").Parse(args)
+	if err != nil {
+		return "", fmt.Errorf("parsing kernel args template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("executing kernel args template: %w", err)
+	}
+
+	return buf.String(), nil
 }
 
 // IsDuplicateError reports whether err indicates a duplicate machine or provision.
@@ -90,8 +114,9 @@ func BootDirectiveForMAC(
 	initrdFile := urlutil.FilenameFromURL(initrdArtifact.Spec.URL)
 
 	return &BootDirective{
-		KernelPath: path.Join(bc.Name, "kernel", kernelFile),
-		KernelArgs: bc.Spec.Kernel.Args,
-		InitrdPath: path.Join(bc.Name, "initrd", initrdFile),
+		KernelPath:    path.Join(bc.Name, "kernel", kernelFile),
+		KernelArgs:    bc.Spec.Kernel.Args,
+		InitrdPath:    path.Join(bc.Name, "initrd", initrdFile),
+		ProvisionName: provision.Name,
 	}, nil
 }

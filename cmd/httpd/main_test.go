@@ -16,9 +16,10 @@ import (
 func fixedDirective() bootDirectiveFunc {
 	return func(_ context.Context, _ string) (*httpd.BootDirective, error) {
 		return &httpd.BootDirective{
-			KernelPath: "test-config/kernel/vmlinuz",
-			KernelArgs: "console=ttyS0",
-			InitrdPath: "test-config/initrd/initrd.img",
+			KernelPath:    "test-config/kernel/vmlinuz",
+			KernelArgs:    "console=ttyS0",
+			InitrdPath:    "test-config/initrd/initrd.img",
+			ProvisionName: "test-provision",
 		}, nil
 	}
 }
@@ -122,6 +123,50 @@ func TestConditionalBoot_NoKernelArgs(t *testing.T) {
 	expected := "#!ipxe\nkernel /static/config/kernel/vmlinuz\ninitrd /static/config/initrd/initrd.img\nboot\n"
 	if string(body) != expected {
 		t.Errorf("expected:\n%s\ngot:\n%s", expected, string(body))
+	}
+}
+
+func TestConditionalBoot_TemplateRendering(t *testing.T) {
+	handler := conditionalBootHandler(func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return &httpd.BootDirective{
+			KernelPath:    "config/kernel/vmlinuz",
+			KernelArgs:    "ip=dhcp inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg",
+			InitrdPath:    "config/initrd/initrd.img",
+			ProvisionName: "my-provision",
+		}, nil
+	})
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	req.Host = "10.0.0.1:8080"
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got: %d", w.Result().StatusCode)
+	}
+	body, _ := io.ReadAll(w.Result().Body)
+	expected := "ip=dhcp inst.ks=http://10.0.0.1:8080/dynamic/automation/my-provision/ks.cfg"
+	if !strings.Contains(string(body), expected) {
+		t.Errorf("expected body to contain:\n%s\ngot:\n%s", expected, body)
+	}
+}
+
+func TestConditionalBoot_TemplateError(t *testing.T) {
+	handler := conditionalBootHandler(func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return &httpd.BootDirective{
+			KernelPath:    "config/kernel/vmlinuz",
+			KernelArgs:    "{{.UnknownVar}}",
+			InitrdPath:    "config/initrd/initrd.img",
+			ProvisionName: "my-provision",
+		}, nil
+	})
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected 500, got: %d", w.Result().StatusCode)
 	}
 }
 
