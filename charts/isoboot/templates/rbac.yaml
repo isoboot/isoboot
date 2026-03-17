@@ -9,6 +9,13 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  - secrets
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
@@ -45,14 +52,8 @@ rules:
   - isoboot.github.io
   resources:
   - bootconfigs
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - isoboot.github.io
-  resources:
   - machines
+  - provisions
   verbs:
   - get
   - list
@@ -63,16 +64,6 @@ rules:
   - provisionautomations
   verbs:
   - get
-  - list
-  - watch
-- apiGroups:
-  - isoboot.github.io
-  resources:
-  - provisions
-  verbs:
-  - get
-  - list
-  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
