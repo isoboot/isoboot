@@ -136,7 +136,8 @@ func TestConditionalBoot_TemplateRendering(t *testing.T) {
 		}, nil
 	})
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
-	req.Host = "10.0.0.1:8080"
+	req.Header.Set("X-Forwarded-Host", "10.0.0.1")
+	req.Header.Set("X-Forwarded-Port", "8080")
 	w := httptest.NewRecorder()
 
 	handler(w, req)
