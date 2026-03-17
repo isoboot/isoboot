@@ -4,6 +4,9 @@
 
 - Rocky Linux 10.1 fully automated installation tested with a 7-line
   kickstart file (lang, keyboard, timezone, autopart, clearpart, zerombr, user)
+- Known limitations: no squid cache (#349), SSH host keys not tested (#350),
+  hostname not tested (#351), SSH public key not tested (#352),
+  call home provision phase update not implemented (#353)
 
 ## v0.0.1-rc12
 
