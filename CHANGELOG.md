@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.1
+
+- Rocky Linux 10.1 fully automated installation tested with a 7-line
+  kickstart file (lang, keyboard, timezone, autopart, clearpart, zerombr, user)
+
 ## v0.0.1-rc12
 
 - Add httpd RBAC for automation endpoint
