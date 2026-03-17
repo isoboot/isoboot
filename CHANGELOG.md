@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.1-rc10
+
+- Use X-Forwarded-Host/Port for kernel args base URL
+
 ## v0.0.1-rc9
 
 - Add kernel args template rendering with `{{.ProvisionAutomationBaseURL}}`
