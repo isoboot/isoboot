@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -159,8 +160,19 @@ func conditionalBootHandler(getDirective bootDirectiveFunc) http.HandlerFunc {
 		slog.Info("conditional-boot request", "mac", mac)
 
 		if directive.KernelArgs != "" {
+			host := r.Header.Get("X-Forwarded-Host")
+			if host == "" {
+				host = r.Host
+			}
+			if port := r.Header.Get("X-Forwarded-Port"); port != "" {
+				h, _, _ := net.SplitHostPort(host)
+				if h != "" {
+					host = h
+				}
+				host = net.JoinHostPort(host, port)
+			}
 			baseURL := fmt.Sprintf("http://%s/dynamic/automation/%s",
-				r.Host, directive.ProvisionName)
+				host, directive.ProvisionName)
 			rendered, err := httpd.RenderKernelArgs(
 				directive.KernelArgs, httpd.KernelArgsData{
 					ProvisionAutomationBaseURL: baseURL,

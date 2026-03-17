@@ -136,6 +136,32 @@ func TestConditionalBoot_TemplateRendering(t *testing.T) {
 		}, nil
 	})
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	req.Header.Set("X-Forwarded-Host", "10.0.0.1")
+	req.Header.Set("X-Forwarded-Port", "8080")
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got: %d", w.Result().StatusCode)
+	}
+	body, _ := io.ReadAll(w.Result().Body)
+	expected := "ip=dhcp inst.ks=http://10.0.0.1:8080/dynamic/automation/my-provision/ks.cfg"
+	if !strings.Contains(string(body), expected) {
+		t.Errorf("expected body to contain:\n%s\ngot:\n%s", expected, body)
+	}
+}
+
+func TestConditionalBoot_TemplateRenderingFallback(t *testing.T) {
+	handler := conditionalBootHandler(func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return &httpd.BootDirective{
+			KernelPath:    "config/kernel/vmlinuz",
+			KernelArgs:    "ip=dhcp inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg",
+			InitrdPath:    "config/initrd/initrd.img",
+			ProvisionName: "my-provision",
+		}, nil
+	})
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
 	req.Host = "10.0.0.1:8080"
 	w := httptest.NewRecorder()
 
