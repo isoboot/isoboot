@@ -88,7 +88,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /conditional-boot", handler)
-	mux.HandleFunc("GET /dynamic/automation/{provisionName}/{fileName}", automationHandler)
+	mux.HandleFunc("GET /automation/{provisionName}/{fileName}", automationHandler)
 	mux.HandleFunc("GET /healthz", healthzHandler)
 
 	srv := &http.Server{
