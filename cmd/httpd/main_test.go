@@ -136,6 +136,7 @@ func TestConditionalBoot_TemplateRendering(t *testing.T) {
 		}, nil
 	})
 	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	req.Host = "10.0.0.1:8080"
 	w := httptest.NewRecorder()
 
 	handler(w, req)
@@ -144,8 +145,7 @@ func TestConditionalBoot_TemplateRendering(t *testing.T) {
 		t.Fatalf("expected 200, got: %d", w.Result().StatusCode)
 	}
 	body, _ := io.ReadAll(w.Result().Body)
-	expected := "ip=dhcp inst.ks=http://" + req.Host +
-		"/dynamic/automation/my-provision/ks.cfg"
+	expected := "ip=dhcp inst.ks=http://10.0.0.1:8080/dynamic/automation/my-provision/ks.cfg"
 	if !strings.Contains(string(body), expected) {
 		t.Errorf("expected body to contain:\n%s\ngot:\n%s", expected, body)
 	}
