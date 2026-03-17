@@ -15,10 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -46,6 +48,17 @@ func main() {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:  sch,
 		Metrics: metricsserver.Options{BindAddress: "0"},
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				DisableFor: []client.Object{
+					&isobootgithubiov1alpha1.BootArtifact{},
+					&isobootgithubiov1alpha1.BootConfig{},
+					&isobootgithubiov1alpha1.ProvisionAutomation{},
+					&corev1.ConfigMap{},
+					&corev1.Secret{},
+				},
+			},
+		},
 	})
 	if err != nil {
 		slog.Error("failed to create manager", "error", err)

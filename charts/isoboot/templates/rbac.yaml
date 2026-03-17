@@ -132,10 +132,23 @@ metadata:
     {{- include "isoboot.labels" . | nindent 4 }}
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  verbs:
+  - get
+- apiGroups:
   - isoboot.github.io
   resources:
   - bootartifacts
   - bootconfigs
+  - provisionautomations
+  verbs:
+  - get
+- apiGroups:
+  - isoboot.github.io
+  resources:
   - machines
   - provisions
   verbs:

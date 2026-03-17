@@ -51,9 +51,14 @@ rules:
   resources:
   - bootconfigs
   - machines
-  - provisionautomations
   - provisions
   verbs:
   - get
   - list
   - watch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - provisionautomations
+  verbs:
+  - get
