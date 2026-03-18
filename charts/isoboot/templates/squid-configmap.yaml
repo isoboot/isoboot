@@ -15,6 +15,6 @@ data:
     maximum_object_size {{ .Values.squid.maxObjectSize }}
     cache_mem {{ .Values.squid.cacheMemMB }} MB
     cache_dir ufs /var/cache/squid {{ .Values.squid.cacheSizeMB }} 16 256
-    access_log stdio:/var/log/squid/access.log
-    cache_log stdio:/var/log/squid/cache.log
+    access_log {{ if .Values.squid.log.access }}stdio:/var/log/squid/access.log{{ else }}none{{ end }}
+    cache_log {{ if .Values.squid.log.cache }}/var/log/squid/cache.log{{ else }}/dev/null{{ end }}
     pid_filename /run/squid/squid.pid
