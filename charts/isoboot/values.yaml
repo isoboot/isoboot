@@ -70,7 +70,6 @@ squid:
   cacheSizeMB: 8000
   log:
     access: false
-    cache: true
   resources:
     limits:
       cpu: 500m

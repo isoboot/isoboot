@@ -16,5 +16,5 @@ data:
     cache_mem {{ .Values.squid.cacheMemMB }} MB
     cache_dir ufs /var/cache/squid {{ .Values.squid.cacheSizeMB }} 16 256
     access_log {{ if .Values.squid.log.access }}stdio:/var/log/squid/access.log{{ else }}none{{ end }}
-    cache_log {{ if .Values.squid.log.cache }}/var/log/squid/cache.log{{ else }}/dev/null{{ end }}
+    cache_log /var/log/squid/cache.log
     pid_filename /run/squid/squid.pid
