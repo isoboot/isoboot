@@ -151,7 +151,7 @@ jobs:
 
     # ── Network tools ──────────────────────────────────────────────
     - name: Install network tools
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat
 
     - name: Enable KVM
       run: |
@@ -444,6 +444,7 @@ jobs:
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
+          -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
           -daemonize \
           -pidfile /tmp/qemu-pxe.pid
 
@@ -516,10 +517,10 @@ jobs:
         echo "Provision is $PHASE"
 
     - name: Wait for Provision phase Complete
-      timeout-minutes: 35
+      timeout-minutes: 20
       run: |
         echo "Waiting for Provision phase Complete..."
-        for i in $(seq 1 210); do
+        for i in $(seq 1 120); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
           echo "  phase=$PHASE (attempt $i)"
@@ -568,6 +569,34 @@ jobs:
         echo "SSH verification passed!"
 
     # ── Failure diagnostics ────────────────────────────────────────
+    - name: Capture QEMU screenshot
+      if: failure()
+      run: |
+        if [ -S /tmp/qemu-monitor.sock ]; then
+          echo "screendump /tmp/qemu-screenshot.ppm" | socat - UNIX-CONNECT:/tmp/qemu-monitor.sock || true
+          sleep 1
+          if [ -f /tmp/qemu-screenshot.ppm ]; then
+            echo "=== QEMU screenshot captured ==="
+            ls -la /tmp/qemu-screenshot.ppm
+            echo "=== PPM header ==="
+            head -3 /tmp/qemu-screenshot.ppm
+            echo "=== Framebuffer hex dump (first 4KB) ==="
+            xxd /tmp/qemu-screenshot.ppm | head -256
+          else
+            echo "WARN: screendump did not produce a file"
+          fi
+        else
+          echo "WARN: QEMU monitor socket not found"
+        fi
+
+    - name: Upload QEMU screenshot
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: qemu-screenshot-${{ matrix.manifest }}
+        path: /tmp/qemu-screenshot.ppm
+        if-no-files-found: ignore
+
     - name: Collect logs on failure
       if: failure()
       run: |
