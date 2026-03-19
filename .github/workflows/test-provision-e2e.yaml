@@ -1,0 +1,616 @@
+name: Provision E2E
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: provision-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/isoboot/isoboot
+
+jobs:
+  build:
+    name: Build & Push (amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Read Alpine version
+      run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
+
+    - name: Generate version
+      id: version
+      run: echo "version=0.0.0-sha.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push isoboot image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        platforms: linux/amd64
+        push: true
+        tags: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build and push dnsmasq image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile.dnsmasq
+        platforms: linux/amd64
+        push: true
+        build-args: ALPINE_VERSION=${{ env.ALPINE_VERSION }}
+        tags: ${{ env.IMAGE }}-dnsmasq:${{ steps.version.outputs.version }}
+        cache-from: type=gha,scope=dnsmasq
+        cache-to: type=gha,mode=max,scope=dnsmasq
+
+    - name: Build and push httpd image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile.httpd
+        platforms: linux/amd64
+        push: true
+        tags: ${{ env.IMAGE }}-httpd:${{ steps.version.outputs.version }}
+        cache-from: type=gha,scope=httpd
+        cache-to: type=gha,mode=max,scope=httpd
+
+    - name: Build and push squid image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile.squid
+        platforms: linux/amd64
+        push: true
+        build-args: ALPINE_VERSION=${{ env.ALPINE_VERSION }}
+        tags: ${{ env.IMAGE }}-squid:${{ steps.version.outputs.version }}
+        cache-from: type=gha,scope=squid
+        cache-to: type=gha,mode=max,scope=squid
+
+    - uses: azure/setup-helm@v4
+
+    - name: Package and push Helm chart
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        sed -i "s/^version:.*/version: ${VERSION}/" charts/isoboot/Chart.yaml
+        sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/isoboot/Chart.yaml
+        helm package charts/isoboot --destination /tmp/charts
+        helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${REGISTRY}/isoboot/charts
+
+  provision-test:
+    name: Provision E2E — ${{ matrix.distro }} ${{ matrix.version }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: "Rocky"
+            version: "10.1"
+            manifest: "rocky-10.1"
+            hostname: "rocky10"
+            mac_hyphen: "02-00-00-ab-cd-01"
+            mac_colon: "02:00:00:ab:cd:01"
+          - distro: "Rocky"
+            version: "9.7"
+            manifest: "rocky-9.7"
+            hostname: "rocky9"
+            mac_hyphen: "02-00-00-ab-cd-02"
+            mac_colon: "02:00:00:ab:cd:02"
+          - distro: "Rocky"
+            version: "8.10"
+            manifest: "rocky-8.10"
+            hostname: "rocky8"
+            mac_hyphen: "02-00-00-ab-cd-03"
+            mac_colon: "02:00:00:ab:cd:03"
+          - distro: "Alma"
+            version: "10.1"
+            manifest: "alma-10.1"
+            hostname: "alma10"
+            mac_hyphen: "02-00-00-ab-cd-04"
+            mac_colon: "02:00:00:ab:cd:04"
+          - distro: "Alma"
+            version: "9.7"
+            manifest: "alma-9.7"
+            hostname: "alma9"
+            mac_hyphen: "02-00-00-ab-cd-05"
+            mac_colon: "02:00:00:ab:cd:05"
+          - distro: "Alma"
+            version: "8.10"
+            manifest: "alma-8.10"
+            hostname: "alma8"
+            mac_hyphen: "02-00-00-ab-cd-06"
+            mac_colon: "02:00:00:ab:cd:06"
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Read Alpine version
+      run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
+
+    # ── Network tools ──────────────────────────────────────────────
+    - name: Install network tools
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf
+
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    # ── PXE network: host=gateway+k3s, ns1=DHCP server ────────────
+    - name: Create PXE bridge
+      run: |
+        sudo ip link add br-pxe type bridge
+        sudo ip addr add 192.168.101.1/24 dev br-pxe
+        sudo ip link set br-pxe up
+        sudo mkdir -p /var/run/netns
+
+    - name: Start DHCP server container (ns1 — 192.168.101.2)
+      run: |
+        docker run -d --name dhcp-srv \
+          --cap-add=NET_ADMIN --cap-add=NET_BIND_SERVICE \
+          alpine:${{ env.ALPINE_VERSION }} sleep infinity
+
+        docker exec dhcp-srv apk add --no-cache dnsmasq
+
+        SRV_PID=$(docker inspect -f '{{.State.Pid}}' dhcp-srv)
+        sudo ln -sf /proc/$SRV_PID/ns/net /var/run/netns/ns1
+
+        sudo ip link add veth-ns1 type veth peer name veth-ns1-br
+        sudo ip link set veth-ns1-br master br-pxe
+        sudo ip link set veth-ns1-br up
+        sudo ip link set veth-ns1 netns "$SRV_PID"
+        sudo ip netns exec ns1 ip addr add 192.168.101.2/24 dev veth-ns1
+        sudo ip netns exec ns1 ip link set veth-ns1 up
+        sudo ip netns exec ns1 ip link set lo up
+
+        docker exec -d dhcp-srv dnsmasq \
+          --no-daemon \
+          --interface=veth-ns1 \
+          --bind-interfaces \
+          --dhcp-range=192.168.101.100,192.168.101.200,255.255.255.0,1h \
+          --dhcp-option=option:router,192.168.101.1 \
+          --dhcp-option=option:dns-server,8.8.8.8 \
+          --log-dhcp \
+          --log-facility=/tmp/dnsmasq.log
+
+        for i in 1 2 3 4 5; do
+          docker exec dhcp-srv pgrep dnsmasq 2>/dev/null && break
+          sleep 1
+        done
+        docker exec dhcp-srv pgrep dnsmasq || { echo "FAIL: dnsmasq not running"; docker logs dhcp-srv; exit 1; }
+        echo "DHCP server running at 192.168.101.2 (ns1)"
+
+    - name: Enable NAT for VM internet access
+      run: |
+        sudo sysctl -w net.ipv4.ip_forward=1
+        sudo iptables -t nat -A POSTROUTING -s 192.168.101.0/24 ! -d 192.168.101.0/24 -j MASQUERADE
+
+    # ── k3s cluster ────────────────────────────────────────────────
+    - name: Create host data directory
+      run: |
+        sudo mkdir -p /data/isoboot
+        sudo chown 65532:65532 /data/isoboot
+
+    - name: Install k3s
+      run: |
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" INSTALL_K3S_CHANNEL="stable" sh -
+        sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+        echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$GITHUB_ENV"
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        kubectl wait --for=condition=Ready node --all --timeout=120s
+
+    - name: Allow PXE bridge traffic through iptables
+      run: |
+        sudo iptables -I FORWARD -i br-pxe -j ACCEPT
+        sudo iptables -I FORWARD -o br-pxe -j ACCEPT
+
+    # ── Deploy isoboot from GHCR ──────────────────────────────────
+    - name: Get k3s node name
+      id: node
+      run: echo "name=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')" >> "$GITHUB_OUTPUT"
+
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - uses: azure/setup-helm@v4
+
+    - name: Helm install from GHCR
+      env:
+        VERSION: ${{ needs.build.outputs.version }}
+        NODE_NAME: ${{ steps.node.outputs.name }}
+      run: |
+        helm install isoboot oci://${REGISTRY}/isoboot/charts/isoboot \
+          --version "${VERSION}" \
+          --namespace isoboot-system \
+          --create-namespace \
+          --set nodeName="${NODE_NAME}" \
+          --set dnsmasq.subnet=192.168.101.0/24 \
+          --set alpineImage=alpine:${ALPINE_VERSION}
+
+    - name: Wait for controller and nginx
+      run: |
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=controller --timeout=120s
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=nginx --timeout=120s
+
+    - name: Wait for httpd
+      run: |
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=httpd --timeout=120s
+        kubectl -n isoboot-system get pods
+
+    - name: Verify CRDs installed
+      run: |
+        kubectl get crd bootartifacts.isoboot.github.io
+        kubectl get crd bootconfigs.isoboot.github.io
+        kubectl get crd machines.isoboot.github.io
+        kubectl get crd provisions.isoboot.github.io
+        kubectl get crd provisionautomations.isoboot.github.io
+
+    # ── Boot artifacts ─────────────────────────────────────────────
+    - name: Wait for iPXE BootArtifact Ready
+      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact isoboot-ipxe
+
+    - name: Wait for dnsmasq pod ready
+      run: |
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=dnsmasq --timeout=180s
+        kubectl -n isoboot-system get pods
+
+    - name: Apply ${{ matrix.distro }} ${{ matrix.version }} example manifest
+      run: kubectl -n isoboot-system apply -f examples/${{ matrix.manifest }}.yaml
+
+    - name: Wait for BootArtifacts Ready
+      run: |
+        ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ matrix.manifest }}-kernel
+        ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ matrix.manifest }}-initrd
+
+    - name: Wait for BootConfig Ready
+      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig ${{ matrix.manifest }}
+
+    # ── Generate SSH keys and password ─────────────────────────────
+    - name: Generate SSH keys and encrypted password
+      run: |
+        ssh-keygen -t ed25519 -N "" -f /tmp/e2e-ssh-key
+        ssh-keygen -t ecdsa -N "" -f /tmp/ssh_host_ecdsa_key
+        ssh-keygen -t ed25519 -N "" -f /tmp/ssh_host_ed25519_key
+        ssh-keygen -t rsa -b 4096 -N "" -f /tmp/ssh_host_rsa_key
+        openssl passwd -6 "e2etest" > /tmp/encrypted-password
+
+    # ── Create provisioning resources ──────────────────────────────
+    - name: Create ConfigMap and Secret
+      run: |
+        kubectl -n isoboot-system create configmap default-user \
+          --from-literal="default_user.username=e2euser" \
+          --from-literal="default_user.password=$(cat /tmp/encrypted-password)" \
+          --from-literal="default_user.ssh_public_key=$(cat /tmp/e2e-ssh-key.pub)"
+
+        kubectl -n isoboot-system create secret generic host-keys \
+          --from-file=ssh_host_ecdsa_key=/tmp/ssh_host_ecdsa_key \
+          --from-file=ssh_host_ed25519_key=/tmp/ssh_host_ed25519_key \
+          --from-file=ssh_host_rsa_key=/tmp/ssh_host_rsa_key
+
+    - name: Create Machine, ProvisionAutomation, and Provision
+      run: |
+        kubectl -n isoboot-system apply -f - <<'EOF'
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Machine
+        metadata:
+          name: qemu-vm1
+        spec:
+          mac: "${{ matrix.mac_hyphen }}"
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: ProvisionAutomation
+        metadata:
+          name: qemu-vm1-automation
+        spec:
+          files:
+            ks.cfg: |
+              lang en_US.UTF-8
+              keyboard us
+              timezone America/Los_Angeles --utc
+              autopart --type=plain
+              clearpart --all --initlabel
+              zerombr
+              user --name={{ index .ConfigMaps "default_user.username" }} --groups=wheel --iscrypted --password={{ index .ConfigMaps "default_user.password" }}
+              {{- if index .ConfigMaps "default_user.ssh_public_key" }}
+              sshkey --username={{ index .ConfigMaps "default_user.username" }} "{{ index .ConfigMaps "default_user.ssh_public_key" }}"
+              {{- end }}
+              network --hostname=${{ matrix.hostname }}
+              eula --agreed
+              reboot
+
+              %pre --log=/var/log/kickstart-pre.log
+              curl -X POST -d "provisionName={{.ProvisionName}}&phase=InProgress" {{.UpdatePhaseURL}}
+              %end
+
+              %post --log=/var/log/kickstart-post.log
+              {{- if index .Secrets "ssh_host_ecdsa_key" }}
+              printf '%s' '{{ index .Secrets "ssh_host_ecdsa_key" }}' > /etc/ssh/ssh_host_ecdsa_key
+              chmod 600 /etc/ssh/ssh_host_ecdsa_key
+              restorecon /etc/ssh/ssh_host_ecdsa_key
+              ssh-keygen -y -f /etc/ssh/ssh_host_ecdsa_key > /etc/ssh/ssh_host_ecdsa_key.pub
+              chmod 644 /etc/ssh/ssh_host_ecdsa_key.pub
+              restorecon /etc/ssh/ssh_host_ecdsa_key.pub
+              {{- end }}
+              {{- if index .Secrets "ssh_host_ed25519_key" }}
+              printf '%s' '{{ index .Secrets "ssh_host_ed25519_key" }}' > /etc/ssh/ssh_host_ed25519_key
+              chmod 600 /etc/ssh/ssh_host_ed25519_key
+              restorecon /etc/ssh/ssh_host_ed25519_key
+              ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
+              chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
+              restorecon /etc/ssh/ssh_host_ed25519_key
+              {{- end }}
+              {{- if index .Secrets "ssh_host_rsa_key" }}
+              printf '%s' '{{ index .Secrets "ssh_host_rsa_key" }}' > /etc/ssh/ssh_host_rsa_key
+              chmod 600 /etc/ssh/ssh_host_rsa_key
+              restorecon /etc/ssh/ssh_host_rsa_key
+              ssh-keygen -y -f /etc/ssh/ssh_host_rsa_key > /etc/ssh/ssh_host_rsa_key.pub
+              chmod 644 /etc/ssh/ssh_host_rsa_key.pub
+              restorecon /etc/ssh/ssh_host_rsa_key
+              {{- end }}
+              curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
+              %end
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Provision
+        metadata:
+          name: qemu-vm1-provision
+        spec:
+          machineRef: qemu-vm1
+          bootConfigRef: ${{ matrix.manifest }}
+          provisionAutomationRef: qemu-vm1-automation
+          configMaps:
+            - default-user
+          secrets:
+            - host-keys
+        EOF
+
+        kubectl -n isoboot-system patch provision qemu-vm1-provision \
+          --subresource=status --type=merge -p '{"status":{"phase":"Pending"}}'
+
+    # ── PXE boot QEMU VM ──────────────────────────────────────────
+    - name: Boot QEMU VM (UEFI PXE)
+      run: |
+        OVMF_CODE=""
+        for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
+          [ -f "$f" ] && OVMF_CODE="$f" && break
+        done
+        [ -n "$OVMF_CODE" ] || { echo "FAIL: OVMF firmware not found"; exit 1; }
+
+        OVMF_VARS_SRC=""
+        for f in /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd; do
+          [ -f "$f" ] && OVMF_VARS_SRC="$f" && break
+        done
+        [ -n "$OVMF_VARS_SRC" ] || { echo "FAIL: OVMF vars not found"; exit 1; }
+        cp "$OVMF_VARS_SRC" /tmp/ovmf-vars.fd
+
+        sudo ip tuntap add dev tap-vm mode tap
+        sudo ip link set tap-vm master br-pxe
+        sudo ip link set tap-vm up
+
+        qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 20G
+
+        sudo qemu-system-x86_64 \
+          -enable-kvm \
+          -m 4096 \
+          -cpu host \
+          -smp 2 \
+          -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+          -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
+          -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2 \
+          -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
+          -device virtio-net-pci,netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }} \
+          -boot n \
+          -display none \
+          -serial file:/tmp/qemu-serial.log \
+          -daemonize \
+          -pidfile /tmp/qemu-pxe.pid
+
+        echo "QEMU VM launched (tap-vm on br-pxe, MAC=${{ matrix.mac_colon }})"
+
+    # ── Monitor DHCP and PXE boot ──────────────────────────────────
+    - name: Wait for VM DHCP lease
+      run: |
+        echo "Waiting for VM to get DHCP lease..."
+        VM_IP=""
+        for i in $(seq 1 60); do
+          VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
+            | grep -i "${{ matrix.mac_colon }}" | tail -1 \
+            | grep -oP '192\.168\.101\.\d+' | head -1)
+          [ -n "$VM_IP" ] && break
+          sleep 5
+        done
+        [ -n "$VM_IP" ] || { echo "FAIL: VM did not get DHCP lease"; exit 1; }
+        echo "VM IP: $VM_IP"
+        echo "$VM_IP" > /tmp/vm-ip
+
+    - name: Verify PXE boot downloaded kernel and initrd
+      run: |
+        echo "Waiting for iPXE to download kernel and initrd..."
+        NGINX_POD=""
+        for i in $(seq 1 30); do
+          NGINX_POD=$(kubectl -n isoboot-system get pod \
+            -l app.kubernetes.io/component=nginx -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          [ -n "$NGINX_POD" ] && break
+          sleep 2
+        done
+
+        for i in $(seq 1 60); do
+          if kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null \
+              | grep "GET /static/${{ matrix.manifest }}/kernel/vmlinuz" \
+              | grep '" 200 ' | grep -q 'iPXE/'; then
+            echo "Kernel downloaded by iPXE"
+            break
+          fi
+          sleep 5
+        done
+
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
+          | grep "GET /static/${{ matrix.manifest }}/kernel/vmlinuz" \
+          | grep '" 200 ' | grep 'iPXE/' \
+          || { echo "FAIL: no iPXE HTTP 200 for kernel download"; exit 1; }
+
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
+          | grep "GET /static/${{ matrix.manifest }}/initrd/initrd.img" \
+          | grep '" 200 ' | grep 'iPXE/' \
+          || { echo "FAIL: no iPXE HTTP 200 for initrd download"; exit 1; }
+
+        echo "PXE boot successfully downloaded kernel and initrd"
+
+    # ── Wait for provisioning to complete ──────────────────────────
+    - name: Wait for Provision phase InProgress
+      run: |
+        echo "Waiting for Provision phase InProgress..."
+        for i in $(seq 1 120); do
+          PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
+            -o jsonpath='{.status.phase}' 2>/dev/null)
+          echo "  phase=$PHASE (attempt $i)"
+          [ "$PHASE" = "InProgress" ] || [ "$PHASE" = "Complete" ] && break
+          sleep 10
+        done
+        PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
+          -o jsonpath='{.status.phase}')
+        [ "$PHASE" = "InProgress" ] || [ "$PHASE" = "Complete" ] \
+          || { echo "FAIL: provision not InProgress, got $PHASE"; exit 1; }
+        echo "Provision is $PHASE"
+
+    - name: Wait for Provision phase Complete
+      timeout-minutes: 35
+      run: |
+        echo "Waiting for Provision phase Complete..."
+        for i in $(seq 1 210); do
+          PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
+            -o jsonpath='{.status.phase}' 2>/dev/null)
+          echo "  phase=$PHASE (attempt $i)"
+          [ "$PHASE" = "Complete" ] && break
+          [ "$PHASE" = "Failed" ] && { echo "FAIL: provision failed"; exit 1; }
+          sleep 10
+        done
+        PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
+          -o jsonpath='{.status.phase}')
+        [ "$PHASE" = "Complete" ] || { echo "FAIL: provision not Complete, got $PHASE"; exit 1; }
+        echo "Provision complete!"
+
+    # ── SSH into VM and verify ─────────────────────────────────────
+    - name: Verify VM via SSH
+      run: |
+        VM_IP=$(cat /tmp/vm-ip)
+        echo "Waiting for SSH on $VM_IP..."
+
+        for i in $(seq 1 60); do
+          ssh -i /tmp/e2e-ssh-key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/tmp/e2e-known-hosts \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            e2euser@"$VM_IP" true 2>/dev/null && break
+          sleep 5
+        done
+
+        # Verify hostname
+        ACTUAL_HOSTNAME=$(ssh -i /tmp/e2e-ssh-key \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/tmp/e2e-known-hosts \
+          e2euser@"$VM_IP" hostname)
+        echo "VM hostname: $ACTUAL_HOSTNAME"
+        [ "$ACTUAL_HOSTNAME" = "${{ matrix.hostname }}" ] \
+          || { echo "FAIL: expected ${{ matrix.hostname }}, got $ACTUAL_HOSTNAME"; exit 1; }
+
+        # Verify SSH host key matches generated key
+        EXPECTED_FP=$(ssh-keygen -lf /tmp/ssh_host_ed25519_key.pub | awk '{print $2}')
+        ACTUAL_FP=$(ssh-keyscan -t ed25519 "$VM_IP" 2>/dev/null | ssh-keygen -lf - | awk '{print $2}')
+        echo "Expected ed25519 fingerprint: $EXPECTED_FP"
+        echo "Actual ed25519 fingerprint: $ACTUAL_FP"
+        [ "$EXPECTED_FP" = "$ACTUAL_FP" ] \
+          || { echo "FAIL: SSH host key fingerprint mismatch"; exit 1; }
+
+        echo "SSH verification passed!"
+
+    # ── Failure diagnostics ────────────────────────────────────────
+    - name: Collect logs on failure
+      if: failure()
+      run: |
+        echo "=== Bridge ==="
+        ip addr show br-pxe 2>/dev/null || true
+        bridge link show master br-pxe 2>/dev/null || true
+        echo "=== DHCP server (ns1) ==="
+        sudo ip netns exec ns1 ip addr 2>/dev/null || true
+        echo "=== dnsmasq DHCP logs ==="
+        docker exec dhcp-srv cat /tmp/dnsmasq.log 2>/dev/null || true
+        echo "=== dnsmasq container logs ==="
+        docker logs dhcp-srv 2>/dev/null || true
+        echo "=== QEMU serial log ==="
+        cat /tmp/qemu-serial.log 2>/dev/null || true
+        echo "=== BootArtifact status ==="
+        kubectl -n isoboot-system get bootartifact -o yaml 2>/dev/null || true
+        echo "=== BootConfig status ==="
+        kubectl -n isoboot-system get bootconfig -o yaml 2>/dev/null || true
+        echo "=== Provision status ==="
+        kubectl -n isoboot-system get provision -o yaml 2>/dev/null || true
+        echo "=== ProvisionAutomation status ==="
+        kubectl -n isoboot-system get provisionautomation -o yaml 2>/dev/null || true
+        echo "=== ConfigMap ==="
+        kubectl -n isoboot-system get configmap default-user -o yaml 2>/dev/null || true
+        echo "=== Controller logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --tail=100 2>/dev/null || true
+        echo "=== httpd logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=httpd --tail=50 2>/dev/null || true
+        echo "=== Nginx logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=nginx --tail=50 2>/dev/null || true
+        echo "=== Nginx resolve-dns init container logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=nginx -c resolve-dns --tail=50 2>/dev/null || true
+        echo "=== Nginx access log ==="
+        NGINX_POD=$(kubectl -n isoboot-system get pod -l app.kubernetes.io/component=nginx \
+          -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null || true
+        echo "=== dnsmasq pod logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=dnsmasq --tail=100 2>/dev/null || true
+        echo "=== dnsmasq generate-boot-ipxe init container logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=dnsmasq -c generate-boot-ipxe --tail=50 2>/dev/null || true
+        echo "=== Events ==="
+        kubectl -n isoboot-system get events --sort-by='.lastTimestamp' 2>/dev/null || true
+        echo "=== Host data directory ==="
+        find /data/isoboot -type f -o -type l 2>/dev/null || true
+        echo "=== Describe pods ==="
+        kubectl -n isoboot-system describe pod -l app.kubernetes.io/name=isoboot 2>/dev/null || true
+
+    - name: Clean up
+      if: always()
+      run: |
+        [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+        sudo ip link del tap-vm 2>/dev/null || true
+        /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
+        docker rm -f dhcp-srv 2>/dev/null || true
+        sudo rm -f /var/run/netns/ns1
+        sudo ip link del br-pxe 2>/dev/null || true
