@@ -189,20 +189,10 @@ func conditionalBootHandler(
 		slog.Info("conditional-boot request", "mac", mac)
 
 		if directive.KernelArgs != "" {
-			host := r.Header.Get("X-Forwarded-Host")
-			if host == "" {
-				host = r.Host
-			}
+			host := resolveHost(r)
 			nodeIP := host
 			if h, _, err := net.SplitHostPort(nodeIP); err == nil {
 				nodeIP = h
-			}
-			if port := r.Header.Get("X-Forwarded-Port"); port != "" {
-				h, _, _ := net.SplitHostPort(host)
-				if h != "" {
-					host = h
-				}
-				host = net.JoinHostPort(host, port)
 			}
 			baseURL := fmt.Sprintf("http://%s/dynamic/automation/%s",
 				host, directive.ProvisionName)
@@ -242,6 +232,23 @@ func conditionalBootHandler(
 	}
 }
 
+// resolveHost returns the effective host:port from the request,
+// honoring X-Forwarded-Host and X-Forwarded-Port headers.
+func resolveHost(r *http.Request) string {
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	if port := r.Header.Get("X-Forwarded-Port"); port != "" {
+		h, _, _ := net.SplitHostPort(host)
+		if h != "" {
+			host = h
+		}
+		host = net.JoinHostPort(host, port)
+	}
+	return host
+}
+
 var nameRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 
 func automationFileHandler(render renderAutomationFunc) http.HandlerFunc {
@@ -258,18 +265,8 @@ func automationFileHandler(render renderAutomationFunc) http.HandlerFunc {
 			return
 		}
 
-		host := r.Header.Get("X-Forwarded-Host")
-		if host == "" {
-			host = r.Host
-		}
-		if port := r.Header.Get("X-Forwarded-Port"); port != "" {
-			h, _, _ := net.SplitHostPort(host)
-			if h != "" {
-				host = h
-			}
-			host = net.JoinHostPort(host, port)
-		}
-		statusURL := fmt.Sprintf("http://%s/dynamic/status", host)
+		statusURL := fmt.Sprintf(
+			"http://%s/dynamic/status", resolveHost(r))
 
 		body, err := render(r.Context(), provisionName, fileName, statusURL)
 		if err != nil {

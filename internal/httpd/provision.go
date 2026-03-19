@@ -87,9 +87,10 @@ func IsProvisionNotFound(err error) bool {
 }
 
 // IsProvisionPhaseError reports whether err indicates a phase
-// transition error.
+// transition error or a conflict from concurrent updates.
 func IsProvisionPhaseError(err error) bool {
-	return errors.Is(err, ErrInvalidPhaseTransition)
+	return errors.Is(err, ErrInvalidPhaseTransition) ||
+		apierrors.IsConflict(err)
 }
 
 // PendingProvisionForMAC returns the Provision with status.phase == Pending

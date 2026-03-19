@@ -12,6 +12,9 @@ import (
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/httpd"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 func fixedDirective() bootDirectiveFunc {
@@ -263,6 +266,22 @@ func TestUpdateStatus_StatusCodes(t *testing.T) {
 			},
 			"provisionName=my-provision&phase=Complete",
 			http.StatusConflict,
+		},
+		{
+			"not found",
+			func(_ context.Context, _ string,
+				_ isobootgithubiov1alpha1.ProvisionPhase, _ string,
+			) error {
+				return fmt.Errorf("getting provision %q: %w",
+					"missing",
+					apierrors.NewNotFound(
+						schema.GroupResource{
+							Group:    "isoboot.github.io",
+							Resource: "provisions",
+						}, "missing"))
+			},
+			"provisionName=missing&phase=InProgress",
+			http.StatusNotFound,
 		},
 		{
 			"internal error",
