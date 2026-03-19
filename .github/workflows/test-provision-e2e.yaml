@@ -338,11 +338,11 @@ jobs:
               lang en_US.UTF-8
               keyboard us
               timezone America/Los_Angeles --utc
-              ignoredisk --only-use=sda
+              ignoredisk --only-use=vda
               autopart --type=plain
-              clearpart --all --initlabel --drives=sda
+              clearpart --all --initlabel --drives=vda
               zerombr
-              bootloader --location=mbr --boot-drive=sda
+              bootloader --location=mbr --boot-drive=vda
               user --name={{ index .ConfigMaps "default_user.username" }} --groups=wheel --iscrypted --password={{ index .ConfigMaps "default_user.password" }}
               {{- if index .ConfigMaps "default_user.ssh_public_key" }}
               sshkey --username={{ index .ConfigMaps "default_user.username" }} "{{ index .ConfigMaps "default_user.ssh_public_key" }}"
@@ -433,7 +433,7 @@ jobs:
           -smp 2 \
           -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
           -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
-          -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2 \
+          -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=virtio \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
           -device virtio-net-pci,netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }} \
           -boot n \
