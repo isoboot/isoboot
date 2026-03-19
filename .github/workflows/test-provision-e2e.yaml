@@ -501,9 +501,10 @@ jobs:
 
     # ── Wait for provisioning to complete ──────────────────────────
     - name: Wait for Provision phase InProgress
+      timeout-minutes: 10
       run: |
         echo "Waiting for Provision phase InProgress..."
-        for i in $(seq 1 120); do
+        for i in $(seq 1 60); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
           echo "  phase=$PHASE (attempt $i)"
@@ -517,10 +518,10 @@ jobs:
         echo "Provision is $PHASE"
 
     - name: Wait for Provision phase Complete
-      timeout-minutes: 20
+      timeout-minutes: 10
       run: |
         echo "Waiting for Provision phase Complete..."
-        for i in $(seq 1 120); do
+        for i in $(seq 1 60); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
           echo "  phase=$PHASE (attempt $i)"
@@ -570,18 +571,15 @@ jobs:
 
     # ── Failure diagnostics ────────────────────────────────────────
     - name: Capture QEMU screenshot
-      if: failure()
+      if: always()
+      shell: bash {0}
       run: |
         if [ -S /tmp/qemu-monitor.sock ]; then
-          echo "screendump /tmp/qemu-screenshot.ppm" | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock || true
-          sleep 1
+          echo "screendump /tmp/qemu-screenshot.ppm" | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock
+          sleep 2
           if [ -f /tmp/qemu-screenshot.ppm ]; then
             echo "=== QEMU screenshot captured ==="
             ls -la /tmp/qemu-screenshot.ppm
-            echo "=== PPM header ==="
-            head -3 /tmp/qemu-screenshot.ppm
-            echo "=== Framebuffer hex dump (first 4KB) ==="
-            xxd /tmp/qemu-screenshot.ppm | head -256
           else
             echo "WARN: screendump did not produce a file"
           fi
@@ -590,7 +588,7 @@ jobs:
         fi
 
     - name: Upload QEMU screenshot
-      if: failure()
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: qemu-screenshot-${{ matrix.manifest }}
