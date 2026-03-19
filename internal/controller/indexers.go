@@ -38,7 +38,7 @@ const ProvisionMachineRefField = "spec.machineRef"
 const MachineSpecMACField = "spec.mac"
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions,verbs=get;list;watch
-// +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions/status,verbs=get
+// +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions/status,verbs=get;update
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=machines,verbs=get;list;watch
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootartifacts;bootconfigs;provisionautomations,verbs=get
 // +kubebuilder:rbac:groups="",resources=configmaps;secrets,verbs=get

@@ -146,6 +146,13 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - provisions/status
+  verbs:
+  - get
+  - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

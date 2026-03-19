@@ -37,8 +37,10 @@ var ErrFileNotFound = errors.New("file not found")
 
 // TemplateData holds the merged data passed to automation file templates.
 type TemplateData struct {
-	ConfigMaps map[string]string
-	Secrets    map[string]string
+	ConfigMaps     map[string]string
+	Secrets        map[string]string
+	UpdatePhaseURL string
+	ProvisionName  string
 }
 
 // IsAutomationNotFound reports whether err indicates a not-found condition
@@ -51,7 +53,7 @@ func IsAutomationNotFound(err error) bool {
 // ProvisionAutomation, and renders the named file template using merged
 // ConfigMap and Secret data from the Provision.
 func RenderAutomationFile(
-	ctx context.Context, c client.Client, ns, provisionName, fileName string,
+	ctx context.Context, c client.Client, ns, provisionName, fileName, statusURL string,
 ) (string, error) {
 	var provision isobootgithubiov1alpha1.Provision
 	if err := c.Get(ctx, client.ObjectKey{
@@ -80,6 +82,8 @@ func RenderAutomationFile(
 	if err != nil {
 		return "", err
 	}
+	data.UpdatePhaseURL = statusURL
+	data.ProvisionName = provisionName
 
 	tmpl, err := template.New(fileName).
 		Option("missingkey=error").Parse(tmplContent)

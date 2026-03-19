@@ -205,6 +205,19 @@ var _ = Describe("RenderKernelArgs", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("executing kernel args template"))
 	})
+
+	It("renders UpdatePhaseURL and ProvisionName", func() {
+		result, err := RenderKernelArgs(
+			"ip=dhcp inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg inst.status={{.UpdatePhaseURL}} inst.provname={{.ProvisionName}}",
+			KernelArgsData{
+				ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
+				UpdatePhaseURL:             "http://10.0.0.1:8080/dynamic/status",
+				ProvisionName:              "my-provision",
+			})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(ContainSubstring("inst.status=http://10.0.0.1:8080/dynamic/status"))
+		Expect(result).To(ContainSubstring("inst.provname=my-provision"))
+	})
 })
 
 var _ = Describe("IsDuplicateError", func() {

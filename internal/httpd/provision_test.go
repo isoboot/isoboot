@@ -19,6 +19,7 @@ package httpd
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
@@ -166,5 +167,98 @@ var _ = Describe("PendingProvisionForMAC", func() {
 			return err
 		}).Should(MatchError(ContainSubstring(
 			"multiple pending provisions")))
+	})
+})
+
+var _ = Describe("UpdateProvisionPhase", func() {
+	const ns = "default"
+
+	It("transitions Pending to InProgress", func() {
+		p := createProvision("up-p1", "up-m1", "bootconfig-1",
+			isobootgithubiov1alpha1.ProvisionPhasePending)
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+		}()
+
+		Expect(UpdateProvisionPhase(ctx, k8sClient, ns, "up-p1",
+			isobootgithubiov1alpha1.ProvisionPhaseInProgress,
+			"Installation in progress")).To(Succeed())
+
+		var updated isobootgithubiov1alpha1.Provision
+		Expect(k8sClient.Get(ctx,
+			client.ObjectKeyFromObject(p), &updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(
+			isobootgithubiov1alpha1.ProvisionPhaseInProgress))
+		Expect(updated.Status.Message).To(Equal(
+			"Installation in progress"))
+		Expect(updated.Status.LastUpdated).NotTo(BeNil())
+	})
+
+	It("transitions InProgress to Complete", func() {
+		p := createProvision("up-p2", "up-m2", "bootconfig-1",
+			isobootgithubiov1alpha1.ProvisionPhaseInProgress)
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+		}()
+
+		Expect(UpdateProvisionPhase(ctx, k8sClient, ns, "up-p2",
+			isobootgithubiov1alpha1.ProvisionPhaseComplete,
+			"Installation complete")).To(Succeed())
+
+		var updated isobootgithubiov1alpha1.Provision
+		Expect(k8sClient.Get(ctx,
+			client.ObjectKeyFromObject(p), &updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(
+			isobootgithubiov1alpha1.ProvisionPhaseComplete))
+		Expect(updated.Status.Message).To(Equal(
+			"Installation complete"))
+		Expect(updated.Status.LastUpdated).NotTo(BeNil())
+	})
+
+	It("rejects Pending to Complete", func() {
+		p := createProvision("up-p3", "up-m3", "bootconfig-1",
+			isobootgithubiov1alpha1.ProvisionPhasePending)
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+		}()
+
+		err := UpdateProvisionPhase(ctx, k8sClient, ns, "up-p3",
+			isobootgithubiov1alpha1.ProvisionPhaseComplete, "")
+		Expect(err).To(MatchError(
+			ContainSubstring("invalid phase transition")))
+	})
+
+	It("rejects Complete to InProgress", func() {
+		p := createProvision("up-p4", "up-m4", "bootconfig-1",
+			isobootgithubiov1alpha1.ProvisionPhaseComplete)
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+		}()
+
+		err := UpdateProvisionPhase(ctx, k8sClient, ns, "up-p4",
+			isobootgithubiov1alpha1.ProvisionPhaseInProgress, "")
+		Expect(err).To(MatchError(
+			ContainSubstring("invalid phase transition")))
+	})
+
+	It("rejects unsupported target phase", func() {
+		p := createProvision("up-p5", "up-m5", "bootconfig-1",
+			isobootgithubiov1alpha1.ProvisionPhasePending)
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+		}()
+
+		err := UpdateProvisionPhase(ctx, k8sClient, ns, "up-p5",
+			isobootgithubiov1alpha1.ProvisionPhaseFailed, "")
+		Expect(err).To(MatchError(
+			ContainSubstring("invalid phase transition")))
+	})
+
+	It("returns error when provision not found", func() {
+		err := UpdateProvisionPhase(ctx, k8sClient, ns,
+			"up-nonexistent",
+			isobootgithubiov1alpha1.ProvisionPhaseInProgress, "")
+		Expect(err).To(HaveOccurred())
+		Expect(IsProvisionNotFound(err)).To(BeTrue())
 	})
 })
