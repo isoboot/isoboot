@@ -119,12 +119,6 @@ jobs:
             hostname: "rocky9"
             mac_hyphen: "02-00-00-ab-cd-02"
             mac_colon: "02:00:00:ab:cd:02"
-          - distro: "Rocky"
-            version: "8.10"
-            manifest: "rocky-8.10"
-            hostname: "rocky8"
-            mac_hyphen: "02-00-00-ab-cd-03"
-            mac_colon: "02:00:00:ab:cd:03"
           - distro: "Alma"
             version: "10.1"
             manifest: "alma-10.1"
@@ -137,12 +131,6 @@ jobs:
             hostname: "alma9"
             mac_hyphen: "02-00-00-ab-cd-05"
             mac_colon: "02:00:00:ab:cd:05"
-          - distro: "Alma"
-            version: "8.10"
-            manifest: "alma-8.10"
-            hostname: "alma8"
-            mac_hyphen: "02-00-00-ab-cd-06"
-            mac_colon: "02:00:00:ab:cd:06"
     steps:
     - uses: actions/checkout@v4
 
@@ -346,12 +334,15 @@ jobs:
         spec:
           files:
             ks.cfg: |
+              text
               lang en_US.UTF-8
               keyboard us
               timezone America/Los_Angeles --utc
+              ignoredisk --only-use=sda
               autopart --type=plain
-              clearpart --all --initlabel
+              clearpart --all --initlabel --drives=sda
               zerombr
+              bootloader --location=mbr --boot-drive=sda
               user --name={{ index .ConfigMaps "default_user.username" }} --groups=wheel --iscrypted --password={{ index .ConfigMaps "default_user.password" }}
               {{- if index .ConfigMaps "default_user.ssh_public_key" }}
               sshkey --username={{ index .ConfigMaps "default_user.username" }} "{{ index .ConfigMaps "default_user.ssh_public_key" }}"
@@ -359,6 +350,10 @@ jobs:
               network --hostname=${{ matrix.hostname }}
               eula --agreed
               reboot
+
+              %packages
+              @core
+              %end
 
               %pre --log=/var/log/kickstart-pre.log
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=InProgress" {{.UpdatePhaseURL}}
