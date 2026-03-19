@@ -1,12 +1,29 @@
 # Changelog
 
+## v0.0.2-rc3
+
+- Add `POST /dynamic/status` endpoint for provision phase updates
+- Add `{{.UpdatePhaseURL}}` and `{{.ProvisionName}}` template variables
+- Enforce phase transitions: Pending -> InProgress -> Complete
+- Extract `resolveHost()` helper for X-Forwarded header resolution
+
+## v0.0.2-rc2
+
+- Split Squid access_log conditional to separate lines
+- Keep Squid cache log always on
+- Add Squid log toggle settings
+
+## v0.0.2-rc1
+
+- Log Squid access and cache to files
+- Use HTTP repo URL for Squid caching
+
 ## v0.0.1
 
 - Rocky Linux 10.1 fully automated installation tested with a 7-line
   kickstart file (lang, keyboard, timezone, autopart, clearpart, zerombr, user)
 - Known limitations: no squid cache (#349), SSH host keys not tested (#350),
-  hostname not tested (#351), SSH public key not tested (#352),
-  call home provision phase update not implemented (#353)
+  hostname not tested (#351), SSH public key not tested (#352)
 
 ## v0.0.1-rc12
 
