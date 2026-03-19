@@ -207,7 +207,7 @@ jobs:
     - name: Enable NAT for VM internet access
       run: |
         sudo sysctl -w net.ipv4.ip_forward=1
-        sudo iptables -t nat -A POSTROUTING -s 192.168.101.0/24 ! -d 192.168.101.0/24 -j MASQUERADE
+        sudo iptables -t nat -A POSTROUTING -s 192.168.101.0/24 ! -o br-pxe -j MASQUERADE
 
     # ── k3s cluster ────────────────────────────────────────────────
     - name: Create host data directory
@@ -257,13 +257,23 @@ jobs:
 
     - name: Wait for controller and nginx
       run: |
-        kubectl -n isoboot-system wait --for=condition=Ready \
-          pod -l app.kubernetes.io/component=controller --timeout=120s
-        kubectl -n isoboot-system wait --for=condition=Ready \
-          pod -l app.kubernetes.io/component=nginx --timeout=120s
+        for label in controller nginx; do
+          echo "Waiting for $label pod to exist..."
+          for i in $(seq 1 30); do
+            kubectl -n isoboot-system get pod -l "app.kubernetes.io/component=$label" 2>/dev/null | grep -q . && break
+            sleep 2
+          done
+          kubectl -n isoboot-system wait --for=condition=Ready \
+            pod -l "app.kubernetes.io/component=$label" --timeout=120s
+        done
 
     - name: Wait for httpd
       run: |
+        echo "Waiting for httpd pod to exist..."
+        for i in $(seq 1 30); do
+          kubectl -n isoboot-system get pod -l app.kubernetes.io/component=httpd 2>/dev/null | grep -q . && break
+          sleep 2
+        done
         kubectl -n isoboot-system wait --for=condition=Ready \
           pod -l app.kubernetes.io/component=httpd --timeout=120s
         kubectl -n isoboot-system get pods
@@ -369,7 +379,7 @@ jobs:
               restorecon /etc/ssh/ssh_host_ed25519_key
               ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
               chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
-              restorecon /etc/ssh/ssh_host_ed25519_key
+              restorecon /etc/ssh/ssh_host_ed25519_key.pub
               {{- end }}
               {{- if index .Secrets "ssh_host_rsa_key" }}
               printf '%s' '{{ index .Secrets "ssh_host_rsa_key" }}' > /etc/ssh/ssh_host_rsa_key
@@ -377,7 +387,7 @@ jobs:
               restorecon /etc/ssh/ssh_host_rsa_key
               ssh-keygen -y -f /etc/ssh/ssh_host_rsa_key > /etc/ssh/ssh_host_rsa_key.pub
               chmod 644 /etc/ssh/ssh_host_rsa_key.pub
-              restorecon /etc/ssh/ssh_host_rsa_key
+              restorecon /etc/ssh/ssh_host_rsa_key.pub
               {{- end }}
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
               %end
@@ -592,8 +602,8 @@ jobs:
         kubectl -n isoboot-system logs -l app.kubernetes.io/component=nginx -c resolve-dns --tail=50 2>/dev/null || true
         echo "=== Nginx access log ==="
         NGINX_POD=$(kubectl -n isoboot-system get pod -l app.kubernetes.io/component=nginx \
-          -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null || true
+          -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
+        [ -n "$NGINX_POD" ] && kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null || true
         echo "=== dnsmasq pod logs ==="
         kubectl -n isoboot-system logs -l app.kubernetes.io/component=dnsmasq --tail=100 2>/dev/null || true
         echo "=== dnsmasq generate-boot-ipxe init container logs ==="
