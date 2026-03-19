@@ -42,6 +42,8 @@ type BootDirective struct {
 type KernelArgsData struct {
 	ProvisionAutomationBaseURL string
 	ProxyURL                   string
+	UpdatePhaseURL             string
+	ProvisionName              string
 }
 
 // RenderKernelArgs renders kernel args as a Go template with the given data.

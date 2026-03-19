@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/httpd"
 )
 
@@ -221,6 +222,100 @@ func TestConditionalBoot_TemplateError(t *testing.T) {
 
 	if w.Result().StatusCode != http.StatusInternalServerError {
 		t.Errorf("expected 500, got: %d", w.Result().StatusCode)
+	}
+}
+
+func noopUpdatePhase() updatePhaseFunc {
+	return func(_ context.Context, _ string,
+		_ isobootgithubiov1alpha1.ProvisionPhase, _ string,
+	) error {
+		return nil
+	}
+}
+
+func TestUpdateStatus_StatusCodes(t *testing.T) {
+	tests := []struct {
+		name       string
+		update     updatePhaseFunc
+		body       string
+		wantStatus int
+	}{
+		{
+			"ok InProgress",
+			noopUpdatePhase(),
+			"provisionName=my-provision&phase=InProgress",
+			http.StatusOK,
+		},
+		{
+			"ok Complete",
+			noopUpdatePhase(),
+			"provisionName=my-provision&phase=Complete",
+			http.StatusOK,
+		},
+		{
+			"wrong phase",
+			func(_ context.Context, _ string,
+				_ isobootgithubiov1alpha1.ProvisionPhase, _ string,
+			) error {
+				return fmt.Errorf(
+					"%w: cannot transition from Pending to Complete",
+					httpd.ErrInvalidPhaseTransition)
+			},
+			"provisionName=my-provision&phase=Complete",
+			http.StatusConflict,
+		},
+		{
+			"internal error",
+			func(_ context.Context, _ string,
+				_ isobootgithubiov1alpha1.ProvisionPhase, _ string,
+			) error {
+				return errors.New("connection refused")
+			},
+			"provisionName=my-provision&phase=InProgress",
+			http.StatusInternalServerError,
+		},
+		{
+			"missing provisionName",
+			noopUpdatePhase(),
+			"phase=InProgress",
+			http.StatusBadRequest,
+		},
+		{
+			"missing phase",
+			noopUpdatePhase(),
+			"provisionName=my-provision",
+			http.StatusBadRequest,
+		},
+		{
+			"invalid phase",
+			noopUpdatePhase(),
+			"provisionName=my-provision&phase=Failed",
+			http.StatusBadRequest,
+		},
+		{
+			"invalid name",
+			noopUpdatePhase(),
+			"provisionName=INVALID_NAME&phase=InProgress",
+			http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := updateStatusHandler(tt.update)
+			req := httptest.NewRequest(http.MethodPost, "/status",
+				strings.NewReader(tt.body))
+			req.Header.Set("Content-Type",
+				"application/x-www-form-urlencoded")
+			w := httptest.NewRecorder()
+
+			handler(w, req)
+
+			if w.Result().StatusCode != tt.wantStatus {
+				t.Errorf("expected %d, got: %d",
+					tt.wantStatus, w.Result().StatusCode)
+			}
+		})
 	}
 }
 

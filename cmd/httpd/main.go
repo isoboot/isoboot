@@ -32,7 +32,11 @@ import (
 var macRegexp = regexp.MustCompile(`^([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$`)
 
 type bootDirectiveFunc func(ctx context.Context, mac string) (*httpd.BootDirective, error)
-type renderAutomationFunc func(ctx context.Context, provisionName, fileName string) (string, error)
+type renderAutomationFunc func(ctx context.Context, provisionName, fileName, statusURL string) (string, error)
+type updatePhaseFunc func(
+	ctx context.Context, provisionName string,
+	phase isobootgithubiov1alpha1.ProvisionPhase, message string,
+) error
 
 func main() {
 	listenAddr := flag.String("listen-addr", ":8080", "address to listen on")
@@ -94,15 +98,24 @@ func main() {
 	}, proxyPort)
 
 	renderFile := func(
-		reqCtx context.Context, provisionName, fileName string,
+		reqCtx context.Context, provisionName, fileName, statusURL string,
 	) (string, error) {
-		return httpd.RenderAutomationFile(reqCtx, c, ns, provisionName, fileName)
+		return httpd.RenderAutomationFile(reqCtx, c, ns, provisionName, fileName, statusURL)
 	}
 	automationHandler := automationFileHandler(renderFile)
+
+	updatePhase := func(
+		reqCtx context.Context, provisionName string,
+		phase isobootgithubiov1alpha1.ProvisionPhase, message string,
+	) error {
+		return httpd.UpdateProvisionPhase(reqCtx, c, ns, provisionName, phase, message)
+	}
+	statusHandler := updateStatusHandler(updatePhase)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /conditional-boot", handler)
 	mux.HandleFunc("GET /automation/{provisionName}/{fileName}", automationHandler)
+	mux.HandleFunc("POST /status", statusHandler)
 	mux.HandleFunc("GET /healthz", healthzHandler)
 
 	srv := &http.Server{
@@ -142,7 +155,9 @@ func main() {
 	}
 }
 
-func conditionalBootHandler(getDirective bootDirectiveFunc, proxyPort string) http.HandlerFunc {
+func conditionalBootHandler(
+	getDirective bootDirectiveFunc, proxyPort string,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		mac := r.URL.Query().Get("mac")
 		if mac == "" {
@@ -191,6 +206,7 @@ func conditionalBootHandler(getDirective bootDirectiveFunc, proxyPort string) ht
 			}
 			baseURL := fmt.Sprintf("http://%s/dynamic/automation/%s",
 				host, directive.ProvisionName)
+			statusURL := fmt.Sprintf("http://%s/dynamic/status", host)
 			proxyURL := ""
 			if proxyPort != "" {
 				proxyURL = fmt.Sprintf("http://%s:%s", nodeIP, proxyPort)
@@ -199,6 +215,8 @@ func conditionalBootHandler(getDirective bootDirectiveFunc, proxyPort string) ht
 				directive.KernelArgs, httpd.KernelArgsData{
 					ProvisionAutomationBaseURL: baseURL,
 					ProxyURL:                   proxyURL,
+					UpdatePhaseURL:             statusURL,
+					ProvisionName:              directive.ProvisionName,
 				})
 			if err != nil {
 				slog.Error("kernel args template failed",
@@ -240,7 +258,20 @@ func automationFileHandler(render renderAutomationFunc) http.HandlerFunc {
 			return
 		}
 
-		body, err := render(r.Context(), provisionName, fileName)
+		host := r.Header.Get("X-Forwarded-Host")
+		if host == "" {
+			host = r.Host
+		}
+		if port := r.Header.Get("X-Forwarded-Port"); port != "" {
+			h, _, _ := net.SplitHostPort(host)
+			if h != "" {
+				host = h
+			}
+			host = net.JoinHostPort(host, port)
+		}
+		statusURL := fmt.Sprintf("http://%s/dynamic/status", host)
+
+		body, err := render(r.Context(), provisionName, fileName, statusURL)
 		if err != nil {
 			if httpd.IsAutomationNotFound(err) {
 				http.Error(w, "not found", http.StatusNotFound)
@@ -256,6 +287,73 @@ func automationFileHandler(render renderAutomationFunc) http.HandlerFunc {
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprint(w, body)
+	}
+}
+
+// allowedPhases maps phase parameter values to ProvisionPhase constants
+// and their default status messages.
+var allowedPhases = map[string]struct {
+	phase   isobootgithubiov1alpha1.ProvisionPhase
+	message string
+}{
+	"InProgress": {
+		isobootgithubiov1alpha1.ProvisionPhaseInProgress,
+		"Installation in progress",
+	},
+	"Complete": {
+		isobootgithubiov1alpha1.ProvisionPhaseComplete,
+		"Installation complete",
+	},
+}
+
+func updateStatusHandler(update updatePhaseFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		provisionName := r.FormValue("provisionName")
+		if provisionName == "" {
+			http.Error(w,
+				"missing required parameter: provisionName",
+				http.StatusBadRequest)
+			return
+		}
+		if !nameRegexp.MatchString(provisionName) ||
+			len(provisionName) > 253 {
+			http.Error(w, "invalid provision name",
+				http.StatusBadRequest)
+			return
+		}
+
+		phaseParam := r.FormValue("phase")
+		entry, ok := allowedPhases[phaseParam]
+		if !ok {
+			http.Error(w, "invalid phase: must be InProgress or Complete",
+				http.StatusBadRequest)
+			return
+		}
+
+		err := update(r.Context(), provisionName, entry.phase, entry.message)
+		if err != nil {
+			if httpd.IsProvisionNotFound(err) {
+				http.Error(w, "provision not found",
+					http.StatusNotFound)
+				return
+			}
+			if httpd.IsProvisionPhaseError(err) {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			slog.Error("update provision status failed",
+				"provision", provisionName,
+				"phase", phaseParam, "error", err)
+			http.Error(w, "internal error",
+				http.StatusInternalServerError)
+			return
+		}
+
+		slog.Info("provision status updated",
+			"provision", provisionName, "phase", phaseParam)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "OK")
 	}
 }
 

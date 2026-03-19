@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
@@ -33,7 +35,62 @@ var (
 	// ErrMultipleProvisions indicates more than one pending Provision
 	// exists for the same Machine.
 	ErrMultipleProvisions = errors.New("multiple pending provisions")
+	// ErrInvalidPhaseTransition indicates the requested phase transition
+	// is not allowed from the current phase.
+	ErrInvalidPhaseTransition = errors.New("invalid phase transition")
 )
+
+// validTransitions maps each target phase to its allowed source phase.
+var validTransitions = map[isobootgithubiov1alpha1.ProvisionPhase]isobootgithubiov1alpha1.ProvisionPhase{
+	isobootgithubiov1alpha1.ProvisionPhaseInProgress: isobootgithubiov1alpha1.ProvisionPhasePending,
+	isobootgithubiov1alpha1.ProvisionPhaseComplete:   isobootgithubiov1alpha1.ProvisionPhaseInProgress,
+}
+
+// UpdateProvisionPhase transitions a Provision to the given target phase.
+// It validates that the current phase allows the transition.
+func UpdateProvisionPhase(
+	ctx context.Context, c client.Client, ns, provisionName string,
+	target isobootgithubiov1alpha1.ProvisionPhase, message string,
+) error {
+	requiredSource, ok := validTransitions[target]
+	if !ok {
+		return fmt.Errorf("%w: cannot transition to %s",
+			ErrInvalidPhaseTransition, target)
+	}
+
+	var provision isobootgithubiov1alpha1.Provision
+	if err := c.Get(ctx, client.ObjectKey{
+		Name:      provisionName,
+		Namespace: ns,
+	}, &provision); err != nil {
+		return fmt.Errorf("getting provision %q: %w", provisionName, err)
+	}
+
+	if provision.Status.Phase != requiredSource {
+		return fmt.Errorf(
+			"%w: cannot transition from %s to %s",
+			ErrInvalidPhaseTransition,
+			provision.Status.Phase, target)
+	}
+
+	now := metav1.Now()
+	provision.Status.Phase = target
+	provision.Status.Message = message
+	provision.Status.LastUpdated = &now
+	return c.Status().Update(ctx, &provision)
+}
+
+// IsProvisionNotFound reports whether err indicates the Provision
+// was not found.
+func IsProvisionNotFound(err error) bool {
+	return apierrors.IsNotFound(err)
+}
+
+// IsProvisionPhaseError reports whether err indicates a phase
+// transition error.
+func IsProvisionPhaseError(err error) bool {
+	return errors.Is(err, ErrInvalidPhaseTransition)
+}
 
 // PendingProvisionForMAC returns the Provision with status.phase == Pending
 // for the Machine with the given MAC address. It returns nil if no match is
