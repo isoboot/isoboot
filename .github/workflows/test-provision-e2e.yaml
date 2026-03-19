@@ -573,7 +573,7 @@ jobs:
       if: failure()
       run: |
         if [ -S /tmp/qemu-monitor.sock ]; then
-          echo "screendump /tmp/qemu-screenshot.ppm" | socat - UNIX-CONNECT:/tmp/qemu-monitor.sock || true
+          echo "screendump /tmp/qemu-screenshot.ppm" | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock || true
           sleep 1
           if [ -f /tmp/qemu-screenshot.ppm ]; then
             echo "=== QEMU screenshot captured ==="
