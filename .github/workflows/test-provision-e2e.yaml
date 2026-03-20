@@ -207,6 +207,22 @@ jobs:
         sudo mkdir -p /data/isoboot
         sudo chown 65532:65532 /data/isoboot
 
+    - name: Restore squid cache
+      id: squid-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: /tmp/squid-cache
+        key: squid-${{ matrix.manifest }}-
+        restore-keys: squid-${{ matrix.manifest }}-
+
+    - name: Populate squid cache from restore
+      if: steps.squid-cache.outputs.cache-hit == 'true'
+      run: |
+        sudo mkdir -p /data/isoboot/squid/cache
+        sudo tar xf /tmp/squid-cache/squid-cache.tar.gz -C /data/isoboot/squid/cache
+        sudo chown -R 31:31 /data/isoboot/squid/cache
+        echo "Restored squid cache ($(du -sm /data/isoboot/squid/cache | awk '{print $1}')MB)"
+
     - name: Install k3s
       run: |
         curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" INSTALL_K3S_CHANNEL="stable" sh -
@@ -245,7 +261,8 @@ jobs:
           --create-namespace \
           --set nodeName="${NODE_NAME}" \
           --set dnsmasq.subnet=192.168.101.0/24 \
-          --set alpineImage=alpine:${ALPINE_VERSION}
+          --set alpineImage=alpine:${ALPINE_VERSION} \
+          --set squid.log.access=true
 
     - name: Wait for controller and nginx
       run: |
@@ -726,6 +743,46 @@ jobs:
         find /data/isoboot -type f -o -type l 2>/dev/null || true
         echo "=== Describe pods ==="
         kubectl -n isoboot-system describe pod -l app.kubernetes.io/name=isoboot 2>/dev/null || true
+
+    - name: Save squid cache
+      if: always()
+      shell: bash {0}
+      run: |
+        SQUID_POD=$(kubectl -n isoboot-system get pod \
+          -l app.kubernetes.io/component=squid \
+          -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
+
+        SAVE_CACHE=true
+
+        # If we had a cache hit, check miss rate
+        if [ "${{ steps.squid-cache.outputs.cache-hit }}" = "true" ] && [ -n "$SQUID_POD" ]; then
+          TOTAL=$(kubectl -n isoboot-system exec "$SQUID_POD" -- \
+            cat /var/log/squid/access.log 2>/dev/null | wc -l || echo 0)
+          MISSES=$(kubectl -n isoboot-system exec "$SQUID_POD" -- \
+            cat /var/log/squid/access.log 2>/dev/null | grep -c "TCP_MISS" || echo 0)
+          if [ "$TOTAL" -gt 0 ]; then
+            MISS_RATE=$((MISSES * 100 / TOTAL))
+            echo "Squid stats: ${MISSES}/${TOTAL} misses (${MISS_RATE}%)"
+            if [ "$MISS_RATE" -gt 25 ]; then
+              echo "Miss rate ${MISS_RATE}% > 25% — skipping cache save to invalidate"
+              SAVE_CACHE=false
+            fi
+          fi
+        fi
+
+        if [ "$SAVE_CACHE" = "true" ] && [ -d /data/isoboot/squid/cache ]; then
+          sudo rm -rf /tmp/squid-cache
+          mkdir -p /tmp/squid-cache
+          sudo tar czf /tmp/squid-cache/squid-cache.tar.gz -C /data/isoboot/squid/cache .
+          echo "Saved squid cache ($(du -sm /tmp/squid-cache/squid-cache.tar.gz | awk '{print $1}')MB)"
+        fi
+
+    - name: Upload squid cache
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: /tmp/squid-cache
+        key: squid-${{ matrix.manifest }}-${{ github.run_id }}
 
     - name: Clean up
       if: always()
