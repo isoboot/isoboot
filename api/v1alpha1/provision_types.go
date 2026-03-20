@@ -44,11 +44,6 @@ type ProvisionSpec struct {
 	// secrets is an optional list of Secret names to mount during provisioning.
 	// +optional
 	Secrets []string `json:"secrets,omitempty"`
-
-	// machineId is an optional machine identifier (32-character hex string).
-	// +optional
-	// +kubebuilder:validation:Pattern="^[0-9a-f]{32}$"
-	MachineID *string `json:"machineId,omitempty"`
 }
 
 // ProvisionPhase describes the current phase of a Provision.

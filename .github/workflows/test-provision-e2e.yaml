@@ -324,6 +324,7 @@ jobs:
         ssh-keygen -t ed25519 -N "" -f /tmp/ssh_host_ed25519_key
         ssh-keygen -t rsa -b 4096 -N "" -f /tmp/ssh_host_rsa_key
         openssl passwd -6 "e2etest" > /tmp/encrypted-password
+        head -c 16 /dev/urandom | xxd -p > /tmp/machine-id
 
     # ── Create provisioning resources ──────────────────────────────
     - name: Create ConfigMap and Secret
@@ -331,7 +332,8 @@ jobs:
         kubectl -n isoboot-system create configmap default-user \
           --from-literal="default_user.username=isoboot" \
           --from-literal="default_user.password=$(cat /tmp/encrypted-password)" \
-          --from-literal="default_user.ssh_public_key=$(cat /tmp/e2e-ssh-key.pub)"
+          --from-literal="default_user.ssh_public_key=$(cat /tmp/e2e-ssh-key.pub)" \
+          --from-literal="machine_id=$(cat /tmp/machine-id)"
 
         kubectl -n isoboot-system create secret generic host-keys \
           --from-file=ssh_host_ecdsa_key=/tmp/ssh_host_ecdsa_key \
@@ -407,6 +409,11 @@ jobs:
               {{- end }}
               sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
               sed -i '/\/boot\/efi/s/defaults/defaults,nofail/' /etc/fstab
+              {{- if index .ConfigMaps "machine_id" }}
+              printf '%s\n' '{{ index .ConfigMaps "machine_id" }}' > /etc/machine-id
+              chmod 444 /etc/machine-id
+              restorecon /etc/machine-id
+              {{- end }}
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
               %end
         ---
@@ -665,6 +672,19 @@ jobs:
         [ "$OS_VERSION" = "${{ matrix.version }}" ] \
           || { echo "FAIL: expected version ${{ matrix.version }}, got $OS_VERSION"; exit 1; }
         echo "PASS: OS identity"
+
+        # (f) Verify /etc/machine-id matches generated value
+        EXPECTED_MID=$(cat /tmp/machine-id)
+        ACTUAL_MID=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
+          'head -c 32 /etc/machine-id')
+        echo "machine-id: expected=$EXPECTED_MID actual=$ACTUAL_MID"
+        [ "$EXPECTED_MID" = "$ACTUAL_MID" ] \
+          || { echo "FAIL: machine-id mismatch"; exit 1; }
+        MID_LEN=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
+          'wc -c < /etc/machine-id')
+        [ "$MID_LEN" = "33" ] \
+          || { echo "FAIL: /etc/machine-id should be 33 bytes (32 hex + newline), got $MID_LEN"; exit 1; }
+        echo "PASS: machine-id"
 
         echo "All SSH verifications passed!"
 
