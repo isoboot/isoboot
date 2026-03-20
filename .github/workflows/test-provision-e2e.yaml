@@ -221,7 +221,7 @@ jobs:
         sudo mkdir -p /data/isoboot/squid/cache
         sudo tar xf /tmp/squid-cache/squid-cache.tar.gz -C /data/isoboot/squid/cache
         sudo chown -R 31:31 /data/isoboot/squid/cache
-        echo "Restored squid cache ($(du -sm /data/isoboot/squid/cache | awk '{print $1}')MB)"
+        echo "Restored squid cache ($(sudo du -sm /data/isoboot/squid/cache | awk '{print $1}')MB)"
 
     - name: Install k3s
       run: |
