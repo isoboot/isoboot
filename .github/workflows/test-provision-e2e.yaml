@@ -561,7 +561,8 @@ jobs:
           -smp 2 \
           -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
           -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
-          -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=virtio,bootindex=1 \
+          -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
+          -device virtio-blk-pci,drive=disk0,bootindex=1 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
           -device virtio-net-pci,netdev=pxe0,mac=${{ matrix.mac_colon }} \
           -display none \
