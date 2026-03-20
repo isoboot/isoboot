@@ -1,0 +1,32 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: alma-10.1-kernel
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://repo.almalinux.org/almalinux/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz
+  sha256: "a0980f930bc4c37223deaecce76aad8e376e6a4cd3af3f3896ad1d8082e5ee01"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: alma-10.1-initrd
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://repo.almalinux.org/almalinux/10.1/BaseOS/x86_64/os/images/pxeboot/initrd.img
+  sha256: "5d69506df2c06077a5acddf082b336ebd94b0652b4d1a3864864d270400d6698"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: alma-10.1
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  kernel:
+    ref: alma-10.1-kernel
+    args: "ip=dhcp {{if .ProxyURL}}inst.proxy={{.ProxyURL}} {{end}}inst.repo=http://repo.almalinux.org/almalinux/10.1/BaseOS/x86_64/os inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg"
+  initrd:
+    ref: alma-10.1-initrd
