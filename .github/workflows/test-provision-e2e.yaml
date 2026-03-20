@@ -532,9 +532,10 @@ jobs:
     # ── Reboot VM from disk ──────────────────────────────────────
     - name: Restart QEMU to boot from disk
       run: |
-        # Kill the PXE-booted QEMU
+        # Kill the PXE-booted QEMU and clean up
         [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
-        sleep 2
+        sleep 3
+        sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
 
         # Locate OVMF firmware
         OVMF_CODE=""
