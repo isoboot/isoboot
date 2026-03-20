@@ -533,7 +533,7 @@ jobs:
     - name: Restart QEMU to boot from disk
       run: |
         # Kill the PXE-booted QEMU and clean up
-        [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+        [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
         sleep 3
         sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
 
@@ -677,7 +677,7 @@ jobs:
     - name: Clean up
       if: always()
       run: |
-        [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+        [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
         sudo ip link del tap-vm 2>/dev/null || true
         /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
         docker rm -f dhcp-srv 2>/dev/null || true
