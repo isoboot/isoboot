@@ -308,7 +308,7 @@ jobs:
     - name: Create ConfigMap and Secret
       run: |
         kubectl -n isoboot-system create configmap default-user \
-          --from-literal="default_user.username=e2euser" \
+          --from-literal="default_user.username=isoboot" \
           --from-literal="default_user.password=$(cat /tmp/encrypted-password)" \
           --from-literal="default_user.ssh_public_key=$(cat /tmp/e2e-ssh-key.pub)"
 
@@ -564,29 +564,27 @@ jobs:
     # ── SSH into VM and verify ─────────────────────────────────────
     - name: Verify VM via SSH
       run: |
-        # Re-read VM IP from DHCP log (may have changed after reboot)
-        sleep 30
-        VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
-          | grep -i "${{ matrix.mac_colon }}" | tail -1 \
-          | grep -oP '192\.168\.101\.\d+' | head -1)
-        [ -n "$VM_IP" ] || VM_IP=$(cat /tmp/vm-ip)
-        echo "Waiting for SSH on $VM_IP..."
-
+        echo "Waiting for SSH..."
         for i in $(seq 1 60); do
+          VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
+            | grep -i "${{ matrix.mac_colon }}" | tail -1 \
+            | grep -oP '192\.168\.101\.\d+' | head -1)
+          [ -z "$VM_IP" ] && sleep 5 && continue
           ssh -i /tmp/e2e-ssh-key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/tmp/e2e-known-hosts \
             -o ConnectTimeout=5 \
             -o BatchMode=yes \
-            e2euser@"$VM_IP" true 2>/dev/null && break
+            isoboot@"$VM_IP" true 2>/dev/null && break
           sleep 5
         done
+        echo "Using VM IP: $VM_IP"
 
         # Verify hostname
         ACTUAL_HOSTNAME=$(ssh -i /tmp/e2e-ssh-key \
           -o StrictHostKeyChecking=no \
           -o UserKnownHostsFile=/tmp/e2e-known-hosts \
-          e2euser@"$VM_IP" hostname)
+          isoboot@"$VM_IP" hostname)
         echo "VM hostname: $ACTUAL_HOSTNAME"
         [ "$ACTUAL_HOSTNAME" = "${{ matrix.hostname }}" ] \
           || { echo "FAIL: expected ${{ matrix.hostname }}, got $ACTUAL_HOSTNAME"; exit 1; }
