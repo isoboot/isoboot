@@ -216,7 +216,7 @@ jobs:
         restore-keys: squid-${{ matrix.manifest }}-
 
     - name: Populate squid cache from restore
-      if: steps.squid-cache.outputs.cache-hit == 'true'
+      if: steps.squid-cache.outputs.cache-matched-key != ''
       run: |
         sudo mkdir -p /data/isoboot/squid/cache
         sudo tar xf /tmp/squid-cache/squid-cache.tar.gz -C /data/isoboot/squid/cache
@@ -755,7 +755,7 @@ jobs:
         SAVE_CACHE=true
 
         # If we had a cache hit, check miss rate
-        if [ "${{ steps.squid-cache.outputs.cache-hit }}" = "true" ] && [ -n "$SQUID_POD" ]; then
+        if [ -n "${{ steps.squid-cache.outputs.cache-matched-key }}" ] && [ -n "$SQUID_POD" ]; then
           TOTAL=$(kubectl -n isoboot-system exec "$SQUID_POD" -- \
             cat /var/log/squid/access.log 2>/dev/null | wc -l || echo 0)
           MISSES=$(kubectl -n isoboot-system exec "$SQUID_POD" -- \
