@@ -62,11 +62,6 @@ spec:
                 items:
                   type: string
                 type: array
-              machineId:
-                description: machineId is an optional machine identifier (32-character
-                  hex string).
-                pattern: ^[0-9a-f]{32}$
-                type: string
               machineRef:
                 description: machineRef is the name of the Machine resource for this
                   provision.
