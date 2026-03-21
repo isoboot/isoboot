@@ -675,13 +675,13 @@ jobs:
 
         # (f) Verify /etc/machine-id matches generated value
         EXPECTED_MID=$(cat /tmp/machine-id)
-        ACTUAL_MID=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
-          'head -c 32 /etc/machine-id')
-        echo "machine-id: expected=$EXPECTED_MID actual=$ACTUAL_MID"
+        MID_INFO=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
+          'printf "%s %s" "$(head -c 32 /etc/machine-id)" "$(wc -c < /etc/machine-id)"')
+        ACTUAL_MID=${MID_INFO% *}
+        MID_LEN=${MID_INFO#* }
+        echo "machine-id: expected=$EXPECTED_MID actual=$ACTUAL_MID len=$MID_LEN"
         [ "$EXPECTED_MID" = "$ACTUAL_MID" ] \
           || { echo "FAIL: machine-id mismatch"; exit 1; }
-        MID_LEN=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
-          'wc -c < /etc/machine-id')
         [ "$MID_LEN" = "33" ] \
           || { echo "FAIL: /etc/machine-id should be 33 bytes (32 hex + newline), got $MID_LEN"; exit 1; }
         echo "PASS: machine-id"
