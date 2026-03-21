@@ -358,7 +358,6 @@ jobs:
               lang en_US.UTF-8
               keyboard us
               timezone America/Los_Angeles --utc
-              ignoredisk --only-use=vda
               autopart --type=plain
               clearpart --all --initlabel
               zerombr
