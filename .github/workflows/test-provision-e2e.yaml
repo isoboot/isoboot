@@ -405,6 +405,7 @@ jobs:
               restorecon /etc/ssh/ssh_host_rsa_key.pub
               {{- end }}
               sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+              sed -i '/\/boot\/efi/s/defaults/defaults,nofail/' /etc/fstab
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
               %end
         ---
