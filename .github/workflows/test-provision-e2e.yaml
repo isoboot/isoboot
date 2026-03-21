@@ -355,7 +355,6 @@ jobs:
         spec:
           files:
             ks.cfg: |
-              text
               lang en_US.UTF-8
               keyboard us
               timezone America/Los_Angeles --utc
@@ -406,7 +405,6 @@ jobs:
               restorecon /etc/ssh/ssh_host_rsa_key.pub
               {{- end }}
               sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-              sed -i '/\/boot\/efi/s/defaults/defaults,nofail/' /etc/fstab
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
               %end
         ---
