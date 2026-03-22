@@ -363,7 +363,7 @@ jobs:
               autopart --type=plain
               clearpart --all --initlabel
               zerombr
-              bootloader --location=mbr --boot-drive=vda
+              bootloader --location=mbr
               user --name={{ index .ConfigMaps "default_user.username" }} --groups=wheel --iscrypted --password={{ index .ConfigMaps "default_user.password" }}
               {{- if index .ConfigMaps "default_user.ssh_public_key" }}
               sshkey --username={{ index .ConfigMaps "default_user.username" }} "{{ index .ConfigMaps "default_user.ssh_public_key" }}"
