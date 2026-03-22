@@ -27,6 +27,6 @@ metadata:
 spec:
   kernel:
     ref: debian-13-kernel
-    args: "auto=true priority=critical {{if .ProxyURL}}mirror/http/proxy={{.ProxyURL}} {{end}}preseed/url={{.ProvisionAutomationBaseURL}}/preseed.cfg"
+    args: "console=ttyS0 auto=true priority=critical {{if .ProxyURL}}mirror/http/proxy={{.ProxyURL}} {{end}}preseed/url={{.ProvisionAutomationBaseURL}}/preseed.cfg"
   initrd:
     ref: debian-13-initrd

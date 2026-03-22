@@ -116,6 +116,7 @@ func main() {
 	mux.HandleFunc("GET /conditional-boot", handler)
 	mux.HandleFunc("GET /automation/{provisionName}/{fileName}", automationHandler)
 	mux.HandleFunc("POST /status", statusHandler)
+	mux.HandleFunc("GET /status", statusHandler)
 	mux.HandleFunc("GET /healthz", healthzHandler)
 
 	srv := &http.Server{

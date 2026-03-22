@@ -500,8 +500,8 @@ jobs:
               d-i pkgsel/include string curl
               d-i grub-installer/only_debian boolean true
               d-i grub-installer/bootdev string /dev/vda
-              d-i preseed/early_command string curl -X POST -d "provisionName={{.ProvisionName}}&phase=InProgress" {{.UpdatePhaseURL}} || true
-              d-i preseed/late_command string PRESEED_URL=$(sed 's/.*preseed\/url=\([^ ]*\).*/\1/' /proc/cmdline); BASE_URL=${PRESEED_URL%/*}; curl -s "$BASE_URL/post-install.sh" -o /target/tmp/post-install.sh && chmod +x /target/tmp/post-install.sh && in-target /tmp/post-install.sh && curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
+              d-i preseed/early_command string wget -q -O /dev/null "{{.UpdatePhaseURL}}?provisionName={{.ProvisionName}}&phase=InProgress" || true
+              d-i preseed/late_command string PRESEED_URL=$(sed 's/.*preseed\/url=\([^ ]*\).*/\1/' /proc/cmdline); BASE_URL=${PRESEED_URL%/*}; wget -q -O /target/tmp/post-install.sh "$BASE_URL/post-install.sh" && chmod +x /target/tmp/post-install.sh && in-target /tmp/post-install.sh && wget -q -O /dev/null "{{.UpdatePhaseURL}}?provisionName={{.ProvisionName}}&phase=Complete"
               d-i finish-install/reboot_in_progress note
             post-install.sh: |
               #!/bin/sh
