@@ -700,10 +700,6 @@ jobs:
             | grep -i "${{ matrix.mac_colon }}" | tail -1 \
             | grep -oP '192\.168\.101\.\d+' | head -1)
           [ -z "$VM_IP" ] && sleep 5 && continue
-          if [ "$((i % 10))" = "0" ]; then
-            echo "  attempt $i: VM_IP=$VM_IP"
-            nc -z -w2 "$VM_IP" 22 2>/dev/null && echo "  port 22 open" || echo "  port 22 closed"
-          fi
           ssh -i /tmp/e2e-ssh-key $SSH_OPTS \
             -o ConnectTimeout=5 \
             -o BatchMode=yes \
@@ -712,15 +708,8 @@ jobs:
         done
         echo "Using VM IP: $VM_IP"
 
-        # Debug: check port and try verbose SSH if initial login fails
-        nc -z -w5 "$VM_IP" 22 2>/dev/null \
-          && echo "Port 22 is open" \
-          || echo "WARNING: Port 22 is NOT open"
-        echo "=== Serial boot log (last 30 lines) ==="
-        tail -30 /tmp/qemu-serial-boot.log 2>/dev/null || echo "(empty)"
-
         # (a) Verify SSH key login works
-        ssh -i /tmp/e2e-ssh-key $SSH_OPTS -v isoboot@"$VM_IP" true 2>&1 \
+        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" true \
           || { echo "FAIL: SSH key login failed"; exit 1; }
         echo "PASS: SSH key login"
 
