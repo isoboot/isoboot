@@ -501,16 +501,11 @@ jobs:
               d-i grub-installer/only_debian boolean true
               d-i grub-installer/bootdev string /dev/vda
               d-i preseed/early_command string wget -q -O /dev/null "{{.UpdatePhaseURL}}?provisionName={{.ProvisionName}}&phase=InProgress" || true
-              d-i preseed/late_command string PRESEED_URL=$(sed 's/.*preseed\/url=\([^ ]*\).*/\1/' /proc/cmdline); BASE_URL=${PRESEED_URL%/*}; wget -q -O /target/tmp/post-install.sh "$BASE_URL/post-install.sh" && chmod +x /target/tmp/post-install.sh && in-target /tmp/post-install.sh && wget -q -O /dev/null "{{.UpdatePhaseURL}}?provisionName={{.ProvisionName}}&phase=Complete"
+              d-i preseed/late_command string in-target mkdir -p /home/isoboot/.ssh; printf '%s\n' '{{ index .ConfigMaps "default_user.ssh_public_key" }}' > /target/home/isoboot/.ssh/authorized_keys; chmod 700 /target/home/isoboot/.ssh; chmod 600 /target/home/isoboot/.ssh/authorized_keys; in-target chown -R isoboot:isoboot /home/isoboot/.ssh; sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /target/etc/ssh/sshd_config; sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /target/etc/ssh/sshd_config.d/*.conf 2>/dev/null; {{- if index .ConfigMaps "machine_id" }}printf '%s\n' '{{ index .ConfigMaps "machine_id" }}' > /target/etc/machine-id; chmod 444 /target/etc/machine-id; {{- end }}PRESEED_URL=$(sed 's/.*preseed\/url=\([^ ]*\).*/\1/' /proc/cmdline); BASE_URL=${PRESEED_URL%/*}; wget -q -O /target/tmp/post-install.sh "$BASE_URL/post-install.sh" && chmod +x /target/tmp/post-install.sh && in-target /tmp/post-install.sh; wget -q -O /dev/null "{{.UpdatePhaseURL}}?provisionName={{.ProvisionName}}&phase=Complete"
               d-i finish-install/reboot_in_progress note
             post-install.sh: |
               #!/bin/sh
               set -e
-              mkdir -p /home/isoboot/.ssh
-              printf '%s\n' '{{ index .ConfigMaps "default_user.ssh_public_key" }}' > /home/isoboot/.ssh/authorized_keys
-              chmod 700 /home/isoboot/.ssh
-              chmod 600 /home/isoboot/.ssh/authorized_keys
-              chown -R isoboot:isoboot /home/isoboot/.ssh
               {{- if index .Secrets "ssh_host_ecdsa_key" }}
               printf '%s' '{{ index .Secrets "ssh_host_ecdsa_key" }}' > /etc/ssh/ssh_host_ecdsa_key
               chmod 600 /etc/ssh/ssh_host_ecdsa_key
@@ -528,11 +523,6 @@ jobs:
               chmod 600 /etc/ssh/ssh_host_rsa_key
               ssh-keygen -y -f /etc/ssh/ssh_host_rsa_key > /etc/ssh/ssh_host_rsa_key.pub
               chmod 644 /etc/ssh/ssh_host_rsa_key.pub
-              {{- end }}
-              sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-              {{- if index .ConfigMaps "machine_id" }}
-              printf '%s\n' '{{ index .ConfigMaps "machine_id" }}' > /etc/machine-id
-              chmod 444 /etc/machine-id
               {{- end }}
         ---
         apiVersion: isoboot.github.io/v1alpha1
@@ -737,7 +727,7 @@ jobs:
         echo "Using VM IP: $VM_IP"
 
         # (a) Verify SSH key login works
-        ssh -v -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" true 2>&1 \
+        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" true \
           || { echo "FAIL: SSH key login failed"; exit 1; }
         echo "PASS: SSH key login"
 
