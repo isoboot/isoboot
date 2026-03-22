@@ -737,7 +737,7 @@ jobs:
         echo "Using VM IP: $VM_IP"
 
         # (a) Verify SSH key login works
-        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" true \
+        ssh -v -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" true 2>&1 \
           || { echo "FAIL: SSH key login failed"; exit 1; }
         echo "PASS: SSH key login"
 
