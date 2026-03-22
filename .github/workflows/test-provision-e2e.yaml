@@ -114,6 +114,9 @@ jobs:
             os_id: "rocky"
             mac_hyphen: "02-00-00-ab-cd-01"
             mac_colon: "02:00:00:ab:cd:01"
+            installer: "kickstart"
+            kernel_filename: "vmlinuz"
+            initrd_filename: "initrd.img"
           - distro: "Rocky"
             version: "9.7"
             manifest: "rocky-9.7"
@@ -121,6 +124,9 @@ jobs:
             os_id: "rocky"
             mac_hyphen: "02-00-00-ab-cd-02"
             mac_colon: "02:00:00:ab:cd:02"
+            installer: "kickstart"
+            kernel_filename: "vmlinuz"
+            initrd_filename: "initrd.img"
           - distro: "Alma"
             version: "10.1"
             manifest: "alma-10.1"
@@ -128,6 +134,9 @@ jobs:
             os_id: "almalinux"
             mac_hyphen: "02-00-00-ab-cd-04"
             mac_colon: "02:00:00:ab:cd:04"
+            installer: "kickstart"
+            kernel_filename: "vmlinuz"
+            initrd_filename: "initrd.img"
           - distro: "Alma"
             version: "9.7"
             manifest: "alma-9.7"
@@ -135,6 +144,19 @@ jobs:
             os_id: "almalinux"
             mac_hyphen: "02-00-00-ab-cd-05"
             mac_colon: "02:00:00:ab:cd:05"
+            installer: "kickstart"
+            kernel_filename: "vmlinuz"
+            initrd_filename: "initrd.img"
+          - distro: "Debian"
+            version: "13"
+            manifest: "debian-13"
+            hostname: "debian13"
+            os_id: "debian"
+            mac_hyphen: "02-00-00-ab-cd-06"
+            mac_colon: "02:00:00:ab:cd:06"
+            installer: "preseed"
+            kernel_filename: "linux"
+            initrd_filename: "initrd.gz"
     steps:
     - uses: actions/checkout@v4
 
@@ -341,6 +363,7 @@ jobs:
           --from-file=ssh_host_rsa_key=/tmp/ssh_host_rsa_key
 
     - name: Create Machine, ProvisionAutomation, and Provision
+      if: matrix.installer == 'kickstart'
       run: |
         kubectl -n isoboot-system apply -f - <<'EOF'
         apiVersion: isoboot.github.io/v1alpha1
@@ -434,6 +457,101 @@ jobs:
         kubectl -n isoboot-system patch provision qemu-vm1-provision \
           --subresource=status --type=merge -p '{"status":{"phase":"Pending"}}'
 
+    - name: Create Machine, ProvisionAutomation, and Provision (preseed)
+      if: matrix.installer == 'preseed'
+      run: |
+        kubectl -n isoboot-system apply -f - <<'EOF'
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Machine
+        metadata:
+          name: qemu-vm1
+        spec:
+          mac: "${{ matrix.mac_hyphen }}"
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: ProvisionAutomation
+        metadata:
+          name: qemu-vm1-automation
+        spec:
+          files:
+            preseed.cfg: |
+              d-i debian-installer/locale string en_US.UTF-8
+              d-i keyboard-configuration/xkb-keymap select us
+              d-i time/zone string America/Los_Angeles
+              d-i clock-setup/utc boolean true
+              d-i netcfg/choose_interface select auto
+              d-i netcfg/get_hostname string ${{ matrix.hostname }}
+              d-i netcfg/get_domain string local
+              d-i mirror/country string manual
+              d-i mirror/http/hostname string deb.debian.org
+              d-i mirror/http/directory string /debian
+              d-i passwd/root-login boolean false
+              d-i passwd/user-fullname string Isoboot User
+              d-i passwd/username string isoboot
+              d-i passwd/user-password-crypted password {{ index .ConfigMaps "default_user.password" }}
+              d-i partman-auto/method string regular
+              d-i partman-auto/disk string /dev/vda
+              d-i partman-auto/choose_recipe select atomic
+              d-i partman-partitioning/confirm_write_new_label boolean true
+              d-i partman/choose_partition select finish
+              d-i partman/confirm boolean true
+              d-i partman/confirm_nooverwrite boolean true
+              tasksel tasksel/first multiselect standard, ssh-server
+              d-i pkgsel/include string curl
+              d-i grub-installer/only_debian boolean true
+              d-i grub-installer/bootdev string /dev/vda
+              d-i preseed/early_command string curl -X POST -d "provisionName={{.ProvisionName}}&phase=InProgress" {{.UpdatePhaseURL}} || true
+              d-i preseed/late_command string curl -s {{.ProvisionAutomationBaseURL}}/post-install.sh -o /target/tmp/post-install.sh && chmod +x /target/tmp/post-install.sh && in-target /tmp/post-install.sh && curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
+              d-i finish-install/reboot_in_progress note
+            post-install.sh: |
+              #!/bin/sh
+              set -e
+              mkdir -p /home/isoboot/.ssh
+              printf '%s\n' '{{ index .ConfigMaps "default_user.ssh_public_key" }}' > /home/isoboot/.ssh/authorized_keys
+              chmod 700 /home/isoboot/.ssh
+              chmod 600 /home/isoboot/.ssh/authorized_keys
+              chown -R isoboot:isoboot /home/isoboot/.ssh
+              {{- if index .Secrets "ssh_host_ecdsa_key" }}
+              printf '%s' '{{ index .Secrets "ssh_host_ecdsa_key" }}' > /etc/ssh/ssh_host_ecdsa_key
+              chmod 600 /etc/ssh/ssh_host_ecdsa_key
+              ssh-keygen -y -f /etc/ssh/ssh_host_ecdsa_key > /etc/ssh/ssh_host_ecdsa_key.pub
+              chmod 644 /etc/ssh/ssh_host_ecdsa_key.pub
+              {{- end }}
+              {{- if index .Secrets "ssh_host_ed25519_key" }}
+              printf '%s' '{{ index .Secrets "ssh_host_ed25519_key" }}' > /etc/ssh/ssh_host_ed25519_key
+              chmod 600 /etc/ssh/ssh_host_ed25519_key
+              ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
+              chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
+              {{- end }}
+              {{- if index .Secrets "ssh_host_rsa_key" }}
+              printf '%s' '{{ index .Secrets "ssh_host_rsa_key" }}' > /etc/ssh/ssh_host_rsa_key
+              chmod 600 /etc/ssh/ssh_host_rsa_key
+              ssh-keygen -y -f /etc/ssh/ssh_host_rsa_key > /etc/ssh/ssh_host_rsa_key.pub
+              chmod 644 /etc/ssh/ssh_host_rsa_key.pub
+              {{- end }}
+              sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+              {{- if index .ConfigMaps "machine_id" }}
+              printf '%s\n' '{{ index .ConfigMaps "machine_id" }}' > /etc/machine-id
+              chmod 444 /etc/machine-id
+              {{- end }}
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Provision
+        metadata:
+          name: qemu-vm1-provision
+        spec:
+          machineRef: qemu-vm1
+          bootConfigRef: ${{ matrix.manifest }}
+          provisionAutomationRef: qemu-vm1-automation
+          configMaps:
+            - default-user
+          secrets:
+            - host-keys
+        EOF
+
+        kubectl -n isoboot-system patch provision qemu-vm1-provision \
+          --subresource=status --type=merge -p '{"status":{"phase":"Pending"}}'
+
     # ── PXE boot QEMU VM ──────────────────────────────────────────
     - name: Boot QEMU VM (UEFI PXE)
       run: |
@@ -505,7 +623,7 @@ jobs:
 
         for i in $(seq 1 60); do
           if kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null \
-              | grep "GET /static/${{ matrix.manifest }}/kernel/vmlinuz" \
+              | grep "GET /static/${{ matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
               | grep '" 200 ' | grep -q 'iPXE/'; then
             echo "Kernel downloaded by iPXE"
             break
@@ -514,12 +632,12 @@ jobs:
         done
 
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep "GET /static/${{ matrix.manifest }}/kernel/vmlinuz" \
+          | grep "GET /static/${{ matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
           | grep '" 200 ' | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for kernel download"; exit 1; }
 
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep "GET /static/${{ matrix.manifest }}/initrd/initrd.img" \
+          | grep "GET /static/${{ matrix.manifest }}/initrd/${{ matrix.initrd_filename }}" \
           | grep '" 200 ' | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for initrd download"; exit 1; }
 
