@@ -372,10 +372,6 @@ jobs:
               eula --agreed
               reboot
 
-              %packages
-              @core
-              %end
-
               %pre --log=/var/log/kickstart-pre.log
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=InProgress" {{.UpdatePhaseURL}}
               %end
