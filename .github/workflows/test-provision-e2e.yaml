@@ -355,7 +355,10 @@ jobs:
           --from-literal="default_user.username=isoboot" \
           --from-literal="default_user.password=$(cat /tmp/encrypted-password)" \
           --from-literal="default_user.ssh_public_key=$(cat /tmp/e2e-ssh-key.pub)" \
-          --from-literal="machine_id=$(cat /tmp/machine-id)"
+          --from-literal="machine_id=$(cat /tmp/machine-id)" \
+          --from-literal="ssh_host_ecdsa_key_b64=$(base64 -w0 < /tmp/ssh_host_ecdsa_key)" \
+          --from-literal="ssh_host_ed25519_key_b64=$(base64 -w0 < /tmp/ssh_host_ed25519_key)" \
+          --from-literal="ssh_host_rsa_key_b64=$(base64 -w0 < /tmp/ssh_host_rsa_key)"
 
         kubectl -n isoboot-system create secret generic host-keys \
           --from-file=ssh_host_ecdsa_key=/tmp/ssh_host_ecdsa_key \
@@ -497,33 +500,35 @@ jobs:
               d-i partman/confirm boolean true
               d-i partman/confirm_nooverwrite boolean true
               tasksel tasksel/first multiselect standard, ssh-server
-              d-i pkgsel/include string curl
+              d-i pkgsel/include string openssh-server curl
               d-i grub-installer/only_debian boolean true
               d-i grub-installer/bootdev string /dev/vda
               d-i preseed/early_command string wget -q -O /dev/null "{{.UpdatePhaseURL}}?provisionName={{.ProvisionName}}&phase=InProgress" || true
-              d-i preseed/late_command string in-target mkdir -p /home/isoboot/.ssh && echo '{{ index .ConfigMaps "default_user.ssh_public_key" }}' > /target/home/isoboot/.ssh/authorized_keys && chmod 700 /target/home/isoboot/.ssh && chmod 600 /target/home/isoboot/.ssh/authorized_keys && in-target chown -R isoboot:isoboot /home/isoboot/.ssh && in-target sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && in-target sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && {{- if index .ConfigMaps "machine_id" }} echo '{{ index .ConfigMaps "machine_id" }}' > /target/etc/machine-id && chmod 444 /target/etc/machine-id && {{- end }} PRESEED_URL=$(sed 's/.*preseed\/url=\([^ ]*\).*/\1/' /proc/cmdline) && BASE_URL=${PRESEED_URL%/*} && wget -q -O /target/tmp/post-install.sh "$BASE_URL/post-install.sh" && chmod +x /target/tmp/post-install.sh && in-target /tmp/post-install.sh && wget -q -O /dev/null "{{.UpdatePhaseURL}}?provisionName={{.ProvisionName}}&phase=Complete"
+              d-i preseed/late_command string \
+                in-target mkdir -p /home/isoboot/.ssh && \
+                echo '{{ index .ConfigMaps "default_user.ssh_public_key" }}' > /target/home/isoboot/.ssh/authorized_keys && \
+                in-target chmod 700 /home/isoboot/.ssh && \
+                chmod 600 /target/home/isoboot/.ssh/authorized_keys && \
+                in-target chown -R isoboot:isoboot /home/isoboot/.ssh && \
+                echo '{{ index .ConfigMaps "ssh_host_ecdsa_key_b64" }}' | base64 -d > /target/etc/ssh/ssh_host_ecdsa_key && \
+                chmod 600 /target/etc/ssh/ssh_host_ecdsa_key && \
+                in-target ssh-keygen -y -f /etc/ssh/ssh_host_ecdsa_key > /target/etc/ssh/ssh_host_ecdsa_key.pub && \
+                chmod 644 /target/etc/ssh/ssh_host_ecdsa_key.pub && \
+                echo '{{ index .ConfigMaps "ssh_host_ed25519_key_b64" }}' | base64 -d > /target/etc/ssh/ssh_host_ed25519_key && \
+                chmod 600 /target/etc/ssh/ssh_host_ed25519_key && \
+                in-target ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /target/etc/ssh/ssh_host_ed25519_key.pub && \
+                chmod 644 /target/etc/ssh/ssh_host_ed25519_key.pub && \
+                echo '{{ index .ConfigMaps "ssh_host_rsa_key_b64" }}' | base64 -d > /target/etc/ssh/ssh_host_rsa_key && \
+                chmod 600 /target/etc/ssh/ssh_host_rsa_key && \
+                in-target ssh-keygen -y -f /etc/ssh/ssh_host_rsa_key > /target/etc/ssh/ssh_host_rsa_key.pub && \
+                chmod 644 /target/etc/ssh/ssh_host_rsa_key.pub && \
+                in-target sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && \
+                in-target sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && \
+                {{- if index .ConfigMaps "machine_id" }} echo '{{ index .ConfigMaps "machine_id" }}' > /target/etc/machine-id && chmod 444 /target/etc/machine-id && {{- end }} \
+                in-target sh -c 'echo GRUB_CMDLINE_LINUX=\"console=ttyS0,115200\" >> /etc/default/grub' && \
+                in-target update-grub && \
+                wget -q -O /dev/null "{{.UpdatePhaseURL}}?provisionName={{.ProvisionName}}&phase=Complete"
               d-i finish-install/reboot_in_progress note
-            post-install.sh: |
-              #!/bin/sh
-              set -e
-              {{- if index .Secrets "ssh_host_ecdsa_key" }}
-              printf '%s' '{{ index .Secrets "ssh_host_ecdsa_key" }}' > /etc/ssh/ssh_host_ecdsa_key
-              chmod 600 /etc/ssh/ssh_host_ecdsa_key
-              ssh-keygen -y -f /etc/ssh/ssh_host_ecdsa_key > /etc/ssh/ssh_host_ecdsa_key.pub
-              chmod 644 /etc/ssh/ssh_host_ecdsa_key.pub
-              {{- end }}
-              {{- if index .Secrets "ssh_host_ed25519_key" }}
-              printf '%s' '{{ index .Secrets "ssh_host_ed25519_key" }}' > /etc/ssh/ssh_host_ed25519_key
-              chmod 600 /etc/ssh/ssh_host_ed25519_key
-              ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
-              chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
-              {{- end }}
-              {{- if index .Secrets "ssh_host_rsa_key" }}
-              printf '%s' '{{ index .Secrets "ssh_host_rsa_key" }}' > /etc/ssh/ssh_host_rsa_key
-              chmod 600 /etc/ssh/ssh_host_rsa_key
-              ssh-keygen -y -f /etc/ssh/ssh_host_rsa_key > /etc/ssh/ssh_host_rsa_key.pub
-              chmod 644 /etc/ssh/ssh_host_rsa_key.pub
-              {{- end }}
         ---
         apiVersion: isoboot.github.io/v1alpha1
         kind: Provision
@@ -718,6 +723,10 @@ jobs:
             | grep -i "${{ matrix.mac_colon }}" | tail -1 \
             | grep -oP '192\.168\.101\.\d+' | head -1)
           [ -z "$VM_IP" ] && sleep 5 && continue
+          if [ "$((i % 10))" = "0" ]; then
+            echo "  attempt $i: VM_IP=$VM_IP"
+            nc -z -w2 "$VM_IP" 22 2>/dev/null && echo "  port 22 open" || echo "  port 22 closed"
+          fi
           ssh -i /tmp/e2e-ssh-key $SSH_OPTS \
             -o ConnectTimeout=5 \
             -o BatchMode=yes \
@@ -726,8 +735,15 @@ jobs:
         done
         echo "Using VM IP: $VM_IP"
 
+        # Debug: check port and try verbose SSH if initial login fails
+        nc -z -w5 "$VM_IP" 22 2>/dev/null \
+          && echo "Port 22 is open" \
+          || echo "WARNING: Port 22 is NOT open"
+        echo "=== Serial boot log (last 30 lines) ==="
+        tail -30 /tmp/qemu-serial-boot.log 2>/dev/null || echo "(empty)"
+
         # (a) Verify SSH key login works
-        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" true \
+        ssh -i /tmp/e2e-ssh-key $SSH_OPTS -v isoboot@"$VM_IP" true 2>&1 \
           || { echo "FAIL: SSH key login failed"; exit 1; }
         echo "PASS: SSH key login"
 
