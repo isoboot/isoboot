@@ -182,6 +182,7 @@ func conditionalBootHandler(
 		}
 
 		if directive == nil {
+			slog.Info("no pending provision", "mac", mac)
 			http.Error(w, "no pending provision for MAC", http.StatusNotFound)
 			return
 		}
