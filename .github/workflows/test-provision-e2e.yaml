@@ -391,7 +391,7 @@ jobs:
               autopart --type=plain
               clearpart --all --initlabel --drives=vda
               zerombr
-              bootloader --location=mbr --boot-drive=vda
+              bootloader --location=mbr --boot-drive=vda --append="console=ttyS0,115200"
               user --name={{ index .ConfigMaps "default_user.username" }} --groups=wheel --iscrypted --password={{ index .ConfigMaps "default_user.password" }}
               {{- if index .ConfigMaps "default_user.ssh_public_key" }}
               sshkey --username={{ index .ConfigMaps "default_user.username" }} "{{ index .ConfigMaps "default_user.ssh_public_key" }}"
@@ -662,6 +662,10 @@ jobs:
           done
         fi
         sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
+
+        # Re-attach tap device to bridge (may detach when QEMU exits)
+        sudo ip link set tap-vm master br-pxe
+        sudo ip link set tap-vm up
 
         # Locate OVMF firmware
         OVMF_CODE=""
