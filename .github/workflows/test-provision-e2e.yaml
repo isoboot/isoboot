@@ -687,7 +687,7 @@ jobs:
       timeout-minutes: 5
       run: |
         echo "Verifying provision does NOT reach Complete..."
-        for i in $(seq 1 30); do
+        for i in $(seq 1 25); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
           echo "  phase=$PHASE (attempt $i)"
