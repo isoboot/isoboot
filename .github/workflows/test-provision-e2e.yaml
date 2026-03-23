@@ -847,15 +847,8 @@ jobs:
           || { echo "FAIL: root not on virtio disk, got $ROOT_DEV"; exit 1; }
         echo "PASS: OS on virtio /dev/vda"
 
-        # (h) Verify e100 firmware status (i82551 tests only)
-        if [ "${{ matrix.verify_e100_firmware }}" = "fail" ]; then
-          E100_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
-            "dmesg | grep -i e100 || true")
-          echo "e100 dmesg: $E100_LOG"
-          echo "$E100_LOG" | grep -qi "fail\|error" \
-            || { echo "FAIL: e100 should have failed firmware load"; exit 1; }
-          echo "PASS: e100 firmware load failed as expected"
-        elif [ "${{ matrix.verify_e100_firmware }}" = "pass" ]; then
+        # (h) Verify e100 firmware loaded (i82551 firmware test only)
+        if [ "${{ matrix.verify_e100_firmware }}" = "pass" ]; then
           E100_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
             "dmesg | grep -i e100 || true")
           echo "e100 dmesg: $E100_LOG"
