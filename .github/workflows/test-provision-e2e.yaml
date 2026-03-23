@@ -99,7 +99,7 @@ jobs:
         helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${REGISTRY}/isoboot/charts
 
   provision-test:
-    name: Provision E2E — ${{ matrix.distro }} ${{ matrix.version }}
+    name: Provision E2E — ${{ matrix.distro }} ${{ matrix.version }}${{ matrix.name_suffix || '' }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -157,6 +157,35 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
+          - distro: "Debian"
+            version: "13"
+            name_suffix: " i82551"
+            manifest: "debian-13"
+            hostname: "deb13nfw"
+            os_id: "debian"
+            mac_hyphen: "02-00-00-ab-cd-07"
+            mac_colon: "02:00:00:ab:cd:07"
+            installer: "preseed"
+            kernel_filename: "linux"
+            initrd_filename: "initrd.gz"
+            nic_device: "i82551"
+            nic_extra_args: ",romfile=efi-eepro100.rom"
+            expect_failure: "true"
+          - distro: "Debian"
+            version: "13"
+            name_suffix: " i82551 firmware"
+            manifest: "debian-13"
+            firmware_manifest: "debian-13-firmware"
+            bootconfig: "debian-13-firmware"
+            hostname: "deb13fw"
+            os_id: "debian"
+            mac_hyphen: "02-00-00-ab-cd-08"
+            mac_colon: "02:00:00:ab:cd:08"
+            installer: "preseed"
+            kernel_filename: "linux"
+            initrd_filename: "initrd.gz"
+            nic_device: "i82551"
+            nic_extra_args: ",romfile=efi-eepro100.rom"
     steps:
     - uses: actions/checkout@v4
 
@@ -165,7 +194,7 @@ jobs:
 
     # ── Network tools ──────────────────────────────────────────────
     - name: Install network tools
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat ipxe-qemu
 
     - name: Enable KVM
       run: |
@@ -234,8 +263,8 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: /tmp/squid-cache
-        key: squid-${{ matrix.manifest }}-
-        restore-keys: squid-${{ matrix.manifest }}-
+        key: squid-${{ matrix.hostname }}-
+        restore-keys: squid-${{ matrix.hostname }}-
 
     - name: Populate squid cache from restore
       if: steps.squid-cache.outputs.cache-matched-key != ''
@@ -328,15 +357,22 @@ jobs:
         kubectl -n isoboot-system get pods
 
     - name: Apply ${{ matrix.distro }} ${{ matrix.version }} example manifest
-      run: kubectl -n isoboot-system apply -f examples/${{ matrix.manifest }}.yaml
+      run: |
+        kubectl -n isoboot-system apply -f examples/${{ matrix.manifest }}.yaml
+        if [ -n "${{ matrix.firmware_manifest }}" ]; then
+          kubectl -n isoboot-system apply -f examples/${{ matrix.firmware_manifest }}.yaml
+        fi
 
     - name: Wait for BootArtifacts Ready
       run: |
         ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ matrix.manifest }}-kernel
         ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ matrix.manifest }}-initrd
+        if [ -n "${{ matrix.firmware_manifest }}" ]; then
+          ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ matrix.firmware_manifest }}
+        fi
 
     - name: Wait for BootConfig Ready
-      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig ${{ matrix.manifest }}
+      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig ${{ matrix.bootconfig || matrix.manifest }}
 
     # ── Generate SSH keys and password ─────────────────────────────
     - name: Generate SSH keys and encrypted password
@@ -443,7 +479,7 @@ jobs:
           name: qemu-vm1-provision
         spec:
           machineRef: qemu-vm1
-          bootConfigRef: ${{ matrix.manifest }}
+          bootConfigRef: ${{ matrix.bootconfig || matrix.manifest }}
           provisionAutomationRef: qemu-vm1-automation
           configMaps:
             - default-user
@@ -507,7 +543,7 @@ jobs:
           name: qemu-vm1-provision
         spec:
           machineRef: qemu-vm1
-          bootConfigRef: ${{ matrix.manifest }}
+          bootConfigRef: ${{ matrix.bootconfig || matrix.manifest }}
           provisionAutomationRef: qemu-vm1-automation
           configMaps:
             - default-user
@@ -550,7 +586,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device virtio-net-pci,netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }} \
+          -device ${{ matrix.nic_device || 'virtio-net-pci' }},netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }}${{ matrix.nic_extra_args || '' }} \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -589,7 +625,7 @@ jobs:
 
         for i in $(seq 1 60); do
           if kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null \
-              | grep "GET /static/${{ matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
+              | grep "GET /static/${{ matrix.bootconfig || matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
               | grep '" 200 ' | grep -q 'iPXE/'; then
             echo "Kernel downloaded by iPXE"
             break
@@ -598,12 +634,12 @@ jobs:
         done
 
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep "GET /static/${{ matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
+          | grep "GET /static/${{ matrix.bootconfig || matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
           | grep '" 200 ' | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for kernel download"; exit 1; }
 
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep "GET /static/${{ matrix.manifest }}/initrd/${{ matrix.initrd_filename }}" \
+          | grep "GET /static/${{ matrix.bootconfig || matrix.manifest }}/initrd/${{ matrix.initrd_filename }}" \
           | grep '" 200 ' | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for initrd download"; exit 1; }
 
@@ -611,6 +647,7 @@ jobs:
 
     # ── Wait for provisioning to complete ──────────────────────────
     - name: Wait for Provision phase InProgress
+      if: matrix.expect_failure != 'true'
       timeout-minutes: 10
       run: |
         echo "Waiting for Provision phase InProgress..."
@@ -628,6 +665,7 @@ jobs:
         echo "Provision is $PHASE"
 
     - name: Wait for Provision phase Complete
+      if: matrix.expect_failure != 'true'
       timeout-minutes: 10
       run: |
         echo "Waiting for Provision phase Complete..."
@@ -644,8 +682,23 @@ jobs:
         [ "$PHASE" = "Complete" ] || { echo "FAIL: provision not Complete, got $PHASE"; exit 1; }
         echo "Provision complete!"
 
+    - name: Verify provision does not complete (no-firmware)
+      if: matrix.expect_failure == 'true'
+      timeout-minutes: 5
+      run: |
+        echo "Verifying provision does NOT reach Complete..."
+        for i in $(seq 1 30); do
+          PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
+            -o jsonpath='{.status.phase}' 2>/dev/null)
+          echo "  phase=$PHASE (attempt $i)"
+          [ "$PHASE" = "Complete" ] && { echo "FAIL: provision reached Complete unexpectedly"; exit 1; }
+          sleep 10
+        done
+        echo "PASS: provision did not reach Complete (expected for no-firmware test)"
+
     # ── Reboot VM from disk ──────────────────────────────────────
     - name: Restart QEMU to boot from disk
+      if: matrix.expect_failure != 'true'
       run: |
         # Graceful shutdown via QEMU monitor (flushes OVMF NVRAM)
         if [ -S /tmp/qemu-monitor.sock ]; then
@@ -678,7 +731,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0,bootindex=1 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device virtio-net-pci,netdev=pxe0,mac=${{ matrix.mac_colon }} \
+          -device ${{ matrix.nic_device || 'virtio-net-pci' }},netdev=pxe0,mac=${{ matrix.mac_colon }}${{ matrix.nic_extra_args || '' }} \
           -display none \
           -serial file:/tmp/qemu-serial-boot.log \
           -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
@@ -689,6 +742,7 @@ jobs:
 
     # ── SSH into VM and verify ─────────────────────────────────────
     - name: Verify VM via SSH
+      if: matrix.expect_failure != 'true'
       run: |
         SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/e2e-known-hosts"
 
@@ -807,7 +861,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: qemu-screenshot-${{ matrix.manifest }}
+        name: qemu-screenshot-${{ matrix.hostname }}
         path: /tmp/qemu-screenshot.ppm
         if-no-files-found: ignore
 
@@ -898,7 +952,7 @@ jobs:
       uses: actions/cache/save@v4
       with:
         path: /tmp/squid-cache
-        key: squid-${{ matrix.manifest }}-${{ github.run_id }}
+        key: squid-${{ matrix.hostname }}-${{ github.run_id }}
 
     - name: Clean up
       if: always()
