@@ -168,9 +168,8 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
-            nic_device: "i82551"
-            nic_extra_args: ",romfile=efi-eepro100.rom"
-            expect_failure: "true"
+            qemu_extra_nic: "-netdev user,id=test0,restrict=on -device i82551,netdev=test0"
+            verify_e100_firmware: "fail"
           - distro: "Debian"
             version: "13"
             name_suffix: " i82551 firmware"
@@ -184,8 +183,8 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
-            nic_device: "i82551"
-            nic_extra_args: ",romfile=efi-eepro100.rom"
+            qemu_extra_nic: "-netdev user,id=test0,restrict=on -device i82551,netdev=test0"
+            verify_e100_firmware: "pass"
     steps:
     - uses: actions/checkout@v4
 
@@ -194,7 +193,7 @@ jobs:
 
     # ── Network tools ──────────────────────────────────────────────
     - name: Install network tools
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat ipxe-qemu
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat
 
     - name: Enable KVM
       run: |
@@ -586,7 +585,8 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device ${{ matrix.nic_device || 'virtio-net-pci' }},netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }}${{ matrix.nic_extra_args || '' }} \
+          -device virtio-net-pci,netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }} \
+          ${{ matrix.qemu_extra_nic || '' }} \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -657,7 +657,6 @@ jobs:
 
     # ── Wait for provisioning to complete ──────────────────────────
     - name: Wait for Provision phase InProgress
-      if: matrix.expect_failure != 'true'
       timeout-minutes: 10
       run: |
         echo "Waiting for Provision phase InProgress..."
@@ -675,7 +674,6 @@ jobs:
         echo "Provision is $PHASE"
 
     - name: Wait for Provision phase Complete
-      if: matrix.expect_failure != 'true'
       timeout-minutes: 10
       run: |
         echo "Waiting for Provision phase Complete..."
@@ -692,23 +690,8 @@ jobs:
         [ "$PHASE" = "Complete" ] || { echo "FAIL: provision not Complete, got $PHASE"; exit 1; }
         echo "Provision complete!"
 
-    - name: Verify provision does not complete (no-firmware)
-      if: matrix.expect_failure == 'true'
-      timeout-minutes: 5
-      run: |
-        echo "Verifying provision does NOT reach Complete..."
-        for i in $(seq 1 25); do
-          PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
-            -o jsonpath='{.status.phase}' 2>/dev/null)
-          echo "  phase=$PHASE (attempt $i)"
-          [ "$PHASE" = "Complete" ] && { echo "FAIL: provision reached Complete unexpectedly"; exit 1; }
-          sleep 10
-        done
-        echo "PASS: provision did not reach Complete (expected for no-firmware test)"
-
     # ── Reboot VM from disk ──────────────────────────────────────
     - name: Restart QEMU to boot from disk
-      if: matrix.expect_failure != 'true'
       run: |
         # Graceful shutdown via QEMU monitor (flushes OVMF NVRAM)
         if [ -S /tmp/qemu-monitor.sock ]; then
@@ -741,7 +724,8 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0,bootindex=1 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device ${{ matrix.nic_device || 'virtio-net-pci' }},netdev=pxe0,mac=${{ matrix.mac_colon }}${{ matrix.nic_extra_args || '' }} \
+          -device virtio-net-pci,netdev=pxe0,mac=${{ matrix.mac_colon }} \
+          ${{ matrix.qemu_extra_nic || '' }} \
           -display none \
           -serial file:/tmp/qemu-serial-boot.log \
           -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
@@ -752,7 +736,6 @@ jobs:
 
     # ── SSH into VM and verify ─────────────────────────────────────
     - name: Verify VM via SSH
-      if: matrix.expect_failure != 'true'
       run: |
         SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/e2e-known-hosts"
 
@@ -845,6 +828,23 @@ jobs:
         echo "$ROOT_DEV" | grep -q "^/dev/vda" \
           || { echo "FAIL: root not on virtio disk, got $ROOT_DEV"; exit 1; }
         echo "PASS: OS on virtio /dev/vda"
+
+        # (h) Verify e100 firmware status (i82551 tests only)
+        if [ "${{ matrix.verify_e100_firmware }}" = "fail" ]; then
+          E100_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
+            "dmesg | grep -i e100 || true")
+          echo "e100 dmesg: $E100_LOG"
+          echo "$E100_LOG" | grep -qi "fail\|error" \
+            || { echo "FAIL: e100 should have failed firmware load"; exit 1; }
+          echo "PASS: e100 firmware load failed as expected"
+        elif [ "${{ matrix.verify_e100_firmware }}" = "pass" ]; then
+          E100_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
+            "dmesg | grep -i e100 || true")
+          echo "e100 dmesg: $E100_LOG"
+          echo "$E100_LOG" | grep -qi "fail\|error" \
+            && { echo "FAIL: e100 should have loaded firmware successfully"; exit 1; }
+          echo "PASS: e100 firmware loaded successfully"
+        fi
 
         echo "All SSH verifications passed!"
 
