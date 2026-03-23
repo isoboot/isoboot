@@ -184,6 +184,7 @@ jobs:
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
             qemu_extra_nic: "-netdev tap,id=test0,ifname=tap-vm2,script=no,downscript=no -device i82551,netdev=test0"
+            qemu_ram: "8192"
             verify_e100_firmware: "pass"
     steps:
     - uses: actions/checkout@v4
@@ -583,7 +584,7 @@ jobs:
 
         sudo qemu-system-x86_64 \
           -enable-kvm \
-          -m 4096 \
+          -m ${{ matrix.qemu_ram || '4096' }} \
           -cpu host \
           -smp 2 \
           -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
@@ -743,7 +744,7 @@ jobs:
         # Restart with bootindex=1 on disk so UEFI boots from disk first
         sudo qemu-system-x86_64 \
           -enable-kvm \
-          -m 4096 \
+          -m ${{ matrix.qemu_ram || '4096' }} \
           -cpu host \
           -smp 2 \
           -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
