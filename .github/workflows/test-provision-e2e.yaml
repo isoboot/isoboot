@@ -168,7 +168,7 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
-            qemu_extra_nic: "-netdev user,id=test0,restrict=on -device i82551,netdev=test0"
+            qemu_extra_nic: "-netdev tap,id=test0,ifname=tap-vm2,script=no,downscript=no -device i82551,netdev=test0"
             expect_provision_failure: "true"
           - distro: "Debian"
             version: "13"
@@ -183,7 +183,7 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
-            qemu_extra_nic: "-netdev user,id=test0,restrict=on -device i82551,netdev=test0"
+            qemu_extra_nic: "-netdev tap,id=test0,ifname=tap-vm2,script=no,downscript=no -device i82551,netdev=test0"
             verify_e100_firmware: "pass"
     steps:
     - uses: actions/checkout@v4
@@ -573,6 +573,12 @@ jobs:
         sudo ip link set tap-vm master br-pxe
         sudo ip link set tap-vm up
 
+        if [ -n "${{ matrix.qemu_extra_nic }}" ]; then
+          sudo ip tuntap add dev tap-vm2 mode tap
+          sudo ip link set tap-vm2 master br-pxe
+          sudo ip link set tap-vm2 up
+        fi
+
         qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 20G
 
         sudo qemu-system-x86_64 \
@@ -720,9 +726,13 @@ jobs:
         fi
         sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
 
-        # Re-attach tap device to bridge (may detach when QEMU exits)
+        # Re-attach tap devices to bridge (may detach when QEMU exits)
         sudo ip link set tap-vm master br-pxe
         sudo ip link set tap-vm up
+        if [ -e /sys/class/net/tap-vm2 ]; then
+          sudo ip link set tap-vm2 master br-pxe
+          sudo ip link set tap-vm2 up
+        fi
 
         # Locate OVMF firmware
         OVMF_CODE=""
@@ -979,6 +989,7 @@ jobs:
       if: always()
       run: |
         [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+        sudo ip link del tap-vm2 2>/dev/null || true
         sudo ip link del tap-vm 2>/dev/null || true
         /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
         docker rm -f dhcp-srv 2>/dev/null || true
