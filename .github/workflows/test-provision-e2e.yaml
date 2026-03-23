@@ -638,6 +638,16 @@ jobs:
           | grep '" 200 ' | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for kernel download"; exit 1; }
 
+        for i in $(seq 1 60); do
+          if kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null \
+              | grep "GET /static/${{ matrix.bootconfig || matrix.manifest }}/initrd/${{ matrix.initrd_filename }}" \
+              | grep '" 200 ' | grep -q 'iPXE/'; then
+            echo "Initrd downloaded by iPXE"
+            break
+          fi
+          sleep 5
+        done
+
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
           | grep "GET /static/${{ matrix.bootconfig || matrix.manifest }}/initrd/${{ matrix.initrd_filename }}" \
           | grep '" 200 ' | grep 'iPXE/' \
