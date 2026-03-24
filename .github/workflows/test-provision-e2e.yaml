@@ -576,6 +576,14 @@ jobs:
 
         qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 20G
 
+        # OVMF has no built-in i82551 driver; load the iPXE EFI ROM so
+        # OVMF can PXE-boot through the NIC.
+        NIC_DEVICE="${{ matrix.nic_device || 'virtio-net-pci' }}"
+        NIC_ROM=""
+        if [ "$NIC_DEVICE" = "i82551" ]; then
+          NIC_ROM=",romfile=efi-eepro100.rom"
+        fi
+
         sudo qemu-system-x86_64 \
           -enable-kvm \
           -m ${{ matrix.qemu_ram || '4096' }} \
@@ -586,7 +594,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device ${{ matrix.nic_device || 'virtio-net-pci' }},netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }} \
+          -device "${NIC_DEVICE},netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }}${NIC_ROM}" \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -741,6 +749,12 @@ jobs:
           [ -f "$f" ] && OVMF_CODE="$f" && break
         done
 
+        NIC_DEVICE="${{ matrix.nic_device || 'virtio-net-pci' }}"
+        NIC_ROM=""
+        if [ "$NIC_DEVICE" = "i82551" ]; then
+          NIC_ROM=",romfile=efi-eepro100.rom"
+        fi
+
         # Restart with bootindex=1 on disk so UEFI boots from disk first
         sudo qemu-system-x86_64 \
           -enable-kvm \
@@ -752,7 +766,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0,bootindex=1 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device ${{ matrix.nic_device || 'virtio-net-pci' }},netdev=pxe0,mac=${{ matrix.mac_colon }} \
+          -device "${NIC_DEVICE},netdev=pxe0,mac=${{ matrix.mac_colon }}${NIC_ROM}" \
           -display none \
           -serial file:/tmp/qemu-serial-boot.log \
           -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
