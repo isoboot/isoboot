@@ -209,7 +209,7 @@ func concatenateFiles(dst, srcA, srcB string) error {
 		return fmt.Errorf("closing temp file: %w", err)
 	}
 
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
+	if err := os.Chmod(tmpPath, 0o444); err != nil {
 		return fmt.Errorf("setting permissions: %w", err)
 	}
 

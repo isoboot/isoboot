@@ -168,7 +168,7 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
-            qemu_extra_nic: "-netdev tap,id=test0,ifname=tap-vm2,script=no,downscript=no -device i82551,netdev=test0"
+            nic_device: "i82551"
             expect_provision_failure: "true"
           - distro: "Debian"
             version: "13"
@@ -183,7 +183,7 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
-            qemu_extra_nic: "-netdev tap,id=test0,ifname=tap-vm2,script=no,downscript=no -device i82551,netdev=test0"
+            nic_device: "i82551"
             qemu_ram: "8192"
             verify_e100_firmware: "pass"
     steps:
@@ -194,7 +194,7 @@ jobs:
 
     # ── Network tools ──────────────────────────────────────────────
     - name: Install network tools
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat ipxe-qemu
 
     - name: Enable KVM
       run: |
@@ -574,12 +574,6 @@ jobs:
         sudo ip link set tap-vm master br-pxe
         sudo ip link set tap-vm up
 
-        if [ -n "${{ matrix.qemu_extra_nic }}" ]; then
-          sudo ip tuntap add dev tap-vm2 mode tap
-          sudo ip link set tap-vm2 master br-pxe
-          sudo ip link set tap-vm2 up
-        fi
-
         qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 20G
 
         sudo qemu-system-x86_64 \
@@ -592,8 +586,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device virtio-net-pci,netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }} \
-          ${{ matrix.qemu_extra_nic || '' }} \
+          -device ${{ matrix.nic_device || 'virtio-net-pci' }},netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }} \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -701,17 +694,28 @@ jobs:
 
     - name: Verify provision does not complete (no-firmware)
       if: matrix.expect_provision_failure == 'true'
-      timeout-minutes: 5
+      timeout-minutes: 10
       run: |
         echo "Verifying provision does NOT reach Complete..."
-        for i in $(seq 1 25); do
+        for i in $(seq 1 50); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
           echo "  phase=$PHASE (attempt $i)"
           [ "$PHASE" = "Complete" ] && { echo "FAIL: provision reached Complete unexpectedly"; exit 1; }
           sleep 10
         done
-        echo "PASS: provision did not reach Complete (expected for no-firmware test)"
+        echo "PASS: provision did not reach Complete"
+
+    - name: Verify e100 firmware error in serial log
+      if: matrix.expect_provision_failure == 'true'
+      run: |
+        echo "=== Full serial console log ==="
+        cat /tmp/qemu-serial.log || true
+        echo "=== e100 lines ==="
+        grep -i e100 /tmp/qemu-serial.log || true
+        grep -i "e100" /tmp/qemu-serial.log | grep -qi "firmware\|error\|fail" \
+          || { echo "FAIL: no e100 firmware error in serial log"; exit 1; }
+        echo "PASS: e100 firmware error confirmed in serial log"
 
     # ── Reboot VM from disk ──────────────────────────────────────
     - name: Restart QEMU to boot from disk
@@ -727,13 +731,9 @@ jobs:
         fi
         sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
 
-        # Re-attach tap devices to bridge (may detach when QEMU exits)
+        # Re-attach tap device to bridge (may detach when QEMU exits)
         sudo ip link set tap-vm master br-pxe
         sudo ip link set tap-vm up
-        if [ -e /sys/class/net/tap-vm2 ]; then
-          sudo ip link set tap-vm2 master br-pxe
-          sudo ip link set tap-vm2 up
-        fi
 
         # Locate OVMF firmware
         OVMF_CODE=""
@@ -752,8 +752,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0,bootindex=1 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device virtio-net-pci,netdev=pxe0,mac=${{ matrix.mac_colon }} \
-          ${{ matrix.qemu_extra_nic || '' }} \
+          -device ${{ matrix.nic_device || 'virtio-net-pci' }},netdev=pxe0,mac=${{ matrix.mac_colon }} \
           -display none \
           -serial file:/tmp/qemu-serial-boot.log \
           -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
@@ -860,12 +859,16 @@ jobs:
 
         # (h) Verify e100 firmware loaded (i82551 firmware test only)
         if [ "${{ matrix.verify_e100_firmware }}" = "pass" ]; then
+          ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "lsmod | grep -qw e100" \
+            || { echo "FAIL: e100 module not loaded"; exit 1; }
+          echo "PASS: e100 module loaded"
+
           E100_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
             "dmesg | grep -i e100 || true")
           echo "e100 dmesg: $E100_LOG"
           echo "$E100_LOG" | grep -qi "fail\|error" \
-            && { echo "FAIL: e100 should have loaded firmware successfully"; exit 1; }
-          echo "PASS: e100 firmware loaded successfully"
+            && { echo "FAIL: e100 firmware errors in dmesg"; exit 1; }
+          echo "PASS: e100 firmware loaded without errors"
         fi
 
         echo "All SSH verifications passed!"
@@ -990,7 +993,6 @@ jobs:
       if: always()
       run: |
         [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
-        sudo ip link del tap-vm2 2>/dev/null || true
         sudo ip link del tap-vm 2>/dev/null || true
         /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
         docker rm -f dhcp-srv 2>/dev/null || true
