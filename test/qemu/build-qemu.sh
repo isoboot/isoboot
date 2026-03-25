@@ -51,9 +51,13 @@ fi
 # Build (parallel)
 ninja -C build -j"$(nproc)"
 
-# Install
+# Install binary and ROM/firmware files QEMU needs at runtime
 sudo cp build/qemu-system-x86_64 /usr/local/bin/qemu-system-x86_64
-sudo cp -r build/pc-bios /usr/local/share/qemu 2>/dev/null || true
+sudo mkdir -p /usr/local/share/qemu
+sudo cp -a pc-bios/*.bin pc-bios/*.rom pc-bios/edk2-* pc-bios/keymaps \
+  /usr/local/share/qemu/ 2>/dev/null || true
+sudo cp -a build/pc-bios/*.bin build/pc-bios/*.rom \
+  /usr/local/share/qemu/ 2>/dev/null || true
 
 echo "=== QEMU ${QEMU_VERSION} with RTL8168 installed ==="
 qemu-system-x86_64 --version
