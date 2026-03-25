@@ -358,9 +358,22 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
         return ldl_le_p(&s->regs[REG_OCPAR]) | 0x80000000u;  /* access done */
     case REG_GPHY_OCP: {
         /* Write cmd (bit31=1): polls wait_low → return flag clear.
-         * Read cmd  (bit31=0): polls wait_high → return flag set + data. */
+         * Read cmd  (bit31=0): polls wait_high → return flag set + PHY data.
+         * OCP PHY address: reg field is (val >> 15), OCP base 0xa400. */
         uint32_t v = ldl_le_p(&s->regs[REG_GPHY_OCP]);
-        return (v & 0x80000000u) ? (v & ~0x80000000u) : (v | 0x80000000u);
+        if (v & 0x80000000u) {
+            return v & ~0x80000000u;  /* write done */
+        }
+        /* Read: extract OCP reg, return PHY data with flag set */
+        uint32_t ocp_reg = (v >> 15) & 0xfff;
+        uint16_t data = 0;
+        if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
+            int phyreg = (ocp_reg - 0xa400) / 2;
+            if (phyreg < 32) {
+                data = s->phy_regs[phyreg];
+            }
+        }
+        return 0x80000000u | data;
     }
     case REG_MCU:
         return MCU_READY_BITS;  /* FIFOs empty, link list ready */
@@ -508,7 +521,6 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
         break;
     case REG_OCPDR:
     case REG_OCPAR:
-    case REG_GPHY_OCP:
     case REG_ERIDR:
     case REG_ERIAR:
     case REG_CSIAR:
@@ -516,6 +528,28 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
         /* Indirect access registers — store value, flag auto-clears on read */
         stl_le_p(&s->regs[addr], val);
         break;
+    case REG_GPHY_OCP: {
+        /* OCP PHY access. Write cmd (bit31=1) writes PHY reg + data.
+         * Track PHY writes for firmware detection. */
+        stl_le_p(&s->regs[REG_GPHY_OCP], val);
+        if (val & 0x80000000u) {
+            uint32_t ocp_reg = (val >> 15) & 0xfff;
+            uint16_t data = val & 0xffff;
+            if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
+                int phyreg = (ocp_reg - 0xa400) / 2;
+                if (phyreg < 32) {
+                    s->phy_regs[phyreg] = data;
+                }
+            }
+            s->phy_write_count++;
+            if (!s->fw_loaded &&
+                s->phy_write_count >= FW_PHY_WRITE_THRESHOLD) {
+                s->fw_loaded = true;
+                rtl8168_set_intr(s, INTR_LINK_CHG);
+            }
+        }
+        break;
+    }
     default:
         if (addr < sizeof(s->regs)) {
             switch (size) {
@@ -578,11 +612,17 @@ static void rtl8168_realize(PCIDevice *pci_dev, Error **errp)
     s->tx_cur = 0;
     s->rx_cur = 0;
 
-    /* PHY: advertise 1Gbps capability */
-    s->phy_regs[0] = 0x1140;  /* BMCR: auto-negotiate */
-    s->phy_regs[1] = 0x796d;  /* BMSR: link, autoneg capable */
-    s->phy_regs[2] = 0x001c;  /* PHYID1: Realtek */
-    s->phy_regs[3] = 0xc912;  /* PHYID2: RTL8168G */
+    /* PHY registers — Realtek internal PHY for RTL8168G */
+    s->phy_regs[0]  = 0x1140;  /* MII_BMCR: autoneg enable, 1Gbps */
+    s->phy_regs[1]  = 0x796d;  /* MII_BMSR: link up, autoneg capable/complete */
+    s->phy_regs[2]  = 0x001c;  /* MII_PHYSID1: Realtek OUI */
+    s->phy_regs[3]  = 0xc912;  /* MII_PHYSID2: RTL8168G */
+    s->phy_regs[4]  = 0x01e1;  /* MII_ADVERTISE: 100/10 FD/HD, 802.3 */
+    s->phy_regs[5]  = 0xc5e1;  /* MII_LPA: partner advert */
+    s->phy_regs[6]  = 0x000f;  /* MII_EXPANSION */
+    s->phy_regs[9]  = 0x0200;  /* MII_CTRL1000: advertise 1000baseT FD */
+    s->phy_regs[10] = 0x3c00;  /* MII_STAT1000: partner 1000baseT FD */
+    s->phy_regs[15] = 0x3000;  /* MII_ESTATUS: 1000baseT FD/HD capable */
 }
 
 static void rtl8168_exit(PCIDevice *pci_dev)
