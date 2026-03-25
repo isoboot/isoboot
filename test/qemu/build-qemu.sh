@@ -28,12 +28,12 @@ cd "qemu-${QEMU_VERSION}"
 # Copy our RTL8168 device into the QEMU source tree
 cp "$SCRIPT_DIR/rtl8168.c" hw/net/rtl8168.c
 
-# Patch meson.build to include our device
+# Patch meson.build to include our device (unconditionally for x86)
 if ! grep -q 'rtl8168' hw/net/meson.build; then
-  # Add rtl8168.c to the system softmmu network devices
-  sed -i "/^softmmu_ss.add.*eepro100/a softmmu_ss.add(files('rtl8168.c'))" \
+  sed -i "/system_ss.add.*CONFIG_RTL8139_PCI/a system_ss.add(files('rtl8168.c'))" \
     hw/net/meson.build
   echo "Patched hw/net/meson.build"
+  grep rtl8168 hw/net/meson.build
 fi
 
 # Configure — x86_64 softmmu only, minimal features for speed
