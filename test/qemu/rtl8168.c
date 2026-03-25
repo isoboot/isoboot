@@ -386,14 +386,17 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
     default:
         if (addr < sizeof(s->regs)) {
             switch (size) {
-            case 1: return s->regs[addr];
-            case 2: return lduw_le_p(&s->regs[addr]);
+            case 1:
+                /* Return 0xff for unhandled 8-bit reads so that any
+                 * wait_high bit-check poll passes immediately. Specific
+                 * registers that need exact values are handled above. */
+                return s->regs[addr] | 0xff;
+            case 2:
+                return lduw_le_p(&s->regs[addr]) | 0xffff;
             case 4: {
-                /* For unhandled 32-bit registers: toggle bit 31 from the
-                 * written value.  The r8169 driver uses bit-31 as a busy
-                 * flag on many indirect-access registers (ERIAR, CSIAR,
-                 * EPHYAR, OCPAR, EFUSEAR, …).  Toggling it makes every
-                 * poll loop (wait-high / wait-low) succeed immediately. */
+                /* Toggle bit 31: the r8169 driver uses it as a busy flag
+                 * on indirect-access registers.  Toggling makes every
+                 * wait-high / wait-low poll succeed immediately. */
                 uint32_t v = ldl_le_p(&s->regs[addr]);
                 return v ^ 0x80000000u;
             }
