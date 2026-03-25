@@ -61,6 +61,9 @@ enum {
     REG_CSIDR            = 0x64,
     REG_CSIAR            = 0x68,
     REG_PHYSTATUS        = 0x6c,
+    REG_ERIDR            = 0x70,
+    REG_ERIAR            = 0x74,
+    REG_MCU              = 0xd3,
     REG_RXMAXSIZE        = 0xda,
     REG_CPLUSCMD         = 0xe0,
     REG_INTRMITIGATE     = 0xe2,
@@ -85,6 +88,14 @@ enum {
 #define CFG9346_LOCK        0x00
 
 #define PHYAR_FLAG          BIT(31) /* R/W flag */
+#define ERIAR_FLAG          BIT(31) /* ERI access done */
+#define CSIAR_FLAG          BIT(31) /* CSI access done */
+
+/* MCU register bits */
+#define MCU_TX_EMPTY        BIT(5)
+#define MCU_RX_EMPTY        BIT(4)
+#define MCU_LINK_LIST_RDY   BIT(1)
+#define MCU_READY_BITS      (MCU_TX_EMPTY | MCU_RX_EMPTY | MCU_LINK_LIST_RDY)
 
 /* PHYstatus bits */
 #define PHYSTATUS_FULLDUP   BIT(0)
@@ -106,7 +117,8 @@ enum {
  * against { mask=0x7cf, val=0x509 } → RTL_GIGA_MAC_VER_42, firmware
  * rtl_nic/rtl8168g-2.fw.  So we need (TxConfig >> 20) & 0xfcf == 0x509.
  */
-#define TXCONFIG_VER42      (0x509u << 20)
+#define TXCFG_EMPTY         BIT(11)
+#define TXCONFIG_VER42      ((0x509u << 20) | TXCFG_EMPTY)
 
 /* Descriptor format */
 #define DESC_OWN            BIT(31)
@@ -337,8 +349,14 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
         return (uint32_t)s->rx_desc_addr;
     case REG_RXDESC_HI:
         return (uint32_t)(s->rx_desc_addr >> 32);
+    case REG_MCU:
+        return MCU_READY_BITS;  /* FIFOs empty, link list ready */
+    case REG_ERIAR:
+        return ERIAR_FLAG;  /* ERI access always complete */
+    case REG_ERIDR:
+        return 0;
     case REG_CSIAR:
-        return 0;  /* CSI access complete */
+        return CSIAR_FLAG;  /* CSI access always complete */
     default:
         if (addr < sizeof(s->regs)) {
             switch (size) {
@@ -475,8 +493,12 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
     case REG_MAXTXPKTSIZE:
         s->regs[REG_MAXTXPKTSIZE] = val;
         break;
+    case REG_ERIDR:
+    case REG_ERIAR:
     case REG_CSIAR:
-        /* CSI access — just ack it */
+    case REG_CSIDR:
+        /* ERI/CSI indirect access — just store and ack */
+        stl_le_p(&s->regs[addr], val);
         break;
     default:
         if (addr < sizeof(s->regs)) {
