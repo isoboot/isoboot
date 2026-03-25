@@ -884,7 +884,7 @@ jobs:
           echo "PASS: r8169 module loaded"
 
           RTL_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
-            "journalctl -k --no-pager 2>/dev/null | grep -iE 'r8169|rtl8168|rtl_nic' || dmesg 2>/dev/null | grep -iE 'r8169|rtl8168|rtl_nic' || true")
+            "grep -iE 'r8169|rtl8168|rtl_nic' /var/log/kern.log /var/log/syslog 2>/dev/null || true")
           echo "r8169 dmesg: $RTL_LOG"
           echo "$RTL_LOG" | grep -qi "unable\|fail\|error" \
             && { echo "FAIL: r8169 firmware errors in dmesg"; exit 1; }
@@ -893,7 +893,7 @@ jobs:
 
         if [ "${{ matrix.verify_rtl_firmware }}" = "fail" ]; then
           RTL_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
-            "journalctl -k --no-pager 2>/dev/null | grep -iE 'r8169|rtl8168|rtl_nic' || dmesg 2>/dev/null | grep -iE 'r8169|rtl8168|rtl_nic' || true")
+            "grep -iE 'r8169|rtl8168|rtl_nic' /var/log/kern.log /var/log/syslog 2>/dev/null || true")
           echo "r8169 dmesg: $RTL_LOG"
           echo "$RTL_LOG" | grep -qi "unable.*firmware\|firmware.*fail" \
             || { echo "FAIL: expected r8169 firmware warning not found"; exit 1; }
