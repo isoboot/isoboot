@@ -169,6 +169,7 @@ jobs:
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
             nic_device: "rtl8168"
+            expect_provision_failure: "true"
             verify_rtl_firmware: "fail"
           - distro: "Debian"
             version: "13"
@@ -586,9 +587,14 @@ jobs:
         NIC_DEVICE="${{ matrix.nic_device || 'virtio-net-pci' }}"
 
         # RTL8168 has no PXE ROM — use virtio-net-pci for PXE boot and
-        # add RTL8168 as a secondary NIC that requires firmware for link.
+        # add RTL8168 on a second tap so it has bridge access.  After PXE
+        # boot we disconnect virtio-net-pci so the installer can only use
+        # RTL8168 (which requires firmware for link).
         if [ "$NIC_DEVICE" = "rtl8168" ]; then
-          EXTRA_NIC="-netdev user,id=net1,restrict=on -device rtl8168,netdev=net1"
+          sudo ip tuntap add dev tap-rtl mode tap
+          sudo ip link set tap-rtl master br-pxe
+          sudo ip link set tap-rtl up
+          EXTRA_NIC="-netdev tap,id=net1,ifname=tap-rtl,script=no,downscript=no -device rtl8168,netdev=net1"
           NIC_DEVICE="virtio-net-pci"
         else
           EXTRA_NIC=""
@@ -675,6 +681,15 @@ jobs:
 
         echo "PXE boot successfully downloaded kernel and initrd"
 
+    - name: Disconnect PXE NIC from bridge (force installer to use RTL8168)
+      if: matrix.nic_device == 'rtl8168'
+      run: |
+        # Remove virtio-net-pci's tap from the bridge so the kernel's
+        # virtio_net driver gets no DHCP.  Only the RTL8168 tap remains
+        # on the bridge — without firmware its link stays down.
+        sudo ip link set tap-vm nomaster
+        echo "tap-vm disconnected from br-pxe; only tap-rtl remains"
+
     # ── Wait for provisioning to complete ──────────────────────────
     - name: Wait for Provision phase InProgress
       if: matrix.expect_provision_failure != 'true'
@@ -753,7 +768,10 @@ jobs:
         NIC_DEVICE="${{ matrix.nic_device || 'virtio-net-pci' }}"
 
         if [ "$NIC_DEVICE" = "rtl8168" ]; then
-          EXTRA_NIC="-netdev user,id=net1,restrict=on -device rtl8168,netdev=net1"
+          # Re-attach tap-rtl to bridge for disk boot
+          sudo ip link set tap-rtl master br-pxe 2>/dev/null || true
+          sudo ip link set tap-rtl up
+          EXTRA_NIC="-netdev tap,id=net1,ifname=tap-rtl,script=no,downscript=no -device rtl8168,netdev=net1"
           NIC_DEVICE="virtio-net-pci"
         else
           EXTRA_NIC=""
@@ -1022,6 +1040,7 @@ jobs:
       run: |
         [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
         sudo ip link del tap-vm 2>/dev/null || true
+        sudo ip link del tap-rtl 2>/dev/null || true
         /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
         docker rm -f dhcp-srv 2>/dev/null || true
         sudo rm -f /var/run/netns/ns1
