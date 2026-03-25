@@ -63,6 +63,9 @@ enum {
     REG_PHYSTATUS        = 0x6c,
     REG_ERIDR            = 0x70,
     REG_ERIAR            = 0x74,
+    REG_OCPDR            = 0xb0,  /* OCP GPHY access data */
+    REG_OCPAR            = 0xb4,  /* OCP GPHY access address */
+    REG_GPHY_OCP         = 0xb8,  /* GPHY OCP access */
     REG_MCU              = 0xd3,
     REG_RXMAXSIZE        = 0xda,
     REG_CPLUSCMD         = 0xe0,
@@ -349,6 +352,16 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
         return (uint32_t)s->rx_desc_addr;
     case REG_RXDESC_HI:
         return (uint32_t)(s->rx_desc_addr >> 32);
+    case REG_OCPDR:
+        return ldl_le_p(&s->regs[REG_OCPDR]) & ~0x80000000u;  /* data, flag clear */
+    case REG_OCPAR:
+        return ldl_le_p(&s->regs[REG_OCPAR]) | 0x80000000u;  /* access done */
+    case REG_GPHY_OCP: {
+        /* Write cmd (bit31=1): polls wait_low → return flag clear.
+         * Read cmd  (bit31=0): polls wait_high → return flag set + data. */
+        uint32_t v = ldl_le_p(&s->regs[REG_GPHY_OCP]);
+        return (v & 0x80000000u) ? (v & ~0x80000000u) : (v | 0x80000000u);
+    }
     case REG_MCU:
         return MCU_READY_BITS;  /* FIFOs empty, link list ready */
     case REG_ERIAR:
@@ -493,11 +506,14 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
     case REG_MAXTXPKTSIZE:
         s->regs[REG_MAXTXPKTSIZE] = val;
         break;
+    case REG_OCPDR:
+    case REG_OCPAR:
+    case REG_GPHY_OCP:
     case REG_ERIDR:
     case REG_ERIAR:
     case REG_CSIAR:
     case REG_CSIDR:
-        /* ERI/CSI indirect access — just store and ack */
+        /* Indirect access registers — store value, flag auto-clears on read */
         stl_le_p(&s->regs[addr], val);
         break;
     default:
