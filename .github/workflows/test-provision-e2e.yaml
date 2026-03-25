@@ -602,6 +602,7 @@ jobs:
           -daemonize \
           -pidfile /tmp/qemu-pxe.pid
 
+        sleep 1 && sudo chmod 644 /tmp/qemu-serial.log 2>/dev/null || true
         echo "QEMU VM launched (tap-vm on br-pxe, MAC=${{ matrix.mac_colon }})"
 
     # ── Monitor DHCP and PXE boot ──────────────────────────────────
@@ -773,6 +774,7 @@ jobs:
           -daemonize \
           -pidfile /tmp/qemu-pxe.pid
 
+        sleep 1 && sudo chmod 644 /tmp/qemu-serial-boot.log 2>/dev/null || true
         echo "QEMU restarted for disk boot (bootindex=1 on disk)"
 
     # ── SSH into VM and verify ─────────────────────────────────────
