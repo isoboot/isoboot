@@ -385,21 +385,15 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
         return CSIAR_FLAG;  /* CSI access always complete */
     default:
         if (addr < sizeof(s->regs)) {
+            /* For unhandled registers: return the bitwise inverse of the
+             * last written value.  The r8169 driver polls many registers
+             * using both wait_high (expects bit set) and wait_low
+             * (expects bit clear).  Inverting the stored value makes
+             * BOTH patterns succeed on the first read after a write. */
             switch (size) {
-            case 1:
-                /* Return 0xff for unhandled 8-bit reads so that any
-                 * wait_high bit-check poll passes immediately. Specific
-                 * registers that need exact values are handled above. */
-                return s->regs[addr] | 0xff;
-            case 2:
-                return lduw_le_p(&s->regs[addr]) | 0xffff;
-            case 4: {
-                /* Toggle bit 31: the r8169 driver uses it as a busy flag
-                 * on indirect-access registers.  Toggling makes every
-                 * wait-high / wait-low poll succeed immediately. */
-                uint32_t v = ldl_le_p(&s->regs[addr]);
-                return v ^ 0x80000000u;
-            }
+            case 1: return ~s->regs[addr] & 0xff;
+            case 2: return ~lduw_le_p(&s->regs[addr]) & 0xffff;
+            case 4: return ~ldl_le_p(&s->regs[addr]);
             }
         }
         return 0;
