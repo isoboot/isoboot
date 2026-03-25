@@ -169,7 +169,7 @@ jobs:
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
             nic_device: "rtl8168"
-            expect_provision_failure: "true"
+            verify_rtl_firmware: "fail"
           - distro: "Debian"
             version: "13"
             name_suffix: " rtl8168 firmware"
@@ -726,17 +726,6 @@ jobs:
         done
         echo "PASS: provision did not reach Complete"
 
-    - name: Verify r8169 firmware warning in serial log
-      if: matrix.expect_provision_failure == 'true'
-      run: |
-        echo "=== Full serial console log ==="
-        cat /tmp/qemu-serial.log || true
-        echo "=== r8169/rtl lines ==="
-        grep -iE "r8169|rtl8168|rtl_nic|firmware" /tmp/qemu-serial.log || true
-        grep -iE "r8169|rtl_nic" /tmp/qemu-serial.log | grep -qi "firmware\|unable\|error\|fail" \
-          || { echo "FAIL: no r8169 firmware error in serial log"; exit 1; }
-        echo "PASS: r8169 firmware error confirmed in serial log"
-
     # ── Reboot VM from disk ──────────────────────────────────────
     - name: Restart QEMU to boot from disk
       if: matrix.expect_provision_failure != 'true'
@@ -888,7 +877,7 @@ jobs:
           || { echo "FAIL: root not on virtio disk, got $ROOT_DEV"; exit 1; }
         echo "PASS: OS on virtio /dev/vda"
 
-        # (h) Verify r8169 firmware loaded (rtl8168 firmware test only)
+        # (h) Verify r8169 firmware status (rtl8168 tests only)
         if [ "${{ matrix.verify_rtl_firmware }}" = "pass" ]; then
           ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "lsmod | grep -qw r8169" \
             || { echo "FAIL: r8169 module not loaded"; exit 1; }
@@ -897,9 +886,18 @@ jobs:
           RTL_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
             "dmesg | grep -iE 'r8169|rtl8168|rtl_nic' || true")
           echo "r8169 dmesg: $RTL_LOG"
-          echo "$RTL_LOG" | grep -qi "fail\|error" \
+          echo "$RTL_LOG" | grep -qi "unable\|fail\|error" \
             && { echo "FAIL: r8169 firmware errors in dmesg"; exit 1; }
           echo "PASS: r8169 firmware loaded without errors"
+        fi
+
+        if [ "${{ matrix.verify_rtl_firmware }}" = "fail" ]; then
+          RTL_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
+            "dmesg | grep -iE 'r8169|rtl8168|rtl_nic' || true")
+          echo "r8169 dmesg: $RTL_LOG"
+          echo "$RTL_LOG" | grep -qi "unable.*firmware\|firmware.*fail" \
+            || { echo "FAIL: expected r8169 firmware warning not found"; exit 1; }
+          echo "PASS: r8169 firmware correctly not loaded"
         fi
 
         echo "All SSH verifications passed!"
