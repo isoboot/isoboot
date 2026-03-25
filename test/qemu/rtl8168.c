@@ -101,11 +101,12 @@ enum {
 #define INTR_LINK_CHG       BIT(5)  /* Link change */
 #define INTR_RDU            BIT(4)  /* RX descriptor unavail */
 
-/* TxConfig: chip version bits for RTL8168GU (VER_42)
- * The r8169 driver checks (TxConfig & 0x7cf) == 0x509 for this variant,
- * which uses firmware rtl_nic/rtl8168g-2.fw.
+/* TxConfig: chip version bits for RTL8168GU (VER_42).
+ * The r8169 driver extracts XID = (TxConfig >> 20) & 0xfcf, then matches
+ * against { mask=0x7cf, val=0x509 } → RTL_GIGA_MAC_VER_42, firmware
+ * rtl_nic/rtl8168g-2.fw.  So we need (TxConfig >> 20) & 0xfcf == 0x509.
  */
-#define TXCONFIG_VER42      0x54000509u
+#define TXCONFIG_VER42      (0x509u << 20)
 
 /* Descriptor format */
 #define DESC_OWN            BIT(31)
