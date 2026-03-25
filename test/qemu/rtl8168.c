@@ -539,6 +539,11 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
                 int phyreg = (ocp_reg - 0xa400) / 2;
                 if (phyreg < 32) {
                     s->phy_regs[phyreg] = data;
+                    /* Auto-clear BMCR reset bit (PHY reset completes
+                     * instantly in emulation) */
+                    if (phyreg == 0 && (data & 0x8000)) {
+                        s->phy_regs[0] = data & ~0x8000;
+                    }
                 }
             }
             s->phy_write_count++;
