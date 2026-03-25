@@ -365,7 +365,7 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
             return v & ~0x80000000u;  /* write done */
         }
         /* Read: extract OCP reg, return PHY data with flag set */
-        uint32_t ocp_reg = (v >> 15) & 0xffff;
+        uint32_t ocp_reg = (v >> 15) & 0xfff;
         uint16_t data = 0;
         if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
             int phyreg = (ocp_reg - 0xa400) / 2;
@@ -385,15 +385,10 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
         return CSIAR_FLAG;  /* CSI access always complete */
     default:
         if (addr < sizeof(s->regs)) {
-            /* For unhandled registers: return the bitwise inverse of the
-             * last written value.  The r8169 driver polls many registers
-             * using both wait_high (expects bit set) and wait_low
-             * (expects bit clear).  Inverting the stored value makes
-             * BOTH patterns succeed on the first read after a write. */
             switch (size) {
-            case 1: return ~s->regs[addr] & 0xff;
-            case 2: return ~lduw_le_p(&s->regs[addr]) & 0xffff;
-            case 4: return ~ldl_le_p(&s->regs[addr]);
+            case 1: return s->regs[addr];
+            case 2: return lduw_le_p(&s->regs[addr]);
+            case 4: return ldl_le_p(&s->regs[addr]);
             }
         }
         return 0;
