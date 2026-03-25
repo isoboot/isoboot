@@ -365,7 +365,7 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
             return v & ~0x80000000u;  /* write done */
         }
         /* Read: extract OCP reg, return PHY data with flag set */
-        uint32_t ocp_reg = (v >> 15) & 0xfff;
+        uint32_t ocp_reg = (v >> 15) & 0xffff;
         uint16_t data = 0;
         if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
             int phyreg = (ocp_reg - 0xa400) / 2;
@@ -533,7 +533,7 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
          * Track PHY writes for firmware detection. */
         stl_le_p(&s->regs[REG_GPHY_OCP], val);
         if (val & 0x80000000u) {
-            uint32_t ocp_reg = (val >> 15) & 0xfff;
+            uint32_t ocp_reg = (val >> 15) & 0xffff;
             uint16_t data = val & 0xffff;
             if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
                 int phyreg = (ocp_reg - 0xa400) / 2;
