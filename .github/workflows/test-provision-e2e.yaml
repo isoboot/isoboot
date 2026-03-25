@@ -159,7 +159,7 @@ jobs:
             initrd_filename: "initrd.gz"
           - distro: "Debian"
             version: "13"
-            name_suffix: " i82551"
+            name_suffix: " rtl8168"
             manifest: "debian-13"
             hostname: "deb13nfw"
             os_id: "debian"
@@ -168,11 +168,11 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
-            nic_device: "i82551"
+            nic_device: "rtl8168"
             expect_provision_failure: "true"
           - distro: "Debian"
             version: "13"
-            name_suffix: " i82551 firmware"
+            name_suffix: " rtl8168 firmware"
             manifest: "debian-13"
             firmware_manifest: "debian-13-firmware"
             bootconfig: "debian-13-firmware"
@@ -183,9 +183,9 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
-            nic_device: "i82551"
+            nic_device: "rtl8168"
             qemu_ram: "8192"
-            verify_e100_firmware: "pass"
+            verify_rtl_firmware: "pass"
     steps:
     - uses: actions/checkout@v4
 
@@ -194,7 +194,14 @@ jobs:
 
     # ── Network tools ──────────────────────────────────────────────
     - name: Install network tools
+      if: matrix.nic_device != 'rtl8168'
       run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat ipxe-qemu
+
+    - name: Build QEMU with RTL8168 device
+      if: matrix.nic_device == 'rtl8168'
+      run: |
+        sudo apt-get update -qq && sudo apt-get install -y -qq qemu-utils ovmf socat ipxe-qemu
+        ./test/qemu/build-qemu.sh
 
     - name: Enable KVM
       run: |
@@ -576,12 +583,15 @@ jobs:
 
         qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 20G
 
-        # OVMF has no built-in i82551 driver; load the iPXE EFI ROM so
-        # OVMF can PXE-boot through the NIC.
         NIC_DEVICE="${{ matrix.nic_device || 'virtio-net-pci' }}"
-        NIC_ROM=""
-        if [ "$NIC_DEVICE" = "i82551" ]; then
-          NIC_ROM=",romfile=efi-eepro100.rom"
+
+        # RTL8168 has no PXE ROM — use virtio-net-pci for PXE boot and
+        # add RTL8168 as a secondary NIC that requires firmware for link.
+        if [ "$NIC_DEVICE" = "rtl8168" ]; then
+          EXTRA_NIC="-netdev user,id=net1,restrict=on -device rtl8168,netdev=net1"
+          NIC_DEVICE="virtio-net-pci"
+        else
+          EXTRA_NIC=""
         fi
 
         sudo qemu-system-x86_64 \
@@ -594,7 +604,8 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device "${NIC_DEVICE},netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }}${NIC_ROM}" \
+          -device "${NIC_DEVICE},netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }}" \
+          $EXTRA_NIC \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -715,16 +726,16 @@ jobs:
         done
         echo "PASS: provision did not reach Complete"
 
-    - name: Verify e100 firmware error in serial log
+    - name: Verify r8169 firmware warning in serial log
       if: matrix.expect_provision_failure == 'true'
       run: |
         echo "=== Full serial console log ==="
         cat /tmp/qemu-serial.log || true
-        echo "=== e100 lines ==="
-        grep -i e100 /tmp/qemu-serial.log || true
-        grep -i "e100" /tmp/qemu-serial.log | grep -qi "firmware\|error\|fail" \
-          || { echo "FAIL: no e100 firmware error in serial log"; exit 1; }
-        echo "PASS: e100 firmware error confirmed in serial log"
+        echo "=== r8169/rtl lines ==="
+        grep -iE "r8169|rtl8168|rtl_nic|firmware" /tmp/qemu-serial.log || true
+        grep -iE "r8169|rtl_nic" /tmp/qemu-serial.log | grep -qi "firmware\|unable\|error\|fail" \
+          || { echo "FAIL: no r8169 firmware error in serial log"; exit 1; }
+        echo "PASS: r8169 firmware error confirmed in serial log"
 
     # ── Reboot VM from disk ──────────────────────────────────────
     - name: Restart QEMU to boot from disk
@@ -751,9 +762,12 @@ jobs:
         done
 
         NIC_DEVICE="${{ matrix.nic_device || 'virtio-net-pci' }}"
-        NIC_ROM=""
-        if [ "$NIC_DEVICE" = "i82551" ]; then
-          NIC_ROM=",romfile=efi-eepro100.rom"
+
+        if [ "$NIC_DEVICE" = "rtl8168" ]; then
+          EXTRA_NIC="-netdev user,id=net1,restrict=on -device rtl8168,netdev=net1"
+          NIC_DEVICE="virtio-net-pci"
+        else
+          EXTRA_NIC=""
         fi
 
         # Restart with bootindex=1 on disk so UEFI boots from disk first
@@ -767,7 +781,8 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0,bootindex=1 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device "${NIC_DEVICE},netdev=pxe0,mac=${{ matrix.mac_colon }}${NIC_ROM}" \
+          -device "${NIC_DEVICE},netdev=pxe0,mac=${{ matrix.mac_colon }}" \
+          $EXTRA_NIC \
           -display none \
           -serial file:/tmp/qemu-serial-boot.log \
           -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
@@ -873,18 +888,18 @@ jobs:
           || { echo "FAIL: root not on virtio disk, got $ROOT_DEV"; exit 1; }
         echo "PASS: OS on virtio /dev/vda"
 
-        # (h) Verify e100 firmware loaded (i82551 firmware test only)
-        if [ "${{ matrix.verify_e100_firmware }}" = "pass" ]; then
-          ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "lsmod | grep -qw e100" \
-            || { echo "FAIL: e100 module not loaded"; exit 1; }
-          echo "PASS: e100 module loaded"
+        # (h) Verify r8169 firmware loaded (rtl8168 firmware test only)
+        if [ "${{ matrix.verify_rtl_firmware }}" = "pass" ]; then
+          ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "lsmod | grep -qw r8169" \
+            || { echo "FAIL: r8169 module not loaded"; exit 1; }
+          echo "PASS: r8169 module loaded"
 
-          E100_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
-            "dmesg | grep -i e100 || true")
-          echo "e100 dmesg: $E100_LOG"
-          echo "$E100_LOG" | grep -qi "fail\|error" \
-            && { echo "FAIL: e100 firmware errors in dmesg"; exit 1; }
-          echo "PASS: e100 firmware loaded without errors"
+          RTL_LOG=$(ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" \
+            "dmesg | grep -iE 'r8169|rtl8168|rtl_nic' || true")
+          echo "r8169 dmesg: $RTL_LOG"
+          echo "$RTL_LOG" | grep -qi "fail\|error" \
+            && { echo "FAIL: r8169 firmware errors in dmesg"; exit 1; }
+          echo "PASS: r8169 firmware loaded without errors"
         fi
 
         echo "All SSH verifications passed!"
