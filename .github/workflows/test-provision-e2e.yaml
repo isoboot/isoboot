@@ -682,7 +682,7 @@ jobs:
         echo "PXE boot successfully downloaded kernel and initrd"
 
     - name: Disconnect PXE NIC from bridge (force installer to use RTL8168)
-      if: matrix.nic_device == 'rtl8168'
+      if: matrix.expect_provision_failure == 'true' && matrix.nic_device == 'rtl8168'
       run: |
         # Remove virtio-net-pci's tap from the bridge so the kernel's
         # virtio_net driver gets no DHCP.  Only the RTL8168 tap remains
