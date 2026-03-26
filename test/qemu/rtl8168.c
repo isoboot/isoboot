@@ -134,6 +134,7 @@ struct RTL8168State {
     PCIDevice parent_obj;
 
     MemoryRegion mmio;
+    MemoryRegion io;
     uint8_t regs[0x100];
 
     NICState *nic;
@@ -585,6 +586,10 @@ static void rtl8168_realize(PCIDevice *pci_dev, Error **errp)
 
     memory_region_init_io(&s->mmio, OBJECT(s), &rtl8168_mmio_ops, s,
                           "rtl8168-mmio", 0x100);
+    /* BAR 0 = I/O, BAR 2 = MMIO (same as real RTL8168) */
+    memory_region_init_io(&s->io, OBJECT(s), &rtl8168_mmio_ops, s,
+                          "rtl8168-io", 0x100);
+    pci_register_bar(pci_dev, 0, PCI_BASE_ADDRESS_SPACE_IO, &s->io);
     pci_register_bar(pci_dev, 2, PCI_BASE_ADDRESS_SPACE_MEMORY, &s->mmio);
 
     s->nic = qemu_new_nic(&rtl8168_net_info, &s->conf,
