@@ -595,10 +595,11 @@ jobs:
 
     # ── Monitor DHCP and PXE boot ──────────────────────────────────
     - name: Wait for VM DHCP lease
+      timeout-minutes: 10
       run: |
         echo "Waiting for VM to get DHCP lease..."
         VM_IP=""
-        for i in $(seq 1 60); do
+        for i in $(seq 1 120); do
           VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
             | grep -i "${{ matrix.mac_colon }}" | tail -1 \
             | grep -oP '192\.168\.101\.\d+' | head -1)
