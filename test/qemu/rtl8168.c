@@ -290,9 +290,17 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
         return s->intr_mask;
     case REG_INTRSTATUS:
         return s->intr_status;
-    case REG_PHYAR:
-        return s->regs[REG_PHYAR + 3] & 0x7f ? 0 :
-               ldl_le_p(&s->regs[REG_PHYAR]);
+    case REG_PHYAR: {
+        /* iPXE uses PHYAR for PHY access.
+         * Write (bit31=1) → polls wait_low → return flag clear + stored data.
+         * Read  (bit31=0) → polls wait_high → return flag set + PHY data. */
+        uint32_t v = ldl_le_p(&s->regs[REG_PHYAR]);
+        if (v & PHYAR_FLAG) {
+            return v & ~PHYAR_FLAG;
+        }
+        uint8_t reg = (v >> 16) & 0x1f;
+        return PHYAR_FLAG | s->phy_regs[reg];
+    }
     case REG_PHYSTATUS:
         return rtl8168_phystatus(s);
     case REG_CFG9346:
@@ -423,13 +431,17 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
         uint32_t v = (uint32_t)val;
         uint8_t reg = (v >> 16) & 0x1f;
         if (v & PHYAR_FLAG) {
-            s->phy_regs[reg] = v & 0xffff;
+            uint16_t data = v & 0xffff;
+            s->phy_regs[reg] = data;
+            /* Auto-clear BMCR reset bit */
+            if (reg == 0 && (data & 0x8000)) {
+                s->phy_regs[0] = data & ~0x8000;
+            }
             s->phy_write_count++;
             rtl8168_check_fw(s);
             stl_le_p(&s->regs[REG_PHYAR], v & ~PHYAR_FLAG);
         } else {
-            stl_le_p(&s->regs[REG_PHYAR],
-                      (v & 0xffff0000) | s->phy_regs[reg]);
+            stl_le_p(&s->regs[REG_PHYAR], v);
         }
         break;
     }
