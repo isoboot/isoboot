@@ -741,81 +741,141 @@ jobs:
         done
         echo "PASS: provision did not reach Complete"
 
+        # Dump console so we can see what the installer is showing
+        echo "=== Console dump (provision did not complete) ==="
+        if [ -S /tmp/qemu-monitor.sock ]; then
+          echo "screendump /tmp/qemu-no-provision.ppm" \
+            | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock 2>/dev/null || true
+          sleep 1
+          sudo chmod 644 /tmp/qemu-no-provision.ppm 2>/dev/null || true
+        fi
+        echo "--- serial log tail ---"
+        tail -50 /tmp/qemu-serial.log 2>/dev/null || true
+
     # ── Reboot VM from disk ──────────────────────────────────────
-    - name: Restart QEMU to boot from disk
+    - name: Restart QEMU and wait for SSH (up to 5 attempts)
       if: matrix.expect_provision_failure != 'true'
       run: |
-        # Graceful shutdown via QEMU monitor (flushes OVMF NVRAM)
-        if [ -S /tmp/qemu-monitor.sock ]; then
-          echo "quit" | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock
-          for i in $(seq 1 30); do
-            [ -f /tmp/qemu-pxe.pid ] && kill -0 "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || break
-            sleep 1
-          done
-        fi
-        sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
+        SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/e2e-known-hosts"
+        MAC="${{ matrix.mac_colon }}"
+        MAX_ATTEMPTS=5
+        VM_IP=""
 
-        # Re-attach tap device to bridge (may detach when QEMU exits)
-        sudo ip link set tap-vm master br-pxe
-        sudo ip link set tap-vm up
-
-        # Locate OVMF firmware
+        # Locate OVMF firmware once
         OVMF_CODE=""
         for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
           [ -f "$f" ] && OVMF_CODE="$f" && break
         done
 
         NIC_DEVICE="${{ matrix.nic_device || 'virtio-net-pci' }}"
-
         if [ "$NIC_DEVICE" = "rtl8168" ]; then
-          # Re-attach tap-rtl to bridge for disk boot
-          sudo ip link set tap-rtl master br-pxe 2>/dev/null || true
-          sudo ip link set tap-rtl up
           EXTRA_NIC="-netdev tap,id=net1,ifname=tap-rtl,script=no,downscript=no -device rtl8168,netdev=net1"
           NIC_DEVICE="virtio-net-pci"
         else
           EXTRA_NIC=""
         fi
 
-        # Restart with bootindex=1 on disk so UEFI boots from disk first
-        sudo qemu-system-x86_64 \
-          -enable-kvm \
-          -m ${{ matrix.qemu_ram || '4096' }} \
-          -cpu host \
-          -smp 2 \
-          -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-          -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
-          -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
-          -device virtio-blk-pci,drive=disk0,bootindex=1 \
-          -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device "${NIC_DEVICE},netdev=pxe0,mac=${{ matrix.mac_colon }}" \
-          $EXTRA_NIC \
-          -display none \
-          -serial file:/tmp/qemu-serial-boot.log \
-          -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
-          -daemonize \
-          -pidfile /tmp/qemu-pxe.pid
+        for attempt in $(seq 1 $MAX_ATTEMPTS); do
+          echo "=== Disk boot attempt $attempt/$MAX_ATTEMPTS ==="
 
-        sleep 1 && sudo chmod 644 /tmp/qemu-serial-boot.log 2>/dev/null || true
-        echo "QEMU restarted for disk boot (bootindex=1 on disk)"
+          # ── Kill previous QEMU ──
+          if [ -S /tmp/qemu-monitor.sock ]; then
+            echo "quit" | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock 2>/dev/null || true
+            for w in $(seq 1 10); do
+              [ -f /tmp/qemu-pxe.pid ] && kill -0 "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || break
+              sleep 1
+            done
+          fi
+          [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+          sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
 
-    # ── SSH into VM and verify ─────────────────────────────────────
-    - name: Verify VM via SSH
-      if: matrix.expect_provision_failure != 'true'
-      run: |
-        SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/e2e-known-hosts"
+          # ── Re-attach taps ──
+          sudo ip link set tap-vm master br-pxe 2>/dev/null || true
+          sudo ip link set tap-vm up
+          if [ -d /sys/class/net/tap-rtl ]; then
+            sudo ip link set tap-rtl master br-pxe 2>/dev/null || true
+            sudo ip link set tap-rtl up
+          fi
 
-        echo "Waiting for SSH..."
-        for i in $(seq 1 60); do
-          VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
-            | grep -i "${{ matrix.mac_colon }}" | tail -1 \
-            | grep -oP '192\.168\.101\.\d+' | head -1)
-          [ -z "$VM_IP" ] && sleep 5 && continue
-          ssh -i /tmp/e2e-ssh-key $SSH_OPTS \
-            -o ConnectTimeout=5 \
-            -o BatchMode=yes \
-            isoboot@"$VM_IP" true 2>/dev/null && break
-          sleep 5
+          # ── Start QEMU ──
+          sudo qemu-system-x86_64 \
+            -enable-kvm \
+            -m ${{ matrix.qemu_ram || '4096' }} \
+            -cpu host \
+            -smp 2 \
+            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+            -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
+            -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
+            -device virtio-blk-pci,drive=disk0,bootindex=1 \
+            -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
+            -device "${NIC_DEVICE},netdev=pxe0,mac=${{ matrix.mac_colon }}" \
+            $EXTRA_NIC \
+            -display none \
+            -serial file:/tmp/qemu-serial-boot.log \
+            -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
+            -daemonize \
+            -pidfile /tmp/qemu-pxe.pid
+
+          sleep 1 && sudo chmod 644 /tmp/qemu-serial-boot.log 2>/dev/null || true
+
+          # ── Find VM IP: check DHCP log + sweep ±3 neighbours ──
+          FOUND=false
+          for tick in $(seq 1 24); do  # 24 × 5s = 2 minutes
+            # 1) Check DHCP log for latest ACK with our MAC
+            VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
+              | grep -i "$MAC" | tail -1 \
+              | grep -oP '192\.168\.101\.\d+' | head -1)
+
+            if [ -n "$VM_IP" ]; then
+              # Try the DHCP-assigned IP first
+              if ping -c1 -W1 "$VM_IP" >/dev/null 2>&1; then
+                echo "Ping OK: $VM_IP (from DHCP log)"
+                FOUND=true && break
+              fi
+              # Sweep ±3 neighbours in case DHCP gave a different lease
+              LAST_OCTET=$(echo "$VM_IP" | grep -oP '\d+$')
+              for offset in -3 -2 -1 1 2 3; do
+                SWEEP_IP="192.168.101.$((LAST_OCTET + offset))"
+                if ping -c1 -W1 "$SWEEP_IP" >/dev/null 2>&1; then
+                  echo "Ping OK: $SWEEP_IP (sweep from $VM_IP)"
+                  VM_IP="$SWEEP_IP"
+                  FOUND=true && break 2
+                fi
+              done
+            fi
+            sleep 5
+          done
+
+          # ── Try SSH if ping succeeded ──
+          if $FOUND; then
+            if ssh -i /tmp/e2e-ssh-key $SSH_OPTS \
+                -o ConnectTimeout=10 -o BatchMode=yes \
+                isoboot@"$VM_IP" true 2>/dev/null; then
+              echo "SSH OK on attempt $attempt (IP: $VM_IP)"
+              echo "$VM_IP" > /tmp/vm-ip
+              break
+            fi
+            echo "Ping OK but SSH failed on $VM_IP"
+          fi
+
+          # ── Dump console on failure ──
+          echo "=== Attempt $attempt failed — dumping console ==="
+          if [ -S /tmp/qemu-monitor.sock ]; then
+            echo "screendump /tmp/qemu-retry-$attempt.ppm" \
+              | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock 2>/dev/null || true
+            sleep 1
+            sudo chmod 644 /tmp/qemu-retry-$attempt.ppm 2>/dev/null || true
+          fi
+          echo "--- serial log tail ---"
+          tail -30 /tmp/qemu-serial-boot.log 2>/dev/null || true
+          echo "--- DHCP log ---"
+          docker exec dhcp-srv grep -ai "$MAC" /tmp/dnsmasq.log 2>/dev/null | tail -5 || true
+          echo "========================"
+
+          if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
+            echo "FAIL: VM not reachable after $MAX_ATTEMPTS attempts"
+            exit 1
+          fi
         done
         echo "Using VM IP: $VM_IP"
 
@@ -938,12 +998,12 @@ jobs:
           echo "WARN: QEMU monitor socket not found"
         fi
 
-    - name: Upload QEMU screenshot
+    - name: Upload QEMU screenshots
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: qemu-screenshot-${{ matrix.hostname }}
-        path: /tmp/qemu-screenshot.ppm
+        path: /tmp/qemu-*.ppm
         if-no-files-found: ignore
 
     - name: Collect logs on failure
