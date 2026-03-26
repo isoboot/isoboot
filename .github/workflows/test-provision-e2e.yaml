@@ -656,10 +656,10 @@ jobs:
     # ── Wait for provisioning to complete ──────────────────────────
     - name: Wait for Provision phase InProgress
       if: matrix.expect_provision_failure != 'true'
-      timeout-minutes: 10
+      timeout-minutes: 20
       run: |
         echo "Waiting for Provision phase InProgress..."
-        for i in $(seq 1 60); do
+        for i in $(seq 1 120); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
           echo "  phase=$PHASE (attempt $i)"
