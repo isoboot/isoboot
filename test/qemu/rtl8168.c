@@ -57,6 +57,7 @@ enum {
     REG_PHYSTATUS        = 0x6c,
     REG_ERIDR            = 0x70,
     REG_ERIAR            = 0x74,
+    REG_EPHYAR           = 0x80,
     REG_OCPDR            = 0xb0,
     REG_OCPAR            = 0xb4,
     REG_GPHY_OCP         = 0xb8,
@@ -83,6 +84,7 @@ enum {
 #define PHYAR_FLAG          BIT(31)
 #define ERIAR_FLAG          BIT(31)
 #define CSIAR_FLAG          BIT(31)
+#define EPHYAR_FLAG         BIT(31)
 
 #define MCU_READY_BITS      (BIT(5) | BIT(4) | BIT(1))  /* TX_EMPTY|RX_EMPTY|LINK_LIST_RDY */
 
@@ -360,12 +362,25 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
     }
     case REG_MCU:
         return MCU_READY_BITS;
-    case REG_ERIAR:
-        return ERIAR_FLAG;
+    case REG_ERIAR: {
+        /* Same protocol as PHYAR: write(flag=1)→poll until flag=0,
+         * read(flag=0)→poll until flag=1. */
+        uint32_t v = ldl_le_p(&s->regs[REG_ERIAR]);
+        if (v & ERIAR_FLAG) return v & ~ERIAR_FLAG;
+        return ERIAR_FLAG | ldl_le_p(&s->regs[REG_ERIDR]);
+    }
     case REG_ERIDR:
-        return 0;
-    case REG_CSIAR:
+        return ldl_le_p(&s->regs[REG_ERIDR]);
+    case REG_CSIAR: {
+        uint32_t v = ldl_le_p(&s->regs[REG_CSIAR]);
+        if (v & CSIAR_FLAG) return v & ~CSIAR_FLAG;
         return CSIAR_FLAG;
+    }
+    case REG_EPHYAR: {
+        uint32_t v = ldl_le_p(&s->regs[REG_EPHYAR]);
+        if (v & EPHYAR_FLAG) return v & ~EPHYAR_FLAG;
+        return EPHYAR_FLAG;
+    }
     default:
         if (addr < sizeof(s->regs)) {
             switch (size) {
@@ -497,6 +512,7 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
     case REG_ERIDR:
     case REG_CSIAR:
     case REG_CSIDR:
+    case REG_EPHYAR:
         stl_le_p(&s->regs[addr], val);
         break;
     case REG_OCPAR:
