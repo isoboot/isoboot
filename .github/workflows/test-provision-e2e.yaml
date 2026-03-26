@@ -117,6 +117,7 @@ jobs:
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
+            nic_device: "rtl8168"
           - distro: "Rocky"
             version: "9.7"
             manifest: "rocky-9.7"
@@ -127,6 +128,7 @@ jobs:
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
+            nic_device: "rtl8168"
           - distro: "Alma"
             version: "10.1"
             manifest: "alma-10.1"
@@ -137,6 +139,7 @@ jobs:
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
+            nic_device: "rtl8168"
           - distro: "Alma"
             version: "9.7"
             manifest: "alma-9.7"
@@ -147,6 +150,7 @@ jobs:
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
+            nic_device: "rtl8168"
           - distro: "Debian"
             version: "13"
             manifest: "debian-13"
@@ -157,6 +161,7 @@ jobs:
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
+            nic_device: "rtl8168"
           - distro: "Debian"
             version: "13"
             name_suffix: " rtl8168"
@@ -194,12 +199,7 @@ jobs:
       run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
 
     # ── Network tools ──────────────────────────────────────────────
-    - name: Install network tools
-      if: matrix.nic_device != 'rtl8168'
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat ipxe-qemu
-
     - name: Build QEMU with RTL8168 device
-      if: matrix.nic_device == 'rtl8168'
       run: |
         sudo apt-get update -qq && sudo apt-get install -y -qq qemu-utils ovmf socat ipxe-qemu
         ./test/qemu/build-qemu.sh
