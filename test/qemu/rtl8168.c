@@ -156,7 +156,8 @@ struct RTL8168State {
     uint16_t phy_regs[32];
     uint32_t phy_write_count;
     bool fw_loaded;
-    bool gphy_seen;      /* first GPHY_OCP write seen (Linux r8169 active) */
+    bool gphy_seen;       /* first GPHY_OCP write seen (Linux r8169 active) */
+    bool link_chg_pending; /* deferred LINK_CHG for delivery after IMR enable */
 
     bool cfg_unlocked;
     uint8_t chip_cmd;
@@ -179,7 +180,7 @@ static void rtl8168_check_fw(RTL8168State *s)
 {
     if (!s->fw_loaded && s->phy_write_count >= FW_PHY_WRITE_THRESHOLD) {
         s->fw_loaded = true;
-        rtl8168_set_intr(s, INTR_LINK_CHG);
+        s->link_chg_pending = true;
     }
 }
 
@@ -358,6 +359,13 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
             if (phyreg < 32) {
                 data = s->phy_regs[phyreg];
             }
+            /* PHY INSR (reg 0x13): report link-change event when the
+             * firmware gate is open.  The RTL8211B handle_interrupt
+             * checks 0x6400 (link change + AN complete) before
+             * triggering phylib to re-check the link. */
+            if (phyreg == 0x13 && s->fw_loaded && s->gphy_seen) {
+                data |= 0x6400;
+            }
         }
         return 0x80000000u | data;
     }
@@ -443,6 +451,10 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
         break;
     case REG_INTRMASK:
         s->intr_mask = val;
+        if ((val & INTR_LINK_CHG) && s->link_chg_pending) {
+            s->link_chg_pending = false;
+            rtl8168_set_intr(s, INTR_LINK_CHG);
+        }
         rtl8168_update_irq(s);
         break;
     case REG_INTRSTATUS:
@@ -478,9 +490,10 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
             uint8_t reg = (v >> 16) & 0x1f;
             uint16_t data = v & 0xffff;
             s->phy_regs[reg] = data;
-            /* Auto-clear BMCR reset bit */
-            if (reg == 0 && (data & 0x8000)) {
-                s->phy_regs[0] = data & ~0x8000;
+            /* Auto-clear BMCR reset (bit 15) and AN restart (bit 9) —
+             * real PHY clears these after processing the command. */
+            if (reg == 0) {
+                s->phy_regs[0] = data & ~0x8200;
             }
         }
         break;
@@ -550,8 +563,8 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
                 if (phyreg < 32) {
                     uint16_t data = val & 0xffff;
                     s->phy_regs[phyreg] = data;
-                    if (phyreg == 0 && (data & 0x8000)) {
-                        s->phy_regs[0] = data & ~0x8000;
+                    if (phyreg == 0) {
+                        s->phy_regs[0] = data & ~0x8200;
                     }
                 }
             }
@@ -623,6 +636,7 @@ static void rtl8168_reset(DeviceState *dev)
     s->fw_loaded = true;  /* allow iPXE PXE boot; GPHY_OCP write disables */
     s->phy_write_count = 0;
     s->gphy_seen = false;
+    s->link_chg_pending = false;
     s->cfg_unlocked = false;
 
     rtl8168_init_phy(s);
