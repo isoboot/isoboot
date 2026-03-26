@@ -162,7 +162,6 @@ jobs:
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
             nic_device: "rtl8168"
-            qemu_firmware: "off"
             expect_provision_failure: "true"
             verify_rtl_firmware: "fail"
           - distro: "Debian"
@@ -583,7 +582,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device rtl8168,netdev=pxe0,bootindex=1,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }},firmware=${{ matrix.qemu_firmware || 'on' }} \
+          -device rtl8168,netdev=pxe0,bootindex=1,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }} \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -760,7 +759,7 @@ jobs:
             -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
             -device virtio-blk-pci,drive=disk0,bootindex=1 \
             -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-            -device rtl8168,netdev=pxe0,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }},firmware=${{ matrix.qemu_firmware || 'on' }} \
+            -device rtl8168,netdev=pxe0,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }} \
             -display none \
             -serial file:/tmp/qemu-serial-boot.log \
             -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
