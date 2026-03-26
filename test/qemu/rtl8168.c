@@ -556,6 +556,15 @@ static void rtl8168_reset(DeviceState *dev)
     rtl8168_init_phy(s);
 }
 
+static void rtl8168_instance_init(Object *obj)
+{
+    RTL8168State *s = RTL8168(obj);
+
+    device_add_bootindex_property(obj, &s->conf.bootindex,
+                                  "bootindex", "/ethernet-phy@0",
+                                  DEVICE(obj));
+}
+
 static void rtl8168_realize(PCIDevice *pci_dev, Error **errp)
 {
     RTL8168State *s = RTL8168(pci_dev);
@@ -607,6 +616,7 @@ static const TypeInfo rtl8168_type_info = {
     .name          = TYPE_RTL8168,
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(RTL8168State),
+    .instance_init = rtl8168_instance_init,
     .class_init    = rtl8168_class_init,
     .interfaces    = (InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
