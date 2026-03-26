@@ -341,18 +341,13 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
          * Write cmd (bit31=1) → driver polls wait_low → return flag clear.
          * Read cmd  (bit31=0) → driver polls wait_high → return flag set.
          *
-         * OCP address = (val >> 15).  PHY standard regs live at 0xa400+.
-         * The mask 0xfff is intentionally narrow: it prevents PHY register
-         * data from being returned, so the r8169 probe fails early with
-         * -EUNATCH ("no dedicated PHY driver").  This avoids needing full
-         * PHY state-machine emulation while still letting the driver
-         * detect the device.
+         * OCP address = (val >> 15) & 0xffff.  Standard PHY regs at 0xa400+.
          */
         uint32_t v = ldl_le_p(&s->regs[REG_GPHY_OCP]);
         if (v & 0x80000000u) {
             return v & ~0x80000000u;
         }
-        uint32_t ocp_reg = (v >> 15) & 0xfff;
+        uint32_t ocp_reg = (v >> 15) & 0xffff;
         uint16_t data = 0;
         if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
             int phyreg = (ocp_reg - 0xa400) / 2;
@@ -517,7 +512,7 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
                 s->fw_loaded = false;
                 s->phy_write_count = 0;
             }
-            uint32_t ocp_reg = (val >> 15) & 0xfff;
+            uint32_t ocp_reg = (val >> 15) & 0xffff;
             if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
                 int phyreg = (ocp_reg - 0xa400) / 2;
                 if (phyreg < 32) {
