@@ -584,22 +584,6 @@ jobs:
 
         qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 20G
 
-        NIC_DEVICE="${{ matrix.nic_device || 'virtio-net-pci' }}"
-
-        # RTL8168 has no PXE ROM — use virtio-net-pci for PXE boot and
-        # add RTL8168 on a second tap so it has bridge access.  After PXE
-        # boot we disconnect virtio-net-pci so the installer can only use
-        # RTL8168 (which requires firmware for link).
-        if [ "$NIC_DEVICE" = "rtl8168" ]; then
-          sudo ip tuntap add dev tap-rtl mode tap
-          sudo ip link set tap-rtl master br-pxe
-          sudo ip link set tap-rtl up
-          EXTRA_NIC="-netdev tap,id=net1,ifname=tap-rtl,script=no,downscript=no -device rtl8168,netdev=net1"
-          NIC_DEVICE="virtio-net-pci"
-        else
-          EXTRA_NIC=""
-        fi
-
         sudo qemu-system-x86_64 \
           -enable-kvm \
           -m ${{ matrix.qemu_ram || '4096' }} \
@@ -610,8 +594,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device "${NIC_DEVICE},netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }}" \
-          $EXTRA_NIC \
+          -device rtl8168,netdev=pxe0,bootindex=1,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }} \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -680,15 +663,6 @@ jobs:
           || { echo "FAIL: no iPXE HTTP 200 for initrd download"; exit 1; }
 
         echo "PXE boot successfully downloaded kernel and initrd"
-
-    - name: Disconnect PXE NIC from bridge (force installer to use RTL8168)
-      if: matrix.expect_provision_failure == 'true' && matrix.nic_device == 'rtl8168'
-      run: |
-        # Remove virtio-net-pci's tap from the bridge so the kernel's
-        # virtio_net driver gets no DHCP.  Only the RTL8168 tap remains
-        # on the bridge — without firmware its link stays down.
-        sudo ip link set tap-vm nomaster
-        echo "tap-vm disconnected from br-pxe; only tap-rtl remains"
 
     # ── Wait for provisioning to complete ──────────────────────────
     - name: Wait for Provision phase InProgress
@@ -767,14 +741,6 @@ jobs:
           [ -f "$f" ] && OVMF_CODE="$f" && break
         done
 
-        NIC_DEVICE="${{ matrix.nic_device || 'virtio-net-pci' }}"
-        if [ "$NIC_DEVICE" = "rtl8168" ]; then
-          EXTRA_NIC="-netdev tap,id=net1,ifname=tap-rtl,script=no,downscript=no -device rtl8168,netdev=net1"
-          NIC_DEVICE="virtio-net-pci"
-        else
-          EXTRA_NIC=""
-        fi
-
         for attempt in $(seq 1 $MAX_ATTEMPTS); do
           echo "=== Disk boot attempt $attempt/$MAX_ATTEMPTS ==="
 
@@ -789,13 +755,9 @@ jobs:
           [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
           sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
 
-          # ── Re-attach taps ──
+          # ── Re-attach tap ──
           sudo ip link set tap-vm master br-pxe 2>/dev/null || true
           sudo ip link set tap-vm up
-          if [ -d /sys/class/net/tap-rtl ]; then
-            sudo ip link set tap-rtl master br-pxe 2>/dev/null || true
-            sudo ip link set tap-rtl up
-          fi
 
           # ── Start QEMU ──
           sudo qemu-system-x86_64 \
@@ -808,8 +770,7 @@ jobs:
             -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
             -device virtio-blk-pci,drive=disk0,bootindex=1 \
             -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-            -device "${NIC_DEVICE},netdev=pxe0,mac=${{ matrix.mac_colon }}" \
-            $EXTRA_NIC \
+            -device rtl8168,netdev=pxe0,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }} \
             -display none \
             -serial file:/tmp/qemu-serial-boot.log \
             -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
@@ -1100,7 +1061,6 @@ jobs:
       run: |
         [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
         sudo ip link del tap-vm 2>/dev/null || true
-        sudo ip link del tap-rtl 2>/dev/null || true
         /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
         docker rm -f dhcp-srv 2>/dev/null || true
         sudo rm -f /var/run/netns/ns1

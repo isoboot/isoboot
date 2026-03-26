@@ -3,14 +3,17 @@
  *
  * Minimal emulation for testing firmware loading in the Linux r8169 driver.
  * TxConfig identifies as RTL8168GU (VER_42), which requests firmware
- * rtl_nic/rtl8168g-2.fw.  The r8169 probe fails early (-EUNATCH) because
- * the OCP PHY address mask is intentionally narrow, preventing full PHY
- * discovery.  This is sufficient: the driver detects the device but cannot
- * fully initialise it, so the NIC has no link and the OS installer falls
- * back to other NICs (or has no network at all).
+ * rtl_nic/rtl8168g-2.fw.
  *
- * TX/RX descriptor rings and a firmware-gate mechanism are implemented
- * for future use once the PHY emulation is extended.
+ * Firmware gate:
+ *   fw_loaded starts TRUE so iPXE can PXE-boot through the NIC.  iPXE
+ *   uses PHYAR (0x60) for PHY access, not GPHY_OCP (0xb8).  When the
+ *   Linux r8169 driver takes over it writes GPHY_OCP — the first such
+ *   write sets fw_loaded=false, killing the link.  Subsequent PHY writes
+ *   (firmware loading) re-enable it once the threshold is reached.
+ *
+ *   Without firmware → link stays down → installer has no network.
+ *   With firmware    → link comes back → installer works.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -467,6 +470,11 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
     case REG_GPHY_OCP:
         stl_le_p(&s->regs[REG_GPHY_OCP], val);
         if (val & 0x80000000u) {
+            /* First GPHY_OCP write means Linux r8169 is driving the NIC.
+             * Kill link until firmware PHY writes re-enable it. */
+            if (s->fw_loaded && s->phy_write_count == 0) {
+                s->fw_loaded = false;
+            }
             uint32_t ocp_reg = (val >> 15) & 0xfff;
             if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
                 int phyreg = (ocp_reg - 0xa400) / 2;
@@ -474,7 +482,7 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
                     uint16_t data = val & 0xffff;
                     s->phy_regs[phyreg] = data;
                     if (phyreg == 0 && (data & 0x8000)) {
-                        s->phy_regs[0] = data & ~0x8000;  /* auto-clear BMCR reset */
+                        s->phy_regs[0] = data & ~0x8000;
                     }
                 }
             }
@@ -541,7 +549,7 @@ static void rtl8168_reset(DeviceState *dev)
     s->rx_desc_addr = 0;
     s->tx_cur = 0;
     s->rx_cur = 0;
-    s->fw_loaded = false;
+    s->fw_loaded = true;  /* allow iPXE PXE boot; GPHY_OCP write disables */
     s->phy_write_count = 0;
     s->cfg_unlocked = false;
 
