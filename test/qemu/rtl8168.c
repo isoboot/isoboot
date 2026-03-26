@@ -40,6 +40,7 @@ enum {
     REG_MAC4             = 0x04,
     REG_MAR0             = 0x08,
     REG_MAR4             = 0x0c,
+    REG_COUNTERADDR_LO   = 0x10,
     REG_TXDESC_LO        = 0x20,
     REG_TXDESC_HI        = 0x24,
     REG_CHIPCMD          = 0x37,
@@ -401,6 +402,11 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
     RTL8168State *s = opaque;
 
     switch (addr) {
+    case REG_COUNTERADDR_LO:
+        /* Counter dump: clear CounterDump(0x8) + CounterReset(0x1)
+         * immediately — no actual DMA counter dump is performed. */
+        stl_le_p(&s->regs[addr], val & ~0x9u);
+        break;
     case REG_MAC0:
         if (s->cfg_unlocked) {
             stl_le_p(s->conf.macaddr.a, val);
