@@ -182,9 +182,10 @@ static void rtl8168_check_fw(RTL8168State *s)
 
 static uint8_t rtl8168_phystatus(RTL8168State *s)
 {
-    if (!s->fw_loaded) {
-        return 0;
-    }
+    /* Always report link up so the r8169 driver brings up the
+     * interface and attempts firmware loading.  TX/RX are still
+     * gated by fw_loaded — without firmware the NIC has "link"
+     * but cannot send or receive, so the installer has no network. */
     return PHYSTATUS_LINK | PHYSTATUS_FULLDUP | PHYSTATUS_1000MF |
            PHYSTATUS_TXFLOW | PHYSTATUS_RXFLOW;
 }
@@ -493,17 +494,23 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
         s->regs[REG_MAXTXPKTSIZE] = val;
         break;
     case REG_OCPDR:
-    case REG_OCPAR:
     case REG_ERIDR:
     case REG_CSIAR:
     case REG_CSIDR:
         stl_le_p(&s->regs[addr], val);
         break;
+    case REG_OCPAR:
+        stl_le_p(&s->regs[addr], val);
+        /* MAC OCP writes (via OCPAR) are the primary mechanism for
+         * r8169 firmware loading on RTL8168G (VER_42).  Count them
+         * toward firmware detection once Linux has taken over. */
+        if ((val & 0x80000000u) && s->gphy_seen) {
+            s->phy_write_count++;
+            rtl8168_check_fw(s);
+        }
+        break;
     case REG_ERIAR:
         stl_le_p(&s->regs[addr], val);
-        /* ERIAR writes are used by r8169 firmware patching alongside
-         * GPHY_OCP.  Count them toward the firmware detection threshold
-         * once Linux has taken over (gphy_seen). */
         if ((val & ERIAR_FLAG) && s->gphy_seen) {
             s->phy_write_count++;
             rtl8168_check_fw(s);
