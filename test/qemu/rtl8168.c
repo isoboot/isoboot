@@ -3,7 +3,7 @@
  *
  * Minimal emulation for testing firmware loading in the Linux r8169 driver.
  * TxConfig identifies as RTL8168GU (VER_42), which requests firmware
- * rtl_nic/rtl8168g-2.fw.
+ * rtl_nic/rtl8168g-2.fw (or rtl8168g-3.fw on newer kernels).
  *
  * Firmware gate:
  *   fw_loaded starts TRUE so iPXE can PXE-boot through the NIC.  iPXE
@@ -438,9 +438,6 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
     case REG_TXPOLL:
         if (val & (TXPOLL_HPQ | TXPOLL_NPQ)) {
             rtl8168_tx(s);
-            /* By the time iPXE writes TPPOLL, RX descriptors are
-             * populated.  Flush any packets that QEMU queued while
-             * can_receive() was still returning false. */
             qemu_flush_queued_packets(qemu_get_queue(s->nic));
         }
         break;
@@ -523,9 +520,6 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
         break;
     case REG_OCPAR:
         stl_le_p(&s->regs[addr], val);
-        /* MAC OCP writes (via OCPAR) are the primary mechanism for
-         * r8169 firmware loading on RTL8168G (VER_42).  Count them
-         * toward firmware detection once Linux has taken over. */
         if ((val & 0x80000000u) && s->gphy_seen) {
             s->phy_write_count++;
             rtl8168_check_fw(s);
