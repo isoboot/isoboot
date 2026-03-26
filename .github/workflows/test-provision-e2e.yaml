@@ -662,7 +662,8 @@ jobs:
         for i in $(seq 1 120); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
-          echo "  phase=$PHASE (attempt $i)"
+          SQUID=$(kubectl -n isoboot-system exec deploy/isoboot-squid -- tail -1 /var/log/squid/access.log 2>/dev/null || true)
+          echo "  phase=$PHASE (attempt $i) squid=${SQUID:-(none)}"
           [ "$PHASE" = "InProgress" ] || [ "$PHASE" = "Complete" ] && break
           sleep 10
         done
