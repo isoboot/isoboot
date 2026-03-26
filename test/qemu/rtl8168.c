@@ -115,8 +115,8 @@ enum {
 #define NUM_RX_DESC         256
 
 /*
- * Firmware detection threshold.  The r8169 firmware loading writes 50+
- * PHY registers via GPHY_OCP/PHYAR; normal init does < 20.
+ * Firmware detection threshold.  Firmware loading writes many registers
+ * via GPHY_OCP + ERIAR; normal init without firmware does fewer.
  */
 #define FW_PHY_WRITE_THRESHOLD  30
 
@@ -495,10 +495,19 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
     case REG_OCPDR:
     case REG_OCPAR:
     case REG_ERIDR:
-    case REG_ERIAR:
     case REG_CSIAR:
     case REG_CSIDR:
         stl_le_p(&s->regs[addr], val);
+        break;
+    case REG_ERIAR:
+        stl_le_p(&s->regs[addr], val);
+        /* ERIAR writes are used by r8169 firmware patching alongside
+         * GPHY_OCP.  Count them toward the firmware detection threshold
+         * once Linux has taken over (gphy_seen). */
+        if ((val & ERIAR_FLAG) && s->gphy_seen) {
+            s->phy_write_count++;
+            rtl8168_check_fw(s);
+        }
         break;
     case REG_GPHY_OCP:
         stl_le_p(&s->regs[REG_GPHY_OCP], val);
