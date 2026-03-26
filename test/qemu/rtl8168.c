@@ -5,16 +5,17 @@
  * TxConfig identifies as RTL8168GU (VER_42), which requests firmware
  * rtl_nic/rtl8168g-2.fw.
  *
- * Firmware gate:
+ * Firmware gate (controlled by the "firmware" property, default on):
  *   fw_loaded starts TRUE so iPXE can PXE-boot through the NIC.  iPXE
  *   uses PHYAR (0x60) for PHY access, not GPHY_OCP (0xb8).  When the
  *   Linux r8169 driver takes over it writes GPHY_OCP — the first such
- *   write sets fw_loaded=false and resets the PHY write counter, killing
- *   the link.  Subsequent GPHY_OCP writes (firmware loading) re-enable
- *   it once the threshold is reached.
+ *   write sets fw_loaded = has_firmware.
  *
- *   Without firmware → link stays down → installer has no network.
- *   With firmware    → link comes back → installer works.
+ *   Link (PHYSTATUS) is always reported as up so the driver brings up
+ *   the interface, but TX/RX are gated by fw_loaded.
+ *
+ *   firmware=off → TX/RX blocked → installer has no network.
+ *   firmware=on  → TX/RX allowed → installer works.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -114,11 +115,7 @@ enum {
 #define NUM_TX_DESC         256
 #define NUM_RX_DESC         256
 
-/*
- * Firmware detection threshold.  Firmware loading writes many registers
- * via GPHY_OCP + ERIAR; normal init without firmware does fewer.
- */
-#define FW_PHY_WRITE_THRESHOLD  30
+/* (firmware detection is now controlled by the "firmware" property) */
 
 /* ── Device state ────────────────────────────────────────────── */
 
@@ -151,9 +148,9 @@ struct RTL8168State {
     uint16_t intr_status;
 
     uint16_t phy_regs[32];
-    uint32_t phy_write_count;
     bool fw_loaded;
     bool gphy_seen;      /* first GPHY_OCP write seen (Linux r8169 active) */
+    bool has_firmware;    /* property: simulate firmware availability */
 
     bool cfg_unlocked;
     uint8_t chip_cmd;
@@ -172,12 +169,13 @@ static void rtl8168_set_intr(RTL8168State *s, uint16_t bits)
     rtl8168_update_irq(s);
 }
 
-static void rtl8168_check_fw(RTL8168State *s)
+static void rtl8168_activate_fw_gate(RTL8168State *s)
 {
-    if (!s->fw_loaded && s->phy_write_count >= FW_PHY_WRITE_THRESHOLD) {
-        s->fw_loaded = true;
-        rtl8168_set_intr(s, INTR_LINK_CHG);
-    }
+    /* Called on first GPHY_OCP write (Linux r8169 driver detected).
+     * If the device has "firmware", allow TX/RX.  Otherwise block them
+     * to simulate a NIC that can't function without firmware. */
+    s->gphy_seen = true;
+    s->fw_loaded = s->has_firmware;
 }
 
 static uint8_t rtl8168_phystatus(RTL8168State *s)
@@ -501,32 +499,15 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
         break;
     case REG_OCPAR:
         stl_le_p(&s->regs[addr], val);
-        /* MAC OCP writes (via OCPAR) are the primary mechanism for
-         * r8169 firmware loading on RTL8168G (VER_42).  Count them
-         * toward firmware detection once Linux has taken over. */
-        if ((val & 0x80000000u) && s->gphy_seen) {
-            s->phy_write_count++;
-            rtl8168_check_fw(s);
-        }
         break;
     case REG_ERIAR:
         stl_le_p(&s->regs[addr], val);
-        if ((val & ERIAR_FLAG) && s->gphy_seen) {
-            s->phy_write_count++;
-            rtl8168_check_fw(s);
-        }
         break;
     case REG_GPHY_OCP:
         stl_le_p(&s->regs[REG_GPHY_OCP], val);
         if (val & 0x80000000u) {
             if (!s->gphy_seen) {
-                /* First GPHY_OCP write: Linux r8169 is driving the NIC.
-                 * Kill link until firmware PHY writes re-enable it.
-                 * Reset counter so iPXE's earlier PHYAR writes don't
-                 * interfere with firmware detection. */
-                s->gphy_seen = true;
-                s->fw_loaded = false;
-                s->phy_write_count = 0;
+                rtl8168_activate_fw_gate(s);
             }
             uint32_t ocp_reg = (val >> 15) & 0xffff;
             if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
@@ -539,8 +520,6 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
                     }
                 }
             }
-            s->phy_write_count++;
-            rtl8168_check_fw(s);
         }
         break;
     default:
@@ -604,8 +583,7 @@ static void rtl8168_reset(DeviceState *dev)
     s->rx_desc_addr = 0;
     s->tx_cur = 0;
     s->rx_cur = 0;
-    s->fw_loaded = true;  /* allow iPXE PXE boot; GPHY_OCP write disables */
-    s->phy_write_count = 0;
+    s->fw_loaded = true;  /* allow iPXE PXE boot; GPHY_OCP write gates it */
     s->gphy_seen = false;
     s->cfg_unlocked = false;
 
@@ -651,6 +629,7 @@ static void rtl8168_exit(PCIDevice *pci_dev)
 
 static Property rtl8168_properties[] = {
     DEFINE_NIC_PROPERTIES(RTL8168State, conf),
+    DEFINE_PROP_BOOL("firmware", RTL8168State, has_firmware, true),
     DEFINE_PROP_END_OF_LIST(),
 };
 
