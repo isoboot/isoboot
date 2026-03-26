@@ -415,16 +415,17 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
             s->rx_cur = 0;
             rtl8168_update_irq(s);
         } else {
-            uint8_t old = s->chip_cmd;
             s->chip_cmd = val & (CHIPCMD_TE | CHIPCMD_RE);
-            /* Flush any packets queued while RX was disabled */
-            if (!(old & CHIPCMD_RE) && (s->chip_cmd & CHIPCMD_RE)) {
-                qemu_flush_queued_packets(qemu_get_queue(s->nic));
-            }
         }
         break;
     case REG_TXPOLL:
-        if (val & (TXPOLL_HPQ | TXPOLL_NPQ)) rtl8168_tx(s);
+        if (val & (TXPOLL_HPQ | TXPOLL_NPQ)) {
+            rtl8168_tx(s);
+            /* By the time iPXE writes TPPOLL, RX descriptors are
+             * populated.  Flush any packets that QEMU queued while
+             * can_receive() was still returning false. */
+            qemu_flush_queued_packets(qemu_get_queue(s->nic));
+        }
         break;
     case REG_INTRMASK:
         s->intr_mask = val;
