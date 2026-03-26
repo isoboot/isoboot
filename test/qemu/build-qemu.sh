@@ -20,7 +20,8 @@ sudo apt-get install -y -qq \
 if [ ! -f /usr/local/share/qemu/efi-rtl8168.rom ]; then
   echo "--- Building iPXE EFI ROM ---"
   git clone --depth=1 https://github.com/ipxe/ipxe.git /tmp/ipxe
-  make -C /tmp/ipxe/src -j"$(nproc)" bin-x86_64-efi/10ec8168.efirom
+  make -C /tmp/ipxe/src -j"$(nproc)" bin-x86_64-efi/10ec8168.efirom \
+    DEBUG=realtek,netdevice
   sudo mkdir -p /usr/local/share/qemu
   sudo cp /tmp/ipxe/src/bin-x86_64-efi/10ec8168.efirom \
     /usr/local/share/qemu/efi-rtl8168.rom
