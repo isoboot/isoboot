@@ -460,6 +460,7 @@ jobs:
               restorecon /etc/ssh/ssh_host_rsa_key.pub
               {{- end }}
               sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+              systemctl disable sshd-keygen@ecdsa sshd-keygen@ed25519 sshd-keygen@rsa 2>/dev/null || true
               sed -i '/\/boot\/efi/s/defaults/defaults,nofail/' /etc/fstab
               {{- if index .ConfigMaps "machine_id" }}
               printf '%s\n' '{{ index .ConfigMaps "machine_id" }}' > /etc/machine-id
