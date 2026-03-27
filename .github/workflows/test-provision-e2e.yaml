@@ -690,7 +690,8 @@ jobs:
         for i in $(seq 1 60); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
-          echo "  phase=$PHASE (attempt $i)"
+          SQUID=$(kubectl -n isoboot-system exec deploy/isoboot-squid -- tail -1 /var/log/squid/access.log 2>/dev/null || true)
+          echo "  phase=$PHASE (attempt $i) squid=${SQUID:-(none)}"
           [ "$PHASE" = "Complete" ] && break
           [ "$PHASE" = "Failed" ] && { echo "FAIL: provision failed"; exit 1; }
           sleep 10
@@ -784,7 +785,7 @@ jobs:
 
           # ── Find VM IP: check DHCP log + sweep ±3 neighbours ──
           FOUND=false
-          for tick in $(seq 1 24); do  # 24 × 5s = 2 minutes
+          for tick in $(seq 1 36); do  # 36 × 5s = 3 minutes
             # 1) Check DHCP log for latest ACK with our MAC
             VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
               | grep -i "$MAC" | tail -1 \
