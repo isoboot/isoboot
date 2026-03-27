@@ -570,10 +570,9 @@ jobs:
         sudo ip link set tap-vm master br-pxe
         sudo ip link set tap-vm up
 
-        # Re-insert bridge FORWARD rules (k3s kube-router may have
-        # pushed our earlier rules below its DROP-default chain)
-        sudo iptables -I FORWARD -i br-pxe -j ACCEPT
-        sudo iptables -I FORWARD -o br-pxe -j ACCEPT
+        # Disable bridge-nf-call-iptables so bridged traffic between the
+        # VM and host doesn't pass through k3s's FORWARD DROP chain.
+        sudo sysctl -w net.bridge.bridge-nf-call-iptables=0
 
         qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 20G
 
