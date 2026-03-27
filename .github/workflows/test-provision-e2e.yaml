@@ -776,7 +776,11 @@ jobs:
             -daemonize \
             -pidfile /tmp/qemu-pxe.pid
 
-          sleep 1 && sudo chmod 644 /tmp/qemu-serial-boot.log 2>/dev/null || true
+          sudo chmod 644 /tmp/qemu-serial-boot.log 2>/dev/null || true
+
+          # Give the OS time to boot, load r8169 firmware, and get DHCP
+          echo "Waiting 30s for OS boot + firmware gate..."
+          sleep 30
 
           # ── Find VM IP: check DHCP log + sweep ±3 neighbours ──
           FOUND=false
