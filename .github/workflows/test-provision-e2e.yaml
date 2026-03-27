@@ -463,6 +463,7 @@ jobs:
               systemctl disable sshd-keygen@rsa 2>/dev/null || true
               {{- end }}
               sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+              systemctl set-default multi-user.target
               sed -i '/\/boot\/efi/s/defaults/defaults,nofail/' /etc/fstab
               {{- if index .ConfigMaps "machine_id" }}
               printf '%s\n' '{{ index .ConfigMaps "machine_id" }}' > /etc/machine-id
