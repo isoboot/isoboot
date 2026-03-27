@@ -654,23 +654,47 @@ jobs:
         echo "PXE boot successfully downloaded kernel and initrd"
 
     # ── Wait for provisioning to complete ──────────────────────────
+    - name: Start packet capture on PXE bridge
+      if: matrix.expect_provision_failure != 'true'
+      run: |
+        sudo tcpdump -i br-pxe -w /tmp/bridge-capture.pcap -c 500 &
+        echo $! > /tmp/tcpdump.pid
+        echo "tcpdump started (PID $(cat /tmp/tcpdump.pid))"
+
     - name: Wait for Provision phase InProgress
       if: matrix.expect_provision_failure != 'true'
       timeout-minutes: 20
       run: |
         echo "Waiting for Provision phase InProgress..."
+        SQUID_ERRORS=0
         for i in $(seq 1 120); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
           SQUID=$(kubectl -n isoboot-system exec deploy/isoboot-squid -- tail -1 /var/log/squid/access.log 2>/dev/null || true)
           echo "  phase=$PHASE (attempt $i) squid=${SQUID:-(none)}"
           [ "$PHASE" = "InProgress" ] || [ "$PHASE" = "Complete" ] && break
+          # Early exit if first 20 squid entries all show transaction-end-before-headers
+          if echo "$SQUID" | grep -q "transaction-end-before-headers"; then
+            SQUID_ERRORS=$((SQUID_ERRORS + 1))
+          fi
+          if [ "$SQUID_ERRORS" -ge 20 ]; then
+            echo "FAIL: 20 consecutive squid errors — RX likely broken"
+            # Dump packet capture before exiting
+            sudo kill "$(cat /tmp/tcpdump.pid 2>/dev/null)" 2>/dev/null || true
+            sleep 1
+            sudo tcpdump -r /tmp/bridge-capture.pcap -n 2>/dev/null | tail -30
+            exit 1
+          fi
           sleep 10
         done
+        sudo kill "$(cat /tmp/tcpdump.pid 2>/dev/null)" 2>/dev/null || true
         PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
           -o jsonpath='{.status.phase}')
         [ "$PHASE" = "InProgress" ] || [ "$PHASE" = "Complete" ] \
-          || { echo "FAIL: provision not InProgress, got $PHASE"; exit 1; }
+          || { echo "FAIL: provision not InProgress, got $PHASE"
+               echo "=== Last 30 packets on bridge ==="
+               sudo tcpdump -r /tmp/bridge-capture.pcap -n 2>/dev/null | tail -30
+               exit 1; }
         echo "Provision is $PHASE"
 
     - name: Wait for Provision phase Complete
