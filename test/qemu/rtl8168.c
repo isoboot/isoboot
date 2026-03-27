@@ -24,6 +24,7 @@
 #include "hw/qdev-properties.h"
 #include "net/net.h"
 #include "net/queue.h"
+#include "net/checksum.h"
 #include "qemu/module.h"
 #include "qom/object.h"
 
@@ -170,6 +171,8 @@ static void rtl8168_update_irq(RTL8168State *s)
     pci_set_irq(&s->parent_obj, !!(s->intr_status & s->intr_mask));
 }
 
+static void rtl8168_init_phy(RTL8168State *s);
+
 static void rtl8168_set_intr(RTL8168State *s, uint16_t bits)
 {
     s->intr_status |= bits;
@@ -222,6 +225,18 @@ static void rtl8168_tx(RTL8168State *s)
             uint8_t buf[9000];
             hwaddr baddr = ((uint64_t)desc.addr_hi << 32) | desc.addr_lo;
             pci_dma_read(&s->parent_obj, baddr, buf, len);
+            /* The r8169 driver offloads TX checksums.  Zero out the
+             * partial pseudo-header checksum and recompute. */
+            if (len >= 34) {  /* minimum IPv4 + TCP header */
+                uint8_t proto = buf[23]; /* IP protocol */
+                int ihl = (buf[14] & 0xf) * 4; /* IP header length */
+                int l4off = 14 + ihl;
+                if (proto == 6 && l4off + 16 < (int)len) /* TCP cksum at offset 16 */
+                    buf[l4off + 16] = buf[l4off + 17] = 0;
+                if (proto == 17 && l4off + 6 < (int)len) /* UDP cksum at offset 6 */
+                    buf[l4off + 6] = buf[l4off + 7] = 0;
+            }
+            net_checksum_calculate(buf, len, CSUM_ALL);
             qemu_send_packet(qemu_get_queue(s->nic), buf, len);
         }
 
@@ -323,7 +338,9 @@ static uint64_t rtl8168_mmio_read(void *opaque, hwaddr addr, unsigned size)
     case REG_CONFIG0 ... REG_CONFIG5:
         return s->regs[addr];
     case REG_CPLUSCMD:
-        return 0x2060;
+        /* Return 0: don't advertise TX checksum offload.  The device
+         * doesn't compute checksums, so the kernel must do it. */
+        return 0;
     case REG_RXMAXSIZE:
         return lduw_le_p(&s->regs[REG_RXMAXSIZE]);
     case REG_MAXTXPKTSIZE:
@@ -553,12 +570,13 @@ static void rtl8168_mmio_write(void *opaque, hwaddr addr,
         if (val & 0x80000000u) {
             if (!s->gphy_seen) {
                 /* First GPHY_OCP write: Linux r8169 is driving the NIC.
-                 * Kill link until firmware PHY writes re-enable it.
-                 * Reset counter so iPXE's earlier PHYAR writes don't
-                 * interfere with firmware detection. */
+                 * Kill TX/RX until firmware PHY writes re-enable them.
+                 * Reset PHY regs to defaults so iPXE's stale PHYAR
+                 * writes don't confuse phylib. */
                 s->gphy_seen = true;
                 s->fw_loaded = false;
                 s->phy_write_count = 0;
+                rtl8168_init_phy(s);
             }
             uint32_t ocp_reg = (val >> 15) & 0xffff;
             if (ocp_reg >= 0xa400 && ocp_reg < 0xa400 + 64) {
