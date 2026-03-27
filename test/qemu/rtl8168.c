@@ -269,8 +269,11 @@ static ssize_t rtl8168_receive(NetClientState *nc,
     hwaddr baddr = ((uint64_t)desc.addr_hi << 32) | desc.addr_lo;
     pci_dma_write(&s->parent_obj, baddr, buf, size);
 
+    /* iPXE subtracts 4 (CRC strip) from reported length but the Linux
+     * r8169 driver does not.  Use gphy_seen to detect which is active. */
+    uint32_t reported = s->gphy_seen ? size : size + 4;
     uint32_t new_opts1 = cpu_to_le32(
-        (eor ? DESC_EOR : 0) | DESC_FS | DESC_LS | (size & DESC_LEN_MASK));
+        (eor ? DESC_EOR : 0) | DESC_FS | DESC_LS | (reported & DESC_LEN_MASK));
     pci_dma_write(&s->parent_obj, daddr, &new_opts1, 4);
 
     s->rx_cur = eor ? 0 : (s->rx_cur + 1) % NUM_RX_DESC;
