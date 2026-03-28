@@ -396,6 +396,7 @@ var _ = Describe("BootConfig Controller", func() {
 			info, err := os.Lstat(combinedPath)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(info.Mode().IsRegular()).To(BeTrue())
+			Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o444)))
 
 			// Verify concatenated content
 			content, err := os.ReadFile(combinedPath)

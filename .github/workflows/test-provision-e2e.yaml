@@ -99,7 +99,7 @@ jobs:
         helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${REGISTRY}/isoboot/charts
 
   provision-test:
-    name: Provision E2E — ${{ matrix.distro }} ${{ matrix.version }}
+    name: Provision E2E — ${{ matrix.distro }} ${{ matrix.version }}${{ matrix.name_suffix }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -117,6 +117,7 @@ jobs:
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
+            nic_device: "rtl8168"
           - distro: "Rocky"
             version: "9.7"
             manifest: "rocky-9.7"
@@ -127,6 +128,7 @@ jobs:
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
+            nic_device: "rtl8168"
           - distro: "Alma"
             version: "10.1"
             manifest: "alma-10.1"
@@ -137,6 +139,7 @@ jobs:
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
+            nic_device: "rtl8168"
           - distro: "Alma"
             version: "9.7"
             manifest: "alma-9.7"
@@ -147,16 +150,35 @@ jobs:
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
+            nic_device: "rtl8168"
           - distro: "Debian"
             version: "13"
             manifest: "debian-13"
-            hostname: "debian13"
+            hostname: "deb13nfw"
             os_id: "debian"
-            mac_hyphen: "02-00-00-ab-cd-06"
-            mac_colon: "02:00:00:ab:cd:06"
+            mac_hyphen: "02-00-00-ab-cd-07"
+            mac_colon: "02:00:00:ab:cd:07"
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
+            nic_device: "rtl8168"
+            expect_provision_failure: "true"
+          - distro: "Debian"
+            version: "13"
+            name_suffix: " firmware"
+            manifest: "debian-13"
+            firmware_manifest: "debian-13-firmware"
+            bootconfig: "debian-13-firmware"
+            hostname: "deb13fw"
+            os_id: "debian"
+            mac_hyphen: "02-00-00-ab-cd-08"
+            mac_colon: "02:00:00:ab:cd:08"
+            installer: "preseed"
+            kernel_filename: "linux"
+            initrd_filename: "initrd.gz"
+            nic_device: "rtl8168"
+            qemu_ram: "8192"
+            verify_rtl_firmware: "pass"
     steps:
     - uses: actions/checkout@v4
 
@@ -164,8 +186,31 @@ jobs:
       run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
 
     # ── Network tools ──────────────────────────────────────────────
-    - name: Install network tools
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf socat
+    - name: Install runtime packages
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-utils ovmf socat
+
+    - name: Cache QEMU build
+      id: qemu-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/qemu-cache
+        key: qemu-rtl8168-${{ hashFiles('test/qemu/build-qemu.sh', 'test/qemu/rtl8168.c') }}
+
+    - name: Restore QEMU from cache
+      if: steps.qemu-cache.outputs.cache-hit == 'true'
+      run: |
+        sudo cp ~/qemu-cache/qemu-system-x86_64 /usr/local/bin/
+        sudo mkdir -p /usr/local/share/qemu
+        sudo cp -a ~/qemu-cache/share/* /usr/local/share/qemu/
+        qemu-system-x86_64 --version
+
+    - name: Build QEMU with RTL8168 device
+      if: steps.qemu-cache.outputs.cache-hit != 'true'
+      run: |
+        ./test/qemu/build-qemu.sh
+        mkdir -p ~/qemu-cache/share
+        cp /usr/local/bin/qemu-system-x86_64 ~/qemu-cache/
+        cp -a /usr/local/share/qemu/* ~/qemu-cache/share/
 
     - name: Enable KVM
       run: |
@@ -234,8 +279,8 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: /tmp/squid-cache
-        key: squid-${{ matrix.manifest }}-
-        restore-keys: squid-${{ matrix.manifest }}-
+        key: squid-${{ matrix.hostname }}-
+        restore-keys: squid-${{ matrix.hostname }}-
 
     - name: Populate squid cache from restore
       if: steps.squid-cache.outputs.cache-matched-key != ''
@@ -328,15 +373,22 @@ jobs:
         kubectl -n isoboot-system get pods
 
     - name: Apply ${{ matrix.distro }} ${{ matrix.version }} example manifest
-      run: kubectl -n isoboot-system apply -f examples/${{ matrix.manifest }}.yaml
+      run: |
+        kubectl -n isoboot-system apply -f examples/${{ matrix.manifest }}.yaml
+        if [ -n "${{ matrix.firmware_manifest }}" ]; then
+          kubectl -n isoboot-system apply -f examples/${{ matrix.firmware_manifest }}.yaml
+        fi
 
     - name: Wait for BootArtifacts Ready
       run: |
         ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ matrix.manifest }}-kernel
         ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ matrix.manifest }}-initrd
+        if [ -n "${{ matrix.firmware_manifest }}" ]; then
+          ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ matrix.firmware_manifest }}
+        fi
 
     - name: Wait for BootConfig Ready
-      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig ${{ matrix.manifest }}
+      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig ${{ matrix.bootconfig || matrix.manifest }}
 
     # ── Generate SSH keys and password ─────────────────────────────
     - name: Generate SSH keys and encrypted password
@@ -398,6 +450,10 @@ jobs:
               eula --agreed
               reboot
 
+              %packages
+              @core
+              %end
+
               %pre --log=/var/log/kickstart-pre.log
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=InProgress" {{.UpdatePhaseURL}}
               %end
@@ -443,7 +499,7 @@ jobs:
           name: qemu-vm1-provision
         spec:
           machineRef: qemu-vm1
-          bootConfigRef: ${{ matrix.manifest }}
+          bootConfigRef: ${{ matrix.bootconfig || matrix.manifest }}
           provisionAutomationRef: qemu-vm1-automation
           configMaps:
             - default-user
@@ -507,7 +563,7 @@ jobs:
           name: qemu-vm1-provision
         spec:
           machineRef: qemu-vm1
-          bootConfigRef: ${{ matrix.manifest }}
+          bootConfigRef: ${{ matrix.bootconfig || matrix.manifest }}
           provisionAutomationRef: qemu-vm1-automation
           configMaps:
             - default-user
@@ -538,11 +594,15 @@ jobs:
         sudo ip link set tap-vm master br-pxe
         sudo ip link set tap-vm up
 
+        # Disable bridge-nf-call-iptables so bridged traffic between the
+        # VM and host doesn't pass through k3s's FORWARD DROP chain.
+        sudo sysctl -w net.bridge.bridge-nf-call-iptables=0
+
         qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 20G
 
         sudo qemu-system-x86_64 \
           -enable-kvm \
-          -m 4096 \
+          -m ${{ matrix.qemu_ram || '8192' }} \
           -cpu host \
           -smp 2 \
           -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
@@ -550,7 +610,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device virtio-net-pci,netdev=pxe0,bootindex=1,mac=${{ matrix.mac_colon }} \
+          -device rtl8168,netdev=pxe0,bootindex=1,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }} \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -558,14 +618,16 @@ jobs:
           -daemonize \
           -pidfile /tmp/qemu-pxe.pid
 
+        sleep 1 && sudo chmod 644 /tmp/qemu-serial.log 2>/dev/null || true
         echo "QEMU VM launched (tap-vm on br-pxe, MAC=${{ matrix.mac_colon }})"
 
     # ── Monitor DHCP and PXE boot ──────────────────────────────────
     - name: Wait for VM DHCP lease
+      timeout-minutes: 10
       run: |
         echo "Waiting for VM to get DHCP lease..."
         VM_IP=""
-        for i in $(seq 1 60); do
+        for i in $(seq 1 120); do
           VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
             | grep -i "${{ matrix.mac_colon }}" | tail -1 \
             | grep -oP '192\.168\.101\.\d+' | head -1)
@@ -589,7 +651,7 @@ jobs:
 
         for i in $(seq 1 60); do
           if kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null \
-              | grep "GET /static/${{ matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
+              | grep "GET /static/${{ matrix.bootconfig || matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
               | grep '" 200 ' | grep -q 'iPXE/'; then
             echo "Kernel downloaded by iPXE"
             break
@@ -598,12 +660,22 @@ jobs:
         done
 
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep "GET /static/${{ matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
+          | grep "GET /static/${{ matrix.bootconfig || matrix.manifest }}/kernel/${{ matrix.kernel_filename }}" \
           | grep '" 200 ' | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for kernel download"; exit 1; }
 
+        for i in $(seq 1 60); do
+          if kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null \
+              | grep "GET /static/${{ matrix.bootconfig || matrix.manifest }}/initrd/${{ matrix.initrd_filename }}" \
+              | grep '" 200 ' | grep -q 'iPXE/'; then
+            echo "Initrd downloaded by iPXE"
+            break
+          fi
+          sleep 5
+        done
+
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep "GET /static/${{ matrix.manifest }}/initrd/${{ matrix.initrd_filename }}" \
+          | grep "GET /static/${{ matrix.bootconfig || matrix.manifest }}/initrd/${{ matrix.initrd_filename }}" \
           | grep '" 200 ' | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for initrd download"; exit 1; }
 
@@ -611,14 +683,18 @@ jobs:
 
     # ── Wait for provisioning to complete ──────────────────────────
     - name: Wait for Provision phase InProgress
-      timeout-minutes: 10
+      if: matrix.expect_provision_failure != 'true'
+      timeout-minutes: 20
       run: |
         echo "Waiting for Provision phase InProgress..."
-        for i in $(seq 1 60); do
+        for i in $(seq 1 120); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
-          echo "  phase=$PHASE (attempt $i)"
+          SQUID=$(kubectl -n isoboot-system exec deploy/isoboot-squid -- tail -1 /var/log/squid/access.log 2>/dev/null || true)
+          echo "  phase=$PHASE (attempt $i) squid=${SQUID:-(none)}"
           [ "$PHASE" = "InProgress" ] || [ "$PHASE" = "Complete" ] && break
+          # (squid tail is logged for observability but no early exit —
+          #  internal k3s health-check errors dominate the squid log)
           sleep 10
         done
         PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
@@ -628,13 +704,15 @@ jobs:
         echo "Provision is $PHASE"
 
     - name: Wait for Provision phase Complete
+      if: matrix.expect_provision_failure != 'true'
       timeout-minutes: 10
       run: |
         echo "Waiting for Provision phase Complete..."
         for i in $(seq 1 60); do
           PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
             -o jsonpath='{.status.phase}' 2>/dev/null)
-          echo "  phase=$PHASE (attempt $i)"
+          SQUID=$(kubectl -n isoboot-system exec deploy/isoboot-squid -- tail -1 /var/log/squid/access.log 2>/dev/null || true)
+          echo "  phase=$PHASE (attempt $i) squid=${SQUID:-(none)}"
           [ "$PHASE" = "Complete" ] && break
           [ "$PHASE" = "Failed" ] && { echo "FAIL: provision failed"; exit 1; }
           sleep 10
@@ -644,65 +722,146 @@ jobs:
         [ "$PHASE" = "Complete" ] || { echo "FAIL: provision not Complete, got $PHASE"; exit 1; }
         echo "Provision complete!"
 
-    # ── Reboot VM from disk ──────────────────────────────────────
-    - name: Restart QEMU to boot from disk
+    - name: Verify provision does not complete (no-firmware)
+      if: matrix.expect_provision_failure == 'true'
+      timeout-minutes: 10
       run: |
-        # Graceful shutdown via QEMU monitor (flushes OVMF NVRAM)
+        echo "Verifying provision does NOT reach Complete..."
+        for i in $(seq 1 50); do
+          PHASE=$(kubectl -n isoboot-system get provision qemu-vm1-provision \
+            -o jsonpath='{.status.phase}' 2>/dev/null)
+          echo "  phase=$PHASE (attempt $i)"
+          [ "$PHASE" = "Complete" ] && { echo "FAIL: provision reached Complete unexpectedly"; exit 1; }
+          sleep 10
+        done
+        echo "PASS: provision did not reach Complete"
+
+        # Dump console so we can see what the installer is showing
+        echo "=== Console dump (provision did not complete) ==="
         if [ -S /tmp/qemu-monitor.sock ]; then
-          echo "quit" | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock
-          for i in $(seq 1 30); do
-            [ -f /tmp/qemu-pxe.pid ] && kill -0 "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || break
-            sleep 1
-          done
+          echo "screendump /tmp/qemu-no-provision.ppm" \
+            | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock 2>/dev/null || true
+          sleep 1
+          sudo chmod 644 /tmp/qemu-no-provision.ppm 2>/dev/null || true
         fi
-        sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
+        echo "--- serial log tail ---"
+        tail -50 /tmp/qemu-serial.log 2>/dev/null || true
 
-        # Re-attach tap device to bridge (may detach when QEMU exits)
-        sudo ip link set tap-vm master br-pxe
-        sudo ip link set tap-vm up
+    # ── Reboot VM from disk ──────────────────────────────────────
+    - name: Restart QEMU and wait for SSH (up to 5 attempts)
+      if: matrix.expect_provision_failure != 'true'
+      run: |
+        SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/e2e-known-hosts"
+        MAC="${{ matrix.mac_colon }}"
+        MAX_ATTEMPTS=5
+        VM_IP=""
 
-        # Locate OVMF firmware
+        # Locate OVMF firmware once
         OVMF_CODE=""
         for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
           [ -f "$f" ] && OVMF_CODE="$f" && break
         done
 
-        # Restart with bootindex=1 on disk so UEFI boots from disk first
-        sudo qemu-system-x86_64 \
-          -enable-kvm \
-          -m 4096 \
-          -cpu host \
-          -smp 2 \
-          -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-          -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
-          -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
-          -device virtio-blk-pci,drive=disk0,bootindex=1 \
-          -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device virtio-net-pci,netdev=pxe0,mac=${{ matrix.mac_colon }} \
-          -display none \
-          -serial file:/tmp/qemu-serial-boot.log \
-          -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
-          -daemonize \
-          -pidfile /tmp/qemu-pxe.pid
+        for attempt in $(seq 1 $MAX_ATTEMPTS); do
+          echo "=== Disk boot attempt $attempt/$MAX_ATTEMPTS ==="
 
-        echo "QEMU restarted for disk boot (bootindex=1 on disk)"
+          # ── Kill previous QEMU ──
+          if [ -S /tmp/qemu-monitor.sock ]; then
+            echo "quit" | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock 2>/dev/null || true
+            for w in $(seq 1 10); do
+              [ -f /tmp/qemu-pxe.pid ] && kill -0 "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || break
+              sleep 1
+            done
+          fi
+          [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+          sudo rm -f /tmp/qemu-monitor.sock /tmp/qemu-pxe.pid
 
-    # ── SSH into VM and verify ─────────────────────────────────────
-    - name: Verify VM via SSH
-      run: |
-        SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/e2e-known-hosts"
+          # ── Re-attach tap ──
+          sudo ip link set tap-vm master br-pxe 2>/dev/null || true
+          sudo ip link set tap-vm up
 
-        echo "Waiting for SSH..."
-        for i in $(seq 1 60); do
-          VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
-            | grep -i "${{ matrix.mac_colon }}" | tail -1 \
-            | grep -oP '192\.168\.101\.\d+' | head -1)
-          [ -z "$VM_IP" ] && sleep 5 && continue
-          ssh -i /tmp/e2e-ssh-key $SSH_OPTS \
-            -o ConnectTimeout=5 \
-            -o BatchMode=yes \
-            isoboot@"$VM_IP" true 2>/dev/null && break
-          sleep 5
+          # ── Start QEMU ──
+          sudo qemu-system-x86_64 \
+            -enable-kvm \
+            -m ${{ matrix.qemu_ram || '8192' }} \
+            -cpu host \
+            -smp 2 \
+            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+            -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
+            -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
+            -device virtio-blk-pci,drive=disk0,bootindex=1 \
+            -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
+            -device rtl8168,netdev=pxe0,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }} \
+            -display none \
+            -serial file:/tmp/qemu-serial-boot.log \
+            -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
+            -daemonize \
+            -pidfile /tmp/qemu-pxe.pid
+
+          sudo chmod 644 /tmp/qemu-serial-boot.log 2>/dev/null || true
+
+          # Give the OS time to boot, load r8169 firmware, and get DHCP
+          echo "Waiting 30s for OS boot + firmware gate..."
+          sleep 30
+
+          # ── Find VM IP: check DHCP log + sweep ±3 neighbours ──
+          FOUND=false
+          for tick in $(seq 1 36); do  # 36 × 5s = 3 minutes
+            # 1) Check DHCP log for latest ACK with our MAC
+            VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
+              | grep -i "$MAC" | tail -1 \
+              | grep -oP '192\.168\.101\.\d+' | head -1)
+
+            if [ -n "$VM_IP" ]; then
+              # Try the DHCP-assigned IP first
+              if ping -c1 -W1 "$VM_IP" >/dev/null 2>&1; then
+                echo "Ping OK: $VM_IP (from DHCP log)"
+                FOUND=true && break
+              fi
+              # Sweep ±3 neighbours in case DHCP gave a different lease
+              LAST_OCTET=$(echo "$VM_IP" | grep -oP '\d+$')
+              for offset in -3 -2 -1 1 2 3; do
+                SWEEP_IP="192.168.101.$((LAST_OCTET + offset))"
+                if ping -c1 -W1 "$SWEEP_IP" >/dev/null 2>&1; then
+                  echo "Ping OK: $SWEEP_IP (sweep from $VM_IP)"
+                  VM_IP="$SWEEP_IP"
+                  FOUND=true && break 2
+                fi
+              done
+            fi
+            sleep 5
+          done
+
+          # ── Try SSH if ping succeeded ──
+          if $FOUND; then
+            if ssh -i /tmp/e2e-ssh-key $SSH_OPTS \
+                -o ConnectTimeout=10 -o BatchMode=yes \
+                isoboot@"$VM_IP" true 2>/dev/null; then
+              echo "SSH OK on attempt $attempt (IP: $VM_IP)"
+              echo "$VM_IP" > /tmp/vm-ip
+              break
+            fi
+            echo "Ping OK but SSH failed on $VM_IP"
+          fi
+
+          # ── Dump console on failure ──
+          echo "=== Attempt $attempt failed — dumping console ==="
+          if [ -S /tmp/qemu-monitor.sock ]; then
+            echo "screendump /tmp/qemu-retry-$attempt.ppm" \
+              | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock 2>/dev/null || true
+            sleep 1
+            sudo chmod 644 /tmp/qemu-retry-$attempt.ppm 2>/dev/null || true
+          fi
+          echo "--- serial log tail ---"
+          tail -30 /tmp/qemu-serial-boot.log 2>/dev/null || true
+          echo "--- DHCP log ---"
+          docker exec dhcp-srv grep -ai "$MAC" /tmp/dnsmasq.log 2>/dev/null | tail -5 || true
+          echo "========================"
+
+          if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
+            echo "FAIL: VM not reachable after $MAX_ATTEMPTS attempts"
+            exit 1
+          fi
         done
         echo "Using VM IP: $VM_IP"
 
@@ -782,6 +941,17 @@ jobs:
           || { echo "FAIL: root not on virtio disk, got $ROOT_DEV"; exit 1; }
         echo "PASS: OS on virtio /dev/vda"
 
+        # (h) Verify r8169 firmware status (rtl8168 tests only)
+        if [ "${{ matrix.verify_rtl_firmware }}" = "pass" ]; then
+          # Verify RTL8168 device was detected by the r8169 driver
+          RTL_LOG=$(grep -iE 'r8169|rtl8168|rtl_nic' /tmp/qemu-serial-boot.log 2>/dev/null \
+            || grep -iE 'r8169|rtl8168|rtl_nic' /tmp/qemu-serial.log 2>/dev/null || true)
+          echo "r8169 serial log: $RTL_LOG"
+          echo "$RTL_LOG" | grep -qi "r8169" \
+            || { echo "FAIL: r8169 driver did not detect RTL8168 device"; exit 1; }
+          echo "PASS: r8169 detected RTL8168 device"
+        fi
+
         echo "All SSH verifications passed!"
 
     # ── Failure diagnostics ────────────────────────────────────────
@@ -803,12 +973,12 @@ jobs:
           echo "WARN: QEMU monitor socket not found"
         fi
 
-    - name: Upload QEMU screenshot
+    - name: Upload QEMU screenshots
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: qemu-screenshot-${{ matrix.manifest }}
-        path: /tmp/qemu-screenshot.ppm
+        name: qemu-screenshot-${{ matrix.hostname }}
+        path: /tmp/qemu-*.ppm
         if-no-files-found: ignore
 
     - name: Collect logs on failure
@@ -898,7 +1068,7 @@ jobs:
       uses: actions/cache/save@v4
       with:
         path: /tmp/squid-cache
-        key: squid-${{ matrix.manifest }}-${{ github.run_id }}
+        key: squid-${{ matrix.hostname }}-${{ github.run_id }}
 
     - name: Clean up
       if: always()
