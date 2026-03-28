@@ -430,6 +430,10 @@ jobs:
               eula --agreed
               reboot
 
+              %packages
+              @core
+              %end
+
               %pre --log=/var/log/kickstart-pre.log
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=InProgress" {{.UpdatePhaseURL}}
               %end
@@ -442,7 +446,6 @@ jobs:
               ssh-keygen -y -f /etc/ssh/ssh_host_ecdsa_key > /etc/ssh/ssh_host_ecdsa_key.pub
               chmod 644 /etc/ssh/ssh_host_ecdsa_key.pub
               restorecon /etc/ssh/ssh_host_ecdsa_key.pub
-              systemctl disable sshd-keygen@ecdsa 2>/dev/null || true
               {{- end }}
               {{- if index .Secrets "ssh_host_ed25519_key" }}
               printf '%s' '{{ index .Secrets "ssh_host_ed25519_key" }}' > /etc/ssh/ssh_host_ed25519_key
@@ -451,7 +454,6 @@ jobs:
               ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
               chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
               restorecon /etc/ssh/ssh_host_ed25519_key.pub
-              systemctl disable sshd-keygen@ed25519 2>/dev/null || true
               {{- end }}
               {{- if index .Secrets "ssh_host_rsa_key" }}
               printf '%s' '{{ index .Secrets "ssh_host_rsa_key" }}' > /etc/ssh/ssh_host_rsa_key
@@ -460,10 +462,8 @@ jobs:
               ssh-keygen -y -f /etc/ssh/ssh_host_rsa_key > /etc/ssh/ssh_host_rsa_key.pub
               chmod 644 /etc/ssh/ssh_host_rsa_key.pub
               restorecon /etc/ssh/ssh_host_rsa_key.pub
-              systemctl disable sshd-keygen@rsa 2>/dev/null || true
               {{- end }}
               sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-              systemctl set-default multi-user.target
               sed -i '/\/boot\/efi/s/defaults/defaults,nofail/' /etc/fstab
               {{- if index .ConfigMaps "machine_id" }}
               printf '%s\n' '{{ index .ConfigMaps "machine_id" }}' > /etc/machine-id
