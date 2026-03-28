@@ -200,6 +200,7 @@ jobs:
       if: steps.qemu-cache.outputs.cache-hit == 'true'
       run: |
         sudo cp ~/qemu-cache/qemu-system-x86_64 /usr/local/bin/
+        sudo mkdir -p /usr/local/share/qemu
         sudo cp -a ~/qemu-cache/share/* /usr/local/share/qemu/
         qemu-system-x86_64 --version
 
