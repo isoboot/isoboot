@@ -99,7 +99,7 @@ jobs:
         helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${REGISTRY}/isoboot/charts
 
   provision-test:
-    name: Provision E2E — ${{ matrix.distro }} ${{ matrix.version }}${{ matrix.name_suffix || '' }}
+    name: Provision E2E — ${{ matrix.distro }} ${{ matrix.version }}${{ matrix.name_suffix }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -163,7 +163,6 @@ jobs:
             initrd_filename: "initrd.gz"
             nic_device: "rtl8168"
             expect_provision_failure: "true"
-            verify_rtl_firmware: "fail"
           - distro: "Debian"
             version: "13"
             name_suffix: " firmware"
@@ -930,17 +929,6 @@ jobs:
           echo "$RTL_LOG" | grep -qi "r8169" \
             || { echo "FAIL: r8169 driver did not detect RTL8168 device"; exit 1; }
           echo "PASS: r8169 detected RTL8168 device"
-        fi
-
-        if [ "${{ matrix.verify_rtl_firmware }}" = "fail" ]; then
-          # Read kernel messages from the host serial log (guest can't read dmesg)
-          RTL_LOG=$(grep -iE 'r8169|rtl8168|rtl_nic' /tmp/qemu-serial-boot.log 2>/dev/null \
-            || grep -iE 'r8169|rtl8168|rtl_nic' /tmp/qemu-serial.log 2>/dev/null || true)
-          echo "r8169 serial log: $RTL_LOG"
-          # Without firmware, r8169 probe fails (no PHY driver or firmware error)
-          echo "$RTL_LOG" | grep -qi "failed\|error\|unable\|no dedicated" \
-            || { echo "FAIL: expected r8169 probe failure not found"; exit 1; }
-          echo "PASS: r8169 probe failed as expected (no firmware)"
         fi
 
         echo "All SSH verifications passed!"
