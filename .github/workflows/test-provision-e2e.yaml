@@ -193,14 +193,23 @@ jobs:
       id: qemu-cache
       uses: actions/cache@v4
       with:
-        path: |
-          /usr/local/bin/qemu-system-x86_64
-          /usr/local/share/qemu
+        path: ~/qemu-cache
         key: qemu-rtl8168-${{ hashFiles('test/qemu/build-qemu.sh', 'test/qemu/rtl8168.c') }}
+
+    - name: Restore QEMU from cache
+      if: steps.qemu-cache.outputs.cache-hit == 'true'
+      run: |
+        sudo cp ~/qemu-cache/qemu-system-x86_64 /usr/local/bin/
+        sudo cp -a ~/qemu-cache/share/* /usr/local/share/qemu/
+        qemu-system-x86_64 --version
 
     - name: Build QEMU with RTL8168 device
       if: steps.qemu-cache.outputs.cache-hit != 'true'
-      run: ./test/qemu/build-qemu.sh
+      run: |
+        ./test/qemu/build-qemu.sh
+        mkdir -p ~/qemu-cache/share
+        cp /usr/local/bin/qemu-system-x86_64 ~/qemu-cache/
+        cp -a /usr/local/share/qemu/* ~/qemu-cache/share/
 
     - name: Enable KVM
       run: |
