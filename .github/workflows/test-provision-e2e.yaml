@@ -186,10 +186,21 @@ jobs:
       run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
 
     # ── Network tools ──────────────────────────────────────────────
+    - name: Install runtime packages
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-utils ovmf socat
+
+    - name: Cache QEMU build
+      id: qemu-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          /usr/local/bin/qemu-system-x86_64
+          /usr/local/share/qemu
+        key: qemu-rtl8168-${{ hashFiles('test/qemu/build-qemu.sh', 'test/qemu/rtl8168.c') }}
+
     - name: Build QEMU with RTL8168 device
-      run: |
-        sudo apt-get update -qq && sudo apt-get install -y -qq qemu-utils ovmf socat ipxe-qemu
-        ./test/qemu/build-qemu.sh
+      if: steps.qemu-cache.outputs.cache-hit != 'true'
+      run: ./test/qemu/build-qemu.sh
 
     - name: Enable KVM
       run: |
