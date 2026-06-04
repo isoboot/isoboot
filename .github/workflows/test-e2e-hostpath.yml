@@ -25,18 +25,18 @@ on:
 
 env:
   KIND_VERSION: v0.31.0
-  # Rocky Linux 10.1 — SHA256s from .treeinfo
-  VMLINUZ_SHA256: "242531e62b1170f3306a6b903033f44ae7cf68f2a610142bdb5281249a1e6607"
-  VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
-  VMLINUZ_NAME: rocky-10.1-vmlinuz
-  VMLINUZ_PATH: /tmp/isoboot-data/artifacts/rocky-10.1-vmlinuz/vmlinuz
-  INITRD_SHA256: "07ec303514509b4ddbfe8df90f65dddaf48519f25b416a2a5368903fe39c627a"
-  INITRD_URL: "https://dl.rockylinux.org/pub/rocky/10.1/BaseOS/x86_64/os/images/pxeboot/initrd.img"
-  INITRD_NAME: rocky-10.1-initrd
-  INITRD_PATH: /tmp/isoboot-data/artifacts/rocky-10.1-initrd/initrd.img
-  BOOTCONFIG_NAME: rocky-10.1
-  BOOTCONFIG_KERNEL_LINK: /tmp/isoboot-data/boot/rocky-10.1/kernel/vmlinuz
-  BOOTCONFIG_INITRD_LINK: /tmp/isoboot-data/boot/rocky-10.1/initrd/initrd.img
+  # Rocky Linux 10.2 — SHA256s from .treeinfo
+  VMLINUZ_SHA256: "bdbe11aa10d1dce86d89e65e2f8476f78f47968b8045b20fa0f0aace82b77d77"
+  VMLINUZ_URL: "https://dl.rockylinux.org/pub/rocky/10.2/BaseOS/x86_64/os/images/pxeboot/vmlinuz"
+  VMLINUZ_NAME: rocky-10.2-vmlinuz
+  VMLINUZ_PATH: /tmp/isoboot-data/artifacts/rocky-10.2-vmlinuz/vmlinuz
+  INITRD_SHA256: "ba5d8f6e40467b0c25590b0abeca6008b36093b696d649bfa53c7e8edc3fc37d"
+  INITRD_URL: "https://dl.rockylinux.org/pub/rocky/10.2/BaseOS/x86_64/os/images/pxeboot/initrd.img"
+  INITRD_NAME: rocky-10.2-initrd
+  INITRD_PATH: /tmp/isoboot-data/artifacts/rocky-10.2-initrd/initrd.img
+  BOOTCONFIG_NAME: rocky-10.2
+  BOOTCONFIG_KERNEL_LINK: /tmp/isoboot-data/boot/rocky-10.2/kernel/vmlinuz
+  BOOTCONFIG_INITRD_LINK: /tmp/isoboot-data/boot/rocky-10.2/initrd/initrd.img
 
 jobs:
   test-e2e-hostpath:
@@ -88,7 +88,7 @@ jobs:
           kubectl -n isoboot-system wait --for=condition=Available deployment/isoboot-controller-manager --timeout=120s
           kubectl -n isoboot-system get pods
 
-      - name: Create BootArtifacts for Rocky 10.1
+      - name: Create BootArtifacts for Rocky 10.2
         run: |
           kubectl apply -f - <<EOF
           apiVersion: isoboot.github.io/v1alpha1
@@ -118,7 +118,7 @@ jobs:
           echo "${{ env.VMLINUZ_SHA256 }}  ${{ env.VMLINUZ_PATH }}" | sha256sum -c
           echo "${{ env.INITRD_SHA256 }}  ${{ env.INITRD_PATH }}" | sha256sum -c
 
-      - name: Create BootConfig for Rocky 10.1
+      - name: Create BootConfig for Rocky 10.2
         run: |
           kubectl apply -f - <<EOF
           apiVersion: isoboot.github.io/v1alpha1
@@ -162,7 +162,7 @@ jobs:
           echo "FAIL: boot directory not cleaned up"
           exit 1
 
-      - name: Recreate BootConfig for Rocky 10.1
+      - name: Recreate BootConfig for Rocky 10.2
         run: |
           kubectl apply -f - <<EOF
           apiVersion: isoboot.github.io/v1alpha1
@@ -269,7 +269,7 @@ jobs:
           [ "$mtime_before" = "$mtime_after" ] || { echo "FAIL: initrd re-downloaded"; exit 1; }
           echo "${{ env.INITRD_SHA256 }}  ${{ env.INITRD_PATH }}" | sha256sum -c
 
-      - name: Create BootConfig for Rocky 10.1 (second cluster)
+      - name: Create BootConfig for Rocky 10.2 (second cluster)
         run: |
           kubectl apply -f - <<EOF
           apiVersion: isoboot.github.io/v1alpha1

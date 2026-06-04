@@ -108,8 +108,8 @@ jobs:
       matrix:
         include:
           - distro: "Rocky"
-            version: "10.1"
-            manifest: "rocky-10.1"
+            version: "10.2"
+            manifest: "rocky-10.2"
             hostname: "rocky10"
             os_id: "rocky"
             mac_hyphen: "02-00-00-ab-cd-01"
