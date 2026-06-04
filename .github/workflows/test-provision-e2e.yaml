@@ -497,6 +497,12 @@ jobs:
               # as /etc/ld.so.cache mislabeled, which breaks the enforcing-mode boot
               # and drops the VM into emergency mode (no SSH). Relabel + reboot fixes it.
               touch /.autorelabel
+              # Belt-and-suspenders: an early-boot oneshot that restorecons /etc every
+              # boot, so a regenerated/mislabeled file (resolv.conf, ld.so.cache — both
+              # under /etc) is corrected before services use it, even if the relabel
+              # above misses it. Keeps SELinux enforcing.
+              printf '%s\n' '[Unit]' 'Description=restorecon /etc (SELinux label-race workaround)' 'DefaultDependencies=no' 'After=local-fs.target' 'Before=sysinit.target' '[Service]' 'Type=oneshot' 'ExecStart=/sbin/restorecon -R /etc' 'RemainAfterExit=yes' '[Install]' 'WantedBy=sysinit.target' > /etc/systemd/system/fix-etc-labels.service
+              systemctl enable fix-etc-labels.service
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
               %end
         ---
@@ -1004,9 +1010,10 @@ jobs:
         sudo qemu-nbd --read-only --connect=/dev/nbd0 /tmp/pxe-test-disk.qcow2 \
           || { echo "nbd connect failed"; exit 0; }
         sleep 2
+        sudo partprobe /dev/nbd0 2>/dev/null || true
         ROOT=""
         for p in /dev/nbd0p*; do
-          sudo mount -o ro "$p" /mnt 2>/dev/null || continue
+          sudo mount -o ro,norecovery "$p" /mnt 2>/dev/null || sudo mount -o ro "$p" /mnt 2>/dev/null || continue
           if [ -f /mnt/etc/os-release ] && [ -d /mnt/etc/selinux ]; then ROOT="$p"; break; fi
           sudo umount /mnt 2>/dev/null || true
         done
