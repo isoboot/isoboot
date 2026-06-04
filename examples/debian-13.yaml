@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/name: isoboot
 spec:
   url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux
-  sha256: "e3b18c3f1700aee0b59e82c82fafbc6f63a138dd319103821899a0dc37b4db9e"
+  sha256: "4cc864b8e34c86c281f66b36157a52945a95a1b290762245c608b7c7e3934a11"
 ---
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/name: isoboot
 spec:
   url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz
-  sha256: "653b254a530529d544fe2d0420078cdd3e595cce32ed782187e7d69ffc959ad8"
+  sha256: "53376f70d695276c5d9c903589348a966d0f57dc0bbd6a701d4a97300761ba40"
 ---
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootConfig
