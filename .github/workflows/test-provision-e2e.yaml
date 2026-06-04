@@ -490,8 +490,13 @@ jobs:
               chmod 444 /etc/machine-id
               restorecon /etc/machine-id
               {{- end }}
-              # DEBUG (temporary): snapshot /etc/ld.so.cache label at %post time.
-              ls -Z /etc/ld.so.cache > /var/log/selinux-install-debug.log 2>&1 || true
+              # DEBUG (temporary): install-time SELinux state, world-readable so the
+              # post-boot step needs no sudo; plus NOPASSWD so it can read root logs.
+              ls -Z /etc/ld.so.cache /usr/lib64/ld-linux-x86-64.so.2 > /var/log/selinux-install-debug.log 2>&1 || true
+              echo '-- setfiles -n mismatches at %post time --' >> /var/log/selinux-install-debug.log 2>&1 || true
+              setfiles -nv /etc/selinux/targeted/contexts/files/file_contexts /etc /usr/lib64 /usr/bin /usr/sbin >> /var/log/selinux-install-debug.log 2>&1 || true
+              chmod 644 /var/log/selinux-install-debug.log || true
+              echo 'isoboot ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/99-debug-nopasswd && chmod 440 /etc/sudoers.d/99-debug-nopasswd || true
               # Force a full SELinux relabel on first boot. Anaconda's install-time
               # relabel is occasionally incomplete under CI load, leaving files such
               # as /etc/ld.so.cache mislabeled, which breaks the enforcing-mode boot
@@ -963,13 +968,11 @@ jobs:
 
         # ── DEBUG (temporary): inspect why the SELinux relabel is transient ──
         echo "========== SELinux debug =========="
-        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "getenforce; echo '-- ld.so.cache now --'; ls -Z /etc/ld.so.cache; echo '-- %post-time snapshot --'; sudo cat /var/log/selinux-install-debug.log 2>/dev/null" || true
-        echo "-- anaconda relabel/setfiles/selinux log lines --"
-        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "sudo grep -riE 'setfiles|relabel|selinux' /var/log/anaconda/ 2>/dev/null | tail -50" || true
+        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "getenforce; echo '-- ld.so.cache now --'; ls -Z /etc/ld.so.cache; echo '-- install-time snapshot --'; cat /var/log/selinux-install-debug.log 2>/dev/null || sudo cat /var/log/selinux-install-debug.log 2>/dev/null" || true
+        echo "-- anaconda program.log/anaconda.log relabel lines --"
+        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "sudo grep -niE 'setfiles|restorecon|relabel|selinux' /var/log/anaconda/program.log /var/log/anaconda/anaconda.log 2>/dev/null | tail -50" || true
         echo "-- first-boot autorelabel evidence + AVC denials --"
-        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "sudo journalctl --list-boots --no-pager 2>/dev/null | tail -3; echo ...; sudo journalctl -b -1 --no-pager 2>/dev/null | grep -iE 'relabel|autorelabel' | tail; echo ...; sudo journalctl -b --no-pager 2>/dev/null | grep -i 'avc:' | tail -20" || true
-        echo "-- restorecon dry-run NOW (should be clean post-relabel) --"
-        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "sudo restorecon -Rnv /etc /usr/lib64 2>/dev/null | head -30" || true
+        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "sudo journalctl --list-boots --no-pager 2>/dev/null | tail -3; echo '...prev-boot relabel...'; sudo journalctl -b -1 --no-pager 2>/dev/null | grep -iE 'relabel|autorelabel|selinux-auto' | tail; echo '...avc this boot...'; sudo journalctl -b --no-pager 2>/dev/null | grep -i 'avc:' | tail -20" || true
         echo "========== end SELinux debug =========="
 
     # ── Failure diagnostics ────────────────────────────────────────
