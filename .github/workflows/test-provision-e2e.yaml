@@ -993,6 +993,37 @@ jobs:
         path: /tmp/qemu-*.ppm
         if-no-files-found: ignore
 
+    # DEBUG (temporary): read SELinux labels straight off the installed disk, so we
+    # capture the *failing* VM's state too (it's unreachable over SSH).
+    - name: DEBUG offline disk SELinux labels
+      if: always() && matrix.installer == 'kickstart'
+      run: |
+        [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+        sleep 3
+        sudo modprobe nbd max_part=16 2>/dev/null || true
+        sudo qemu-nbd --read-only --connect=/dev/nbd0 /tmp/pxe-test-disk.qcow2 \
+          || { echo "nbd connect failed"; exit 0; }
+        sleep 2
+        ROOT=""
+        for p in /dev/nbd0p*; do
+          sudo mount -o ro "$p" /mnt 2>/dev/null || continue
+          if [ -f /mnt/etc/os-release ] && [ -d /mnt/etc/selinux ]; then ROOT="$p"; break; fi
+          sudo umount /mnt 2>/dev/null || true
+        done
+        if [ -z "$ROOT" ]; then echo "root partition not found"; sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true; exit 0; fi
+        echo "===== offline disk labels (root=$ROOT) ====="
+        echo "## /.autorelabel on disk (present => relabel pending/never finished):"
+        sudo ls -la /mnt/.autorelabel 2>&1 || echo "ABSENT (relabel ran)"
+        echo "## key on-disk labels:"
+        for f in etc/resolv.conf etc/ld.so.cache etc/fstab etc/hostname; do
+          printf '/%s -> ' "$f"
+          sudo getfattr -h --only-values -n security.selinux "/mnt/$f" 2>/dev/null || printf '(no xattr)'
+          printf ' [symlink: %s]\n' "$(sudo readlink "/mnt/$f" 2>/dev/null || echo no)"
+        done
+        echo "===== end offline disk labels ====="
+        sudo umount /mnt 2>/dev/null || true
+        sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true
+
     - name: Collect logs on failure
       if: failure()
       run: |
