@@ -1,0 +1,32 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: rocky-10.2-kernel
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://download.rockylinux.org/pub/rocky/10.2/BaseOS/x86_64/os/images/pxeboot/vmlinuz
+  sha256: "bdbe11aa10d1dce86d89e65e2f8476f78f47968b8045b20fa0f0aace82b77d77"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: rocky-10.2-initrd
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://download.rockylinux.org/pub/rocky/10.2/BaseOS/x86_64/os/images/pxeboot/initrd.img
+  sha256: "ba5d8f6e40467b0c25590b0abeca6008b36093b696d649bfa53c7e8edc3fc37d"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: rocky-10.2
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  kernel:
+    ref: rocky-10.2-kernel
+    args: "ip=dhcp {{if .ProxyURL}}inst.proxy={{.ProxyURL}} {{end}}inst.repo=http://download.rockylinux.org/pub/rocky/10.2/BaseOS/x86_64/os inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg"
+  initrd:
+    ref: rocky-10.2-initrd
