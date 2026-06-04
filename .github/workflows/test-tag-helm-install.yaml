@@ -20,7 +20,8 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/isoboot/isoboot
-  # Rocky Linux 10.2 — SHA-256 digests from .treeinfo
+  # Rocky Linux 10.2 — per-release knobs (BootConfig name + SHA-256s from .treeinfo)
+  BOOTCONFIG_NAME: rocky-10.2
   VMLINUZ_SHA256: "bdbe11aa10d1dce86d89e65e2f8476f78f47968b8045b20fa0f0aace82b77d77"
   INITRD_SHA256: "ba5d8f6e40467b0c25590b0abeca6008b36093b696d649bfa53c7e8edc3fc37d"
 
@@ -273,36 +274,36 @@ jobs:
 
     # ── Rocky Linux 10.2 boot artifacts ──────────────────────────────
     - name: Apply Rocky Linux 10.2 example manifest
-      run: kubectl -n isoboot-system apply -f examples/rocky-10.2.yaml
+      run: kubectl -n isoboot-system apply -f examples/${{ env.BOOTCONFIG_NAME }}.yaml
 
     - name: Wait for BootArtifacts Ready
       run: |
-        ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact rocky-10.2-kernel
-        ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact rocky-10.2-initrd
+        ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ env.BOOTCONFIG_NAME }}-kernel
+        ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ env.BOOTCONFIG_NAME }}-initrd
 
     - name: Verify artifact SHA-256 on host disk
       run: |
-        echo "${{ env.VMLINUZ_SHA256 }}  /data/isoboot/nginx/static/artifacts/rocky-10.2-kernel/vmlinuz" | sha256sum -c
-        echo "${{ env.INITRD_SHA256 }}  /data/isoboot/nginx/static/artifacts/rocky-10.2-initrd/initrd.img" | sha256sum -c
+        echo "${{ env.VMLINUZ_SHA256 }}  /data/isoboot/nginx/static/artifacts/${{ env.BOOTCONFIG_NAME }}-kernel/vmlinuz" | sha256sum -c
+        echo "${{ env.INITRD_SHA256 }}  /data/isoboot/nginx/static/artifacts/${{ env.BOOTCONFIG_NAME }}-initrd/initrd.img" | sha256sum -c
 
     - name: Wait for BootConfig Ready
-      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig rocky-10.2
+      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig ${{ env.BOOTCONFIG_NAME }}
 
     - name: Verify BootConfig symlinks on host disk
       run: |
         # Verify kernel symlink
-        target=$(readlink /data/isoboot/nginx/static/boot/rocky-10.2/kernel/vmlinuz)
+        target=$(readlink /data/isoboot/nginx/static/boot/${{ env.BOOTCONFIG_NAME }}/kernel/vmlinuz)
         echo "kernel symlink target: $target"
-        [ "$target" = "../../../artifacts/rocky-10.2-kernel/vmlinuz" ] || { echo "FAIL: wrong kernel target"; exit 1; }
+        [ "$target" = "../../../artifacts/${{ env.BOOTCONFIG_NAME }}-kernel/vmlinuz" ] || { echo "FAIL: wrong kernel target"; exit 1; }
 
         # Verify initrd symlink
-        target=$(readlink /data/isoboot/nginx/static/boot/rocky-10.2/initrd/initrd.img)
+        target=$(readlink /data/isoboot/nginx/static/boot/${{ env.BOOTCONFIG_NAME }}/initrd/initrd.img)
         echo "initrd symlink target: $target"
-        [ "$target" = "../../../artifacts/rocky-10.2-initrd/initrd.img" ] || { echo "FAIL: wrong initrd target"; exit 1; }
+        [ "$target" = "../../../artifacts/${{ env.BOOTCONFIG_NAME }}-initrd/initrd.img" ] || { echo "FAIL: wrong initrd target"; exit 1; }
 
         # Verify symlinks resolve to actual files
-        test -f /data/isoboot/nginx/static/boot/rocky-10.2/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
-        test -f /data/isoboot/nginx/static/boot/rocky-10.2/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
+        test -f /data/isoboot/nginx/static/boot/${{ env.BOOTCONFIG_NAME }}/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
+        test -f /data/isoboot/nginx/static/boot/${{ env.BOOTCONFIG_NAME }}/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
 
     # ── Verify auto-generated boot script ─────────────────────────
     - name: Verify boot.ipxe auto-generated
@@ -339,9 +340,9 @@ jobs:
         PXE_IP=$(cat /tmp/pxe-ip)
         PXE_PORT=$(cat /tmp/pxe-port)
         docker exec wget-client wget -O /tmp/dl-vmlinuz \
-          "http://${PXE_IP}:${PXE_PORT}/static/rocky-10.2/kernel/vmlinuz"
+          "http://${PXE_IP}:${PXE_PORT}/static/${{ env.BOOTCONFIG_NAME }}/kernel/vmlinuz"
         docker exec wget-client wget -O /tmp/dl-initrd \
-          "http://${PXE_IP}:${PXE_PORT}/static/rocky-10.2/initrd/initrd.img"
+          "http://${PXE_IP}:${PXE_PORT}/static/${{ env.BOOTCONFIG_NAME }}/initrd/initrd.img"
 
     - name: Verify downloaded artifact checksums
       run: |
@@ -381,7 +382,7 @@ jobs:
           name: test-provision
         spec:
           machineRef: test-machine
-          bootConfigRef: rocky-10.2
+          bootConfigRef: ${{ env.BOOTCONFIG_NAME }}
           provisionAutomationRef: test-automation
         ---
         apiVersion: isoboot.github.io/v1alpha1
@@ -390,7 +391,7 @@ jobs:
           name: qemu-provision
         spec:
           machineRef: qemu-machine
-          bootConfigRef: rocky-10.2
+          bootConfigRef: ${{ env.BOOTCONFIG_NAME }}
           provisionAutomationRef: test-automation
         EOF
         kubectl -n isoboot-system patch provision test-provision \
@@ -408,8 +409,8 @@ jobs:
         docker exec wget-client cat /tmp/dynamic-boot
         docker exec wget-client grep '#!ipxe' /tmp/dynamic-boot \
           || { echo "FAIL: missing #!ipxe header"; exit 1; }
-        docker exec wget-client grep 'rocky-10.2' /tmp/dynamic-boot \
-          || { echo "FAIL: missing rocky-10.2"; exit 1; }
+        docker exec wget-client grep '${{ env.BOOTCONFIG_NAME }}' /tmp/dynamic-boot \
+          || { echo "FAIL: missing ${{ env.BOOTCONFIG_NAME }}"; exit 1; }
         docker exec wget-client grep '/static/' /tmp/dynamic-boot \
           || { echo "FAIL: missing /static/ paths"; exit 1; }
 
@@ -471,14 +472,14 @@ jobs:
 
         # Verify kernel was downloaded by iPXE (not wget-client)
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep '"GET /static/rocky-10.2/kernel/vmlinuz' \
+          | grep '"GET /static/${{ env.BOOTCONFIG_NAME }}/kernel/vmlinuz' \
           | grep '" 200 ' \
           | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for kernel download"; exit 1; }
 
         # Verify initrd was downloaded by iPXE (not wget-client)
         kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
-          | grep '"GET /static/rocky-10.2/initrd/initrd.img' \
+          | grep '"GET /static/${{ env.BOOTCONFIG_NAME }}/initrd/initrd.img' \
           | grep '" 200 ' \
           | grep 'iPXE/' \
           || { echo "FAIL: no iPXE HTTP 200 for initrd download"; exit 1; }
