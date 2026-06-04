@@ -490,6 +490,11 @@ jobs:
               chmod 444 /etc/machine-id
               restorecon /etc/machine-id
               {{- end }}
+              # Force a full SELinux relabel on first boot. Anaconda's install-time
+              # relabel is occasionally incomplete under CI load, leaving files such
+              # as /etc/ld.so.cache mislabeled, which breaks the enforcing-mode boot
+              # and drops the VM into emergency mode (no SSH). Relabel + reboot fixes it.
+              touch /.autorelabel
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
               %end
         ---
