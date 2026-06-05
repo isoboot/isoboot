@@ -216,8 +216,22 @@ func isSafeISOPath(p string) bool {
 }
 
 // extractFromISO opens the ISO9660 image at isoPath and writes the files at
-// kernelPath and initrdPath to outputDir/vmlinuz and outputDir/initrd.
+// kernelPath and initrdPath to outputDir/vmlinuz and outputDir/initrd. It skips
+// the work when both outputs already exist and are newer than the ISO.
 func extractFromISO(isoPath, kernelPath, initrdPath, outputDir string) error {
+	isoInfo, err := os.Stat(isoPath)
+	if err != nil {
+		return fmt.Errorf("stat iso %q: %w", isoPath, err)
+	}
+
+	targets := []struct{ src, dst string }{
+		{kernelPath, filepath.Join(outputDir, "vmlinuz")},
+		{initrdPath, filepath.Join(outputDir, "initrd")},
+	}
+	if upToDate(targets[0].dst, isoInfo.ModTime()) && upToDate(targets[1].dst, isoInfo.ModTime()) {
+		return nil // already extracted and current
+	}
+
 	disk, err := diskfs.Open(isoPath, diskfs.WithOpenMode(diskfs.ReadOnly))
 	if err != nil {
 		return fmt.Errorf("opening iso %q: %w", isoPath, err)
@@ -229,15 +243,18 @@ func extractFromISO(isoPath, kernelPath, initrdPath, outputDir string) error {
 		return fmt.Errorf("reading iso filesystem: %w", err)
 	}
 
-	for _, e := range []struct{ src, dst string }{
-		{kernelPath, filepath.Join(outputDir, "vmlinuz")},
-		{initrdPath, filepath.Join(outputDir, "initrd")},
-	} {
+	for _, e := range targets {
 		if err := extractFile(fsys, e.src, e.dst); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// upToDate reports whether dst exists and was modified after srcModTime.
+func upToDate(dst string, srcModTime time.Time) bool {
+	info, err := os.Stat(dst)
+	return err == nil && info.ModTime().After(srcModTime)
 }
 
 // extractFile copies src from the ISO filesystem to dst on disk atomically.
@@ -416,7 +433,8 @@ func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, o
 		bc := &configs.Items[i]
 		if (bc.Spec.Kernel != nil && bc.Spec.Kernel.Ref == obj.GetName()) ||
 			(bc.Spec.Initrd != nil && bc.Spec.Initrd.Ref == obj.GetName()) ||
-			(bc.Spec.Firmware != nil && bc.Spec.Firmware.Ref == obj.GetName()) {
+			(bc.Spec.Firmware != nil && bc.Spec.Firmware.Ref == obj.GetName()) ||
+			(bc.Spec.ISO != nil && bc.Spec.ISO.ArtifactRef == obj.GetName()) {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: client.ObjectKeyFromObject(bc),
 			})

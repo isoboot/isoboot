@@ -161,6 +161,26 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(string(initrd)).To(Equal("INITRD-BYTES"))
 	})
 
+	It("does not re-extract on repeated reconcile when up to date", func() {
+		defer readyISOArtifact("iso-idem", contents)()
+		defer makeISOConfig("iso-bc-idem", "iso-idem", "casper/vmlinuz", "casper/initrd")()
+
+		_, err := doReconcile("iso-bc-idem")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-idem").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+		vmlinuzPath := filepath.Join(dataDir, "boot", "iso-bc-idem", "vmlinuz")
+		before, err := os.Stat(vmlinuzPath)
+		Expect(err).NotTo(HaveOccurred())
+
+		// A second reconcile must leave the extracted file in place (same inode),
+		// proving it was not re-extracted.
+		_, err = doReconcile("iso-bc-idem")
+		Expect(err).NotTo(HaveOccurred())
+		after, err := os.Stat(vmlinuzPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.SameFile(before, after)).To(BeTrue())
+	})
+
 	It("is Pending when the ISO artifact is not Ready", func() {
 		defer makeISOArtifact("iso-pending", isobootgithubiov1alpha1.BootArtifactPhasePending)()
 		defer makeISOConfig("iso-bc-pending", "iso-pending", "casper/vmlinuz", "casper/initrd")()
