@@ -976,7 +976,7 @@ jobs:
 
         # ── DEBUG (temporary): is /.autorelabel actually firing? ──
         echo "===== autorelabel mechanism ====="
-        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "echo '## /.autorelabel (present => it never fired):'; ls -la /.autorelabel 2>&1 || echo 'ABSENT (it fired)'; echo '## boots (>1 => a relabel reboot happened):'; sudo journalctl --list-boots --no-pager 2>/dev/null | tail -4; echo '## resolv.conf label + symlink target:'; ls -Z /etc/resolv.conf; readlink -f /etc/resolv.conf; echo '## what is STILL mislabeled in /etc right now:'; sudo restorecon -Rnv /etc 2>/dev/null | head -15; echo '## relabel units present:'; systemctl list-unit-files 2>/dev/null | grep -i relabel || echo none" || true
+        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "echo '## /.autorelabel (present => it never fired):'; ls -la /.autorelabel 2>&1 || echo 'ABSENT (it fired)'; echo '## boots (>1 => a relabel reboot happened):'; sudo journalctl --list-boots --no-pager 2>/dev/null | tail -4; echo '## resolv.conf label + symlink target:'; ls -Z /etc/resolv.conf; readlink -f /etc/resolv.conf; echo '## what is STILL mislabeled in /etc right now:'; sudo restorecon -Rnv /etc 2>/dev/null | head -15; echo '## relabel units present:'; systemctl list-unit-files 2>/dev/null | grep -i relabel || echo none; echo '## fix units enabled?:'; systemctl is-enabled fix-etc-labels.service fix-resolv.path 2>&1; echo '## did fix-resolv.service fire (relabel on a resolv.conf write)?:'; sudo journalctl -u fix-resolv.service --no-pager 2>/dev/null | tail -4 || true" || true
         echo "===== end autorelabel mechanism ====="
 
     # ── Failure diagnostics ────────────────────────────────────────
