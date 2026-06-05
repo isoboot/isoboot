@@ -490,8 +490,6 @@ jobs:
               chmod 444 /etc/machine-id
               restorecon /etc/machine-id
               {{- end }}
-              # DEBUG (temporary): NOPASSWD so the post-boot probe can read the journal.
-              echo 'isoboot ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/99-debug-nopasswd && chmod 440 /etc/sudoers.d/99-debug-nopasswd || true
               # Force a full SELinux relabel on first boot. Anaconda's install-time
               # relabel is occasionally incomplete under CI load, leaving files such
               # as /etc/ld.so.cache mislabeled, which breaks the enforcing-mode boot
@@ -974,11 +972,6 @@ jobs:
 
         echo "All SSH verifications passed!"
 
-        # ── DEBUG (temporary): is /.autorelabel actually firing? ──
-        echo "===== autorelabel mechanism ====="
-        ssh -i /tmp/e2e-ssh-key $SSH_OPTS isoboot@"$VM_IP" "echo '## /.autorelabel (present => it never fired):'; ls -la /.autorelabel 2>&1 || echo 'ABSENT (it fired)'; echo '## boots (>1 => a relabel reboot happened):'; sudo journalctl --list-boots --no-pager 2>/dev/null | tail -4; echo '## resolv.conf label + symlink target:'; ls -Z /etc/resolv.conf; readlink -f /etc/resolv.conf; echo '## what is STILL mislabeled in /etc right now:'; sudo restorecon -Rnv /etc 2>/dev/null | head -15; echo '## relabel units present:'; systemctl list-unit-files 2>/dev/null | grep -i relabel || echo none; echo '## fix units enabled?:'; systemctl is-enabled fix-etc-labels.service fix-resolv.path 2>&1; echo '## did fix-resolv.service fire (relabel on a resolv.conf write)?:'; sudo journalctl -u fix-resolv.service --no-pager 2>/dev/null | tail -4 || true" || true
-        echo "===== end autorelabel mechanism ====="
-
     # ── Failure diagnostics ────────────────────────────────────────
     - name: Capture QEMU screenshot
       if: always()
@@ -1005,38 +998,6 @@ jobs:
         name: qemu-screenshot-${{ matrix.hostname }}
         path: /tmp/qemu-*.ppm
         if-no-files-found: ignore
-
-    # DEBUG (temporary): read SELinux labels straight off the installed disk, so we
-    # capture the *failing* VM's state too (it's unreachable over SSH).
-    - name: DEBUG offline disk SELinux labels
-      if: always() && matrix.installer == 'kickstart'
-      run: |
-        [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(sudo cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
-        sleep 3
-        sudo modprobe nbd max_part=16 2>/dev/null || true
-        sudo qemu-nbd --read-only --connect=/dev/nbd0 /tmp/pxe-test-disk.qcow2 \
-          || { echo "nbd connect failed"; exit 0; }
-        sleep 2
-        sudo partprobe /dev/nbd0 2>/dev/null || true
-        ROOT=""
-        for p in /dev/nbd0p*; do
-          sudo mount -o ro,norecovery "$p" /mnt 2>/dev/null || sudo mount -o ro "$p" /mnt 2>/dev/null || continue
-          if [ -f /mnt/etc/os-release ] && [ -d /mnt/etc/selinux ]; then ROOT="$p"; break; fi
-          sudo umount /mnt 2>/dev/null || true
-        done
-        if [ -z "$ROOT" ]; then echo "root partition not found"; sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true; exit 0; fi
-        echo "===== offline disk labels (root=$ROOT) ====="
-        echo "## /.autorelabel on disk (present => relabel pending/never finished):"
-        sudo ls -la /mnt/.autorelabel 2>&1 || echo "ABSENT (relabel ran)"
-        echo "## key on-disk labels:"
-        for f in etc/resolv.conf etc/ld.so.cache etc/fstab etc/hostname; do
-          printf '/%s -> ' "$f"
-          sudo getfattr -h --only-values -n security.selinux "/mnt/$f" 2>/dev/null || printf '(no xattr)'
-          printf ' [symlink: %s]\n' "$(sudo readlink "/mnt/$f" 2>/dev/null || echo no)"
-        done
-        echo "===== end offline disk labels ====="
-        sudo umount /mnt 2>/dev/null || true
-        sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true
 
     - name: Collect logs on failure
       if: failure()
