@@ -22,8 +22,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
+	diskfs "github.com/diskfs/go-diskfs"
+	"github.com/diskfs/go-diskfs/filesystem"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,9 +66,14 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	// Only Mode A (direct refs) for now
+	// Mode B: extract kernel and initrd from an ISO artifact.
+	if bc.Spec.ISO != nil {
+		return r.reconcileISO(ctx, &bc)
+	}
+
+	// Mode A: direct kernel and initrd refs.
 	if bc.Spec.Kernel == nil || bc.Spec.Initrd == nil {
-		log.V(1).Info("Skipping BootConfig without direct refs")
+		log.V(1).Info("Skipping BootConfig without kernel/initrd or iso")
 		return ctrl.Result{}, nil
 	}
 
@@ -153,6 +162,136 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	return r.setReady(ctx, &bc)
+}
+
+// reconcileISO handles Mode B: extract kernel and initrd from an ISO artifact
+// into the boot directory as real files.
+func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	iso := bc.Spec.ISO
+
+	if !isSafeISOPath(iso.KernelPath) {
+		return r.setError(ctx, bc, fmt.Sprintf("invalid kernelPath %q: path traversal not allowed", iso.KernelPath))
+	}
+	if !isSafeISOPath(iso.InitrdPath) {
+		return r.setError(ctx, bc, fmt.Sprintf("invalid initrdPath %q: path traversal not allowed", iso.InitrdPath))
+	}
+
+	isoArtifact, err := r.getArtifact(ctx, iso.ArtifactRef, bc.Namespace)
+	if err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+		return r.setError(ctx, bc, fmt.Sprintf("iso artifact %q not found", iso.ArtifactRef))
+	}
+	if isoArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
+		return r.setPending(ctx, bc, fmt.Sprintf("waiting for iso artifact %q to be Ready", iso.ArtifactRef))
+	}
+
+	isoFilename := urlutil.FilenameFromURL(isoArtifact.Spec.URL)
+	isoPath := filepath.Join(r.DataDir, "artifacts", isoArtifact.Name, isoFilename)
+	bootDir := filepath.Join(r.DataDir, "boot", bc.Name)
+
+	if err := os.MkdirAll(bootDir, 0o755); err != nil {
+		return r.setError(ctx, bc, fmt.Sprintf("creating boot dir: %v", err))
+	}
+
+	if err := extractFromISO(isoPath, iso.KernelPath, iso.InitrdPath, bootDir); err != nil {
+		return r.setError(ctx, bc, fmt.Sprintf("extracting from iso: %v", err))
+	}
+
+	if bc.Status.Phase != isobootgithubiov1alpha1.BootConfigPhaseReady {
+		log.Info("BootConfig assembled from ISO", "name", bc.Name, "bootDir", bootDir)
+	}
+	return r.setReady(ctx, bc)
+}
+
+// maxExtractedFileSize caps an individual file extracted from an ISO, guarding
+// against an oversized entry from a malicious ISO.
+const maxExtractedFileSize = 1 << 30 // 1 GiB
+
+// isSafeISOPath reports whether p is a non-empty in-ISO path with no ".." segment.
+func isSafeISOPath(p string) bool {
+	return p != "" && !slices.Contains(strings.Split(p, "/"), "..")
+}
+
+// extractFromISO opens the ISO9660 image at isoPath and writes the files at
+// kernelPath and initrdPath to outputDir/vmlinuz and outputDir/initrd. It skips
+// the work when both outputs already exist and are newer than the ISO.
+func extractFromISO(isoPath, kernelPath, initrdPath, outputDir string) error {
+	isoInfo, err := os.Stat(isoPath)
+	if err != nil {
+		return fmt.Errorf("stat iso %q: %w", isoPath, err)
+	}
+
+	targets := []struct{ src, dst string }{
+		{kernelPath, filepath.Join(outputDir, "vmlinuz")},
+		{initrdPath, filepath.Join(outputDir, "initrd")},
+	}
+	if upToDate(targets[0].dst, isoInfo.ModTime()) && upToDate(targets[1].dst, isoInfo.ModTime()) {
+		return nil // already extracted and current
+	}
+
+	disk, err := diskfs.Open(isoPath, diskfs.WithOpenMode(diskfs.ReadOnly))
+	if err != nil {
+		return fmt.Errorf("opening iso %q: %w", isoPath, err)
+	}
+	defer func() { _ = disk.Close() }()
+
+	fsys, err := disk.GetFilesystem(0)
+	if err != nil {
+		return fmt.Errorf("reading iso filesystem: %w", err)
+	}
+
+	for _, e := range targets {
+		if err := extractFile(fsys, e.src, e.dst); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// upToDate reports whether dst exists and was modified after srcModTime.
+func upToDate(dst string, srcModTime time.Time) bool {
+	info, err := os.Stat(dst)
+	return err == nil && info.ModTime().After(srcModTime)
+}
+
+// extractFile copies src from the ISO filesystem to dst on disk atomically.
+func extractFile(fsys filesystem.FileSystem, src, dst string) error {
+	f, err := fsys.OpenFile("/"+strings.TrimPrefix(src, "/"), os.O_RDONLY)
+	if err != nil {
+		return fmt.Errorf("opening %q in iso: %w", src, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".extract-*")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}()
+
+	n, err := io.Copy(tmp, io.LimitReader(f, maxExtractedFileSize+1))
+	if err != nil {
+		return fmt.Errorf("copying %q: %w", src, err)
+	}
+	if n > maxExtractedFileSize {
+		return fmt.Errorf("file %q exceeds max extract size %d bytes", src, int64(maxExtractedFileSize))
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+	if err := os.Chmod(tmpPath, 0o444); err != nil {
+		return fmt.Errorf("setting permissions: %w", err)
+	}
+	if err := os.Rename(tmpPath, dst); err != nil {
+		return fmt.Errorf("renaming temp file: %w", err)
+	}
+	return nil
 }
 
 // concatenateFiles writes the concatenation of srcA and srcB to dst atomically.
@@ -294,7 +433,8 @@ func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, o
 		bc := &configs.Items[i]
 		if (bc.Spec.Kernel != nil && bc.Spec.Kernel.Ref == obj.GetName()) ||
 			(bc.Spec.Initrd != nil && bc.Spec.Initrd.Ref == obj.GetName()) ||
-			(bc.Spec.Firmware != nil && bc.Spec.Firmware.Ref == obj.GetName()) {
+			(bc.Spec.Firmware != nil && bc.Spec.Firmware.Ref == obj.GetName()) ||
+			(bc.Spec.ISO != nil && bc.Spec.ISO.ArtifactRef == obj.GetName()) {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: client.ObjectKeyFromObject(bc),
 			})
