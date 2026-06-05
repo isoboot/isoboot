@@ -90,6 +90,15 @@ func BootDirectiveForMAC(
 			provision.Spec.BootConfigRef, err)
 	}
 
+	// Mode B (ISO): kernel and initrd are extracted to fixed filenames.
+	if bc.Spec.ISO != nil {
+		return &BootDirective{
+			KernelPath:    path.Join(bc.Name, "vmlinuz"),
+			InitrdPath:    path.Join(bc.Name, "initrd"),
+			ProvisionName: provision.Name,
+		}, nil
+	}
+
 	if bc.Spec.Kernel == nil || bc.Spec.Initrd == nil {
 		return nil, fmt.Errorf(
 			"boot config %q missing kernel or initrd", bc.Name)
