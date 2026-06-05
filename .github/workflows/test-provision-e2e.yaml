@@ -119,8 +119,8 @@ jobs:
             initrd_filename: "initrd.img"
             nic_device: "rtl8168"
           - distro: "Rocky"
-            version: "9.7"
-            manifest: "rocky-9.7"
+            version: "9.8"
+            manifest: "rocky-9.8"
             hostname: "rocky9"
             os_id: "rocky"
             mac_hyphen: "02-00-00-ab-cd-02"
@@ -490,6 +490,24 @@ jobs:
               chmod 444 /etc/machine-id
               restorecon /etc/machine-id
               {{- end }}
+              # Force a full SELinux relabel on first boot. Anaconda's install-time
+              # relabel is occasionally incomplete under CI load, leaving files such
+              # as /etc/ld.so.cache mislabeled, which breaks the enforcing-mode boot
+              # and drops the VM into emergency mode (no SSH). Relabel + reboot fixes it.
+              touch /.autorelabel
+              # Belt-and-suspenders: an early-boot oneshot that restorecons /etc every
+              # boot, so a regenerated/mislabeled file (resolv.conf, ld.so.cache — both
+              # under /etc) is corrected before services use it, even if the relabel
+              # above misses it. Keeps SELinux enforcing.
+              printf '%s\n' '[Unit]' 'Description=restorecon /etc (SELinux label-race workaround)' 'DefaultDependencies=no' 'After=local-fs.target' 'Before=sysinit.target' '[Service]' 'Type=oneshot' 'ExecStart=/sbin/restorecon -R /etc' 'RemainAfterExit=yes' '[Install]' 'WantedBy=sysinit.target' > /etc/systemd/system/fix-etc-labels.service
+              systemctl enable fix-etc-labels.service
+              # And relabel resolv.conf the instant it is (re)written — NetworkManager
+              # rewrites it during network bring-up, which is the late case the early
+              # relabel misses. A .path watcher started early catches every write, so the
+              # label is fixed before any consumer reads it. No ordering race to lose.
+              printf '%s\n' '[Unit]' 'DefaultDependencies=no' 'Before=sysinit.target' '[Path]' 'PathModified=/etc/resolv.conf' 'Unit=fix-resolv.service' '[Install]' 'WantedBy=sysinit.target' > /etc/systemd/system/fix-resolv.path
+              printf '%s\n' '[Unit]' 'Description=restorecon resolv.conf' '[Service]' 'Type=oneshot' 'ExecStart=/sbin/restorecon /etc/resolv.conf' > /etc/systemd/system/fix-resolv.service
+              systemctl enable fix-resolv.path
               curl -X POST -d "provisionName={{.ProvisionName}}&phase=Complete" {{.UpdatePhaseURL}}
               %end
         ---
