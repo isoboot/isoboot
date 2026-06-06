@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **BREAKING**: Restructure `BootConfig` spec into two mutually-exclusive
+  sections, `netboot` and `iso`, and hoist kernel args to a shared top-level
+  `kernelArgs`. Migration: `spec.kernel.ref` → `spec.netboot.kernelRef`,
+  `spec.initrd.ref` → `spec.netboot.initrdRef`, `spec.firmware.ref` →
+  `spec.netboot.firmwareRef`, `spec.kernel.args` → `spec.kernelArgs`.
+
 ## v0.0.2-rc3
 
 - Add `POST /dynamic/status` endpoint for provision phase updates
