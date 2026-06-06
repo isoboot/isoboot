@@ -160,8 +160,8 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(initrd)).To(Equal("INITRD-BYTES"))
 
-		// The ISO is also served as image.iso — a sibling symlink to the artifact
-		// that resolves to the real file (so installers can fetch their root fs).
+		// The ISO is also served under its own filename — a sibling symlink to the
+		// artifact that resolves to the real file (so installers can fetch root fs).
 		isoLink := filepath.Join(dataDir, "boot", "iso-bc-ok", "test.iso")
 		target, err := os.Readlink(isoLink)
 		Expect(err).NotTo(HaveOccurred())
