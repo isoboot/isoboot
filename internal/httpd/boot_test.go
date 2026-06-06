@@ -161,6 +161,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 
 		Expect(result.KernelPath).To(Equal("bd-bc3/vmlinuz"))
 		Expect(result.InitrdPath).To(Equal("bd-bc3/initrd"))
+		Expect(result.ISOPath).To(Equal("bd-bc3/image.iso"))
 		Expect(result.KernelArgs).To(Equal("autoinstall ds=nocloud-net"))
 		Expect(result.ProvisionName).To(Equal("bd-p4"))
 	})
@@ -252,6 +253,18 @@ var _ = Describe("RenderKernelArgs", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(ContainSubstring("inst.status=http://10.0.0.1:8080/dynamic/status"))
 		Expect(result).To(ContainSubstring("inst.provname=my-provision"))
+	})
+
+	It("renders ISOURL for ISO-mode autoinstall", func() {
+		result, err := RenderKernelArgs(
+			"ip=dhcp url={{.ISOURL}} autoinstall ds=nocloud-net;s={{.ProvisionAutomationBaseURL}}/",
+			KernelArgsData{
+				ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
+				ISOURL:                     "http://10.0.0.1:8080/static/ubuntu-26.04/image.iso",
+			})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal(
+			"ip=dhcp url=http://10.0.0.1:8080/static/ubuntu-26.04/image.iso autoinstall ds=nocloud-net;s=http://10.0.0.1:8080/dynamic/automation/my-provision/"))
 	})
 })
 

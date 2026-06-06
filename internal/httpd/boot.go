@@ -35,6 +35,7 @@ type BootDirective struct {
 	KernelPath    string
 	KernelArgs    string
 	InitrdPath    string
+	ISOPath       string
 	ProvisionName string
 }
 
@@ -44,6 +45,7 @@ type KernelArgsData struct {
 	ProxyURL                   string
 	UpdatePhaseURL             string
 	ProvisionName              string
+	ISOURL                     string
 }
 
 // RenderKernelArgs renders kernel args as a Go template with the given data.
@@ -96,6 +98,7 @@ func BootDirectiveForMAC(
 			KernelPath:    path.Join(bc.Name, "vmlinuz"),
 			KernelArgs:    bc.Spec.KernelArgs,
 			InitrdPath:    path.Join(bc.Name, "initrd"),
+			ISOPath:       path.Join(bc.Name, "image.iso"),
 			ProvisionName: provision.Name,
 		}, nil
 	}

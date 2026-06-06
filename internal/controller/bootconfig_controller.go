@@ -201,10 +201,27 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 		return r.setError(ctx, bc, fmt.Sprintf("extracting from iso: %v", err))
 	}
 
+	// Serve the ISO itself (as image.iso) so installers can fetch their root
+	// filesystem over HTTP. Sibling-safe so it doesn't disturb vmlinuz/initrd.
+	isoTarget := filepath.Join("..", "..", "artifacts", isoArtifact.Name, isoFilename)
+	if err := ensureFileSymlink(filepath.Join(bootDir, "image.iso"), isoTarget); err != nil {
+		return r.setError(ctx, bc, fmt.Sprintf("creating iso symlink: %v", err))
+	}
+
 	if bc.Status.Phase != isobootgithubiov1alpha1.BootConfigPhaseReady {
 		log.Info("BootConfig assembled from ISO", "name", bc.Name, "bootDir", bootDir)
 	}
 	return r.setReady(ctx, bc)
+}
+
+// ensureFileSymlink idempotently points link at target without disturbing
+// sibling entries (unlike ensureSymlink, which manages a whole directory).
+func ensureFileSymlink(link, target string) error {
+	if existing, err := os.Readlink(link); err == nil && existing == target {
+		return nil
+	}
+	_ = os.Remove(link)
+	return os.Symlink(target, link)
 }
 
 // maxExtractedFileSize caps an individual file extracted from an ISO, guarding

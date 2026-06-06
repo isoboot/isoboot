@@ -159,6 +159,16 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		initrd, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-ok", "initrd"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(initrd)).To(Equal("INITRD-BYTES"))
+
+		// The ISO is also served as image.iso — a sibling symlink to the artifact
+		// that resolves to the real file (so installers can fetch their root fs).
+		isoLink := filepath.Join(dataDir, "boot", "iso-bc-ok", "image.iso")
+		target, err := os.Readlink(isoLink)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(target).To(Equal(filepath.Join("..", "..", "artifacts", "iso-ok", "test.iso")))
+		info, err := os.Stat(isoLink) // follows the symlink
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.IsDir()).To(BeFalse())
 	})
 
 	It("does not re-extract on repeated reconcile when up to date", func() {
