@@ -19,10 +19,8 @@ metadata:
   labels:
     app.kubernetes.io/name: isoboot
 spec:
-  kernel:
-    ref: debian-13-kernel
-    args: "console=ttyS0,115200 auto=true priority=critical {{if .ProxyURL}}mirror/http/proxy={{.ProxyURL}} {{end}}preseed/url={{.ProvisionAutomationBaseURL}}/preseed.cfg"
-  initrd:
-    ref: debian-13-initrd
-  firmware:
-    ref: debian-13-firmware
+  netboot:
+    kernelRef: debian-13-kernel
+    initrdRef: debian-13-initrd
+    firmwareRef: debian-13-firmware
+  kernelArgs: "console=ttyS0,115200 auto=true priority=critical {{if .ProxyURL}}mirror/http/proxy={{.ProxyURL}} {{end}}preseed/url={{.ProvisionAutomationBaseURL}}/preseed.cfg"

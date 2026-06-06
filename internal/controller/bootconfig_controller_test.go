@@ -49,17 +49,14 @@ var _ = Describe("BootConfig Controller", func() {
 				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			},
 			Entry("mode A: kernel and initrd", "valid-mode-a", isobootgithubiov1alpha1.BootConfigSpec{
-				Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel"},
-				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
+				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "my-kernel", InitrdRef: "my-initrd"},
 			}),
 			Entry("mode A: with firmware", "valid-mode-a-fw", isobootgithubiov1alpha1.BootConfigSpec{
-				Kernel:   &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel"},
-				Initrd:   &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
-				Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: "my-firmware"},
+				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "my-kernel", InitrdRef: "my-initrd", FirmwareRef: "my-firmware"},
 			}),
 			Entry("mode A: with kernel args", "valid-mode-a-args", isobootgithubiov1alpha1.BootConfigSpec{
-				Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel", Args: "-- quiet"},
-				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
+				Netboot:    &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "my-kernel", InitrdRef: "my-initrd"},
+				KernelArgs: "-- quiet",
 			}),
 			Entry("mode B: iso", "valid-mode-b", isobootgithubiov1alpha1.BootConfigSpec{
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
@@ -67,6 +64,14 @@ var _ = Describe("BootConfig Controller", func() {
 					KernelPath:  "casper/vmlinuz",
 					InitrdPath:  "casper/initrd",
 				},
+			}),
+			Entry("mode B: iso with kernel args", "valid-mode-b-args", isobootgithubiov1alpha1.BootConfigSpec{
+				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
+					ArtifactRef: "my-iso",
+					KernelPath:  "casper/vmlinuz",
+					InitrdPath:  "casper/initrd",
+				},
+				KernelArgs: "autoinstall ds=nocloud-net",
 			}),
 		)
 
@@ -77,30 +82,21 @@ var _ = Describe("BootConfig Controller", func() {
 			},
 			Entry("neither mode", "no-mode", isobootgithubiov1alpha1.BootConfigSpec{}),
 			Entry("both modes", "both-modes", isobootgithubiov1alpha1.BootConfigSpec{
-				Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel"},
-				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
+				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "my-kernel", InitrdRef: "my-initrd"},
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
 					ArtifactRef: "my-iso",
 					KernelPath:  "casper/vmlinuz",
 					InitrdPath:  "casper/initrd",
 				},
 			}),
-			Entry("kernel without initrd", "kernel-only", isobootgithubiov1alpha1.BootConfigSpec{
-				Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: "my-kernel"},
+			Entry("netboot without initrd", "kernel-only", isobootgithubiov1alpha1.BootConfigSpec{
+				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "my-kernel"},
 			}),
-			Entry("initrd without kernel", "initrd-only", isobootgithubiov1alpha1.BootConfigSpec{
-				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: "my-initrd"},
+			Entry("netboot without kernel", "initrd-only", isobootgithubiov1alpha1.BootConfigSpec{
+				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{InitrdRef: "my-initrd"},
 			}),
-			Entry("firmware only", "fw-only", isobootgithubiov1alpha1.BootConfigSpec{
-				Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: "my-firmware"},
-			}),
-			Entry("firmware with iso mode", "fw-with-iso", isobootgithubiov1alpha1.BootConfigSpec{
-				Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: "my-firmware"},
-				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
-					ArtifactRef: "my-iso",
-					KernelPath:  "casper/vmlinuz",
-					InitrdPath:  "casper/initrd",
-				},
+			Entry("netboot firmware only", "fw-only", isobootgithubiov1alpha1.BootConfigSpec{
+				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{FirmwareRef: "my-firmware"},
 			}),
 		)
 	})
@@ -166,8 +162,7 @@ var _ = Describe("BootConfig Controller", func() {
 			bc := &isobootgithubiov1alpha1.BootConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
-					Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: kernelRef},
-					Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: initrdRef},
+					Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: kernelRef, InitrdRef: initrdRef},
 				},
 			}
 			ExpectWithOffset(1, k8sClient.Create(ctx, bc)).To(Succeed())
@@ -372,9 +367,7 @@ var _ = Describe("BootConfig Controller", func() {
 			bc := &isobootgithubiov1alpha1.BootConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
-					Kernel:   &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: kernelName},
-					Initrd:   &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: initrdName},
-					Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: firmwareName},
+					Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: kernelName, InitrdRef: initrdName, FirmwareRef: firmwareName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
@@ -416,9 +409,7 @@ var _ = Describe("BootConfig Controller", func() {
 			bc := &isobootgithubiov1alpha1.BootConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
-					Kernel:   &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: kernelName},
-					Initrd:   &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: initrdName},
-					Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: firmwareName},
+					Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: kernelName, InitrdRef: initrdName, FirmwareRef: firmwareName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
@@ -463,9 +454,7 @@ var _ = Describe("BootConfig Controller", func() {
 			bc := &isobootgithubiov1alpha1.BootConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
-					Kernel:   &isobootgithubiov1alpha1.BootConfigKernelSpec{Ref: kernelName},
-					Initrd:   &isobootgithubiov1alpha1.BootConfigInitrdSpec{Ref: initrdName},
-					Firmware: &isobootgithubiov1alpha1.BootConfigFirmwareSpec{Ref: firmwareName},
+					Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: kernelName, InitrdRef: initrdName, FirmwareRef: firmwareName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, bc)).To(Succeed())

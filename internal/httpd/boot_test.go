@@ -37,13 +37,11 @@ var _ = Describe("BootDirectiveForMAC", func() {
 		bc := &isobootgithubiov1alpha1.BootConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 			Spec: isobootgithubiov1alpha1.BootConfigSpec{
-				Kernel: &isobootgithubiov1alpha1.BootConfigKernelSpec{
-					Ref:  kernelRef,
-					Args: kernelArgs,
+				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{
+					KernelRef: kernelRef,
+					InitrdRef: initrdRef,
 				},
-				Initrd: &isobootgithubiov1alpha1.BootConfigInitrdSpec{
-					Ref: initrdRef,
-				},
+				KernelArgs: kernelArgs,
 			},
 		}
 		Expect(k8sClient.Create(ctx, bc)).To(Succeed())
@@ -128,6 +126,43 @@ var _ = Describe("BootDirectiveForMAC", func() {
 		}).ShouldNot(BeNil())
 
 		Expect(result.KernelArgs).To(BeEmpty())
+	})
+
+	It("returns ISO-mode directive with kernel args", func() {
+		m := createMachine("bd-m4", "bb-00-00-00-00-05")
+		ia := createArtifact("bd-iso-1", "https://example.com/ubuntu.iso")
+		bc := &isobootgithubiov1alpha1.BootConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "bd-bc3", Namespace: ns},
+			Spec: isobootgithubiov1alpha1.BootConfigSpec{
+				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
+					ArtifactRef: "bd-iso-1",
+					KernelPath:  "casper/vmlinuz",
+					InitrdPath:  "casper/initrd",
+				},
+				KernelArgs: "autoinstall ds=nocloud-net",
+			},
+		}
+		Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+		p := createProvision("bd-p4", "bd-m4", "bd-bc3",
+			isobootgithubiov1alpha1.ProvisionPhasePending)
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, bc)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, ia)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
+		}()
+
+		var result *BootDirective
+		Eventually(func() *BootDirective {
+			result, _ = BootDirectiveForMAC(
+				ctx, indexedClient, ns, "bb-00-00-00-00-05")
+			return result
+		}).ShouldNot(BeNil())
+
+		Expect(result.KernelPath).To(Equal("bd-bc3/vmlinuz"))
+		Expect(result.InitrdPath).To(Equal("bd-bc3/initrd"))
+		Expect(result.KernelArgs).To(Equal("autoinstall ds=nocloud-net"))
+		Expect(result.ProvisionName).To(Equal("bd-p4"))
 	})
 
 	It("returns error when boot config not found", func() {

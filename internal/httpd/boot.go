@@ -94,32 +94,33 @@ func BootDirectiveForMAC(
 	if bc.Spec.ISO != nil {
 		return &BootDirective{
 			KernelPath:    path.Join(bc.Name, "vmlinuz"),
+			KernelArgs:    bc.Spec.KernelArgs,
 			InitrdPath:    path.Join(bc.Name, "initrd"),
 			ProvisionName: provision.Name,
 		}, nil
 	}
 
-	if bc.Spec.Kernel == nil || bc.Spec.Initrd == nil {
+	if bc.Spec.Netboot == nil {
 		return nil, fmt.Errorf(
-			"boot config %q missing kernel or initrd", bc.Name)
+			"boot config %q has neither netboot nor iso", bc.Name)
 	}
 
 	var kernelArtifact isobootgithubiov1alpha1.BootArtifact
 	if err := c.Get(ctx, client.ObjectKey{
-		Name:      bc.Spec.Kernel.Ref,
+		Name:      bc.Spec.Netboot.KernelRef,
 		Namespace: ns,
 	}, &kernelArtifact); err != nil {
 		return nil, fmt.Errorf("getting kernel artifact %q: %w",
-			bc.Spec.Kernel.Ref, err)
+			bc.Spec.Netboot.KernelRef, err)
 	}
 
 	var initrdArtifact isobootgithubiov1alpha1.BootArtifact
 	if err := c.Get(ctx, client.ObjectKey{
-		Name:      bc.Spec.Initrd.Ref,
+		Name:      bc.Spec.Netboot.InitrdRef,
 		Namespace: ns,
 	}, &initrdArtifact); err != nil {
 		return nil, fmt.Errorf("getting initrd artifact %q: %w",
-			bc.Spec.Initrd.Ref, err)
+			bc.Spec.Netboot.InitrdRef, err)
 	}
 
 	kernelFile := urlutil.FilenameFromURL(kernelArtifact.Spec.URL)
@@ -127,7 +128,7 @@ func BootDirectiveForMAC(
 
 	return &BootDirective{
 		KernelPath:    path.Join(bc.Name, "kernel", kernelFile),
-		KernelArgs:    bc.Spec.Kernel.Args,
+		KernelArgs:    bc.Spec.KernelArgs,
 		InitrdPath:    path.Join(bc.Name, "initrd", initrdFile),
 		ProvisionName: provision.Name,
 	}, nil
