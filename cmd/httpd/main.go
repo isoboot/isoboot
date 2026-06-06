@@ -202,12 +202,17 @@ func conditionalBootHandler(
 			if proxyPort != "" {
 				proxyURL = fmt.Sprintf("http://%s:%s", nodeIP, proxyPort)
 			}
+			isoURL := ""
+			if directive.ISOPath != "" {
+				isoURL = fmt.Sprintf("http://%s/static/%s", host, directive.ISOPath)
+			}
 			rendered, err := httpd.RenderKernelArgs(
 				directive.KernelArgs, httpd.KernelArgsData{
 					ProvisionAutomationBaseURL: baseURL,
 					ProxyURL:                   proxyURL,
 					UpdatePhaseURL:             statusURL,
 					ProvisionName:              directive.ProvisionName,
+					ISOURL:                     isoURL,
 				})
 			if err != nil {
 				slog.Error("kernel args template failed",

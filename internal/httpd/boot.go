@@ -35,6 +35,7 @@ type BootDirective struct {
 	KernelPath    string
 	KernelArgs    string
 	InitrdPath    string
+	ISOPath       string
 	ProvisionName string
 }
 
@@ -44,6 +45,7 @@ type KernelArgsData struct {
 	ProxyURL                   string
 	UpdatePhaseURL             string
 	ProvisionName              string
+	ISOURL                     string
 }
 
 // RenderKernelArgs renders kernel args as a Go template with the given data.
@@ -92,10 +94,20 @@ func BootDirectiveForMAC(
 
 	// Mode B (ISO): kernel and initrd are extracted to fixed filenames.
 	if bc.Spec.ISO != nil {
+		var isoArtifact isobootgithubiov1alpha1.BootArtifact
+		if err := c.Get(ctx, client.ObjectKey{
+			Name:      bc.Spec.ISO.ArtifactRef,
+			Namespace: ns,
+		}, &isoArtifact); err != nil {
+			return nil, fmt.Errorf("getting iso artifact %q: %w",
+				bc.Spec.ISO.ArtifactRef, err)
+		}
+		isoFile := urlutil.FilenameFromURL(isoArtifact.Spec.URL)
 		return &BootDirective{
 			KernelPath:    path.Join(bc.Name, "vmlinuz"),
 			KernelArgs:    bc.Spec.KernelArgs,
 			InitrdPath:    path.Join(bc.Name, "initrd"),
+			ISOPath:       path.Join(bc.Name, isoFile),
 			ProvisionName: provision.Name,
 		}, nil
 	}

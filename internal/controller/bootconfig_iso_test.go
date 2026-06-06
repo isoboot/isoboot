@@ -159,6 +159,16 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		initrd, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-ok", "initrd"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(initrd)).To(Equal("INITRD-BYTES"))
+
+		// The ISO is also served under its own filename — a sibling symlink to the
+		// artifact that resolves to the real file (so installers can fetch root fs).
+		isoLink := filepath.Join(dataDir, "boot", "iso-bc-ok", "test.iso")
+		target, err := os.Readlink(isoLink)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(target).To(Equal(filepath.Join("..", "..", "artifacts", "iso-ok", "test.iso")))
+		info, err := os.Stat(isoLink) // follows the symlink
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.IsDir()).To(BeFalse())
 	})
 
 	It("does not re-extract on repeated reconcile when up to date", func() {
@@ -179,6 +189,11 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		after, err := os.Stat(vmlinuzPath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.SameFile(before, after)).To(BeTrue())
+
+		// The ISO symlink is also stable across reconciles.
+		isoTarget, err := os.Readlink(filepath.Join(dataDir, "boot", "iso-bc-idem", "test.iso"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(isoTarget).To(Equal(filepath.Join("..", "..", "artifacts", "iso-idem", "test.iso")))
 	})
 
 	It("is Pending when the ISO artifact is not Ready", func() {
