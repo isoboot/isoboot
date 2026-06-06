@@ -72,48 +72,49 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// Mode A: direct kernel and initrd refs.
-	if bc.Spec.Kernel == nil || bc.Spec.Initrd == nil {
-		log.V(1).Info("Skipping BootConfig without kernel/initrd or iso")
+	if bc.Spec.Netboot == nil {
+		log.V(1).Info("Skipping BootConfig without netboot or iso")
 		return ctrl.Result{}, nil
 	}
+	nb := bc.Spec.Netboot
 
 	// Look up referenced BootArtifacts
-	kernelArtifact, err := r.getArtifact(ctx, bc.Spec.Kernel.Ref, bc.Namespace)
+	kernelArtifact, err := r.getArtifact(ctx, nb.KernelRef, bc.Namespace)
 	if err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
-		return r.setError(ctx, &bc, fmt.Sprintf("kernel artifact %q not found", bc.Spec.Kernel.Ref))
+		return r.setError(ctx, &bc, fmt.Sprintf("kernel artifact %q not found", nb.KernelRef))
 	}
 
-	initrdArtifact, err := r.getArtifact(ctx, bc.Spec.Initrd.Ref, bc.Namespace)
+	initrdArtifact, err := r.getArtifact(ctx, nb.InitrdRef, bc.Namespace)
 	if err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
-		return r.setError(ctx, &bc, fmt.Sprintf("initrd artifact %q not found", bc.Spec.Initrd.Ref))
+		return r.setError(ctx, &bc, fmt.Sprintf("initrd artifact %q not found", nb.InitrdRef))
 	}
 
 	// Check if all artifacts are Ready
 	if kernelArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for kernel artifact %q to be Ready", bc.Spec.Kernel.Ref))
+		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for kernel artifact %q to be Ready", nb.KernelRef))
 	}
 	if initrdArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for initrd artifact %q to be Ready", bc.Spec.Initrd.Ref))
+		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for initrd artifact %q to be Ready", nb.InitrdRef))
 	}
 
 	// Optionally look up firmware artifact
 	var firmwareArtifact *isobootgithubiov1alpha1.BootArtifact
-	if bc.Spec.Firmware != nil {
-		firmwareArtifact, err = r.getArtifact(ctx, bc.Spec.Firmware.Ref, bc.Namespace)
+	if nb.FirmwareRef != "" {
+		firmwareArtifact, err = r.getArtifact(ctx, nb.FirmwareRef, bc.Namespace)
 		if err != nil {
 			if client.IgnoreNotFound(err) != nil {
 				return ctrl.Result{}, err
 			}
-			return r.setError(ctx, &bc, fmt.Sprintf("firmware artifact %q not found", bc.Spec.Firmware.Ref))
+			return r.setError(ctx, &bc, fmt.Sprintf("firmware artifact %q not found", nb.FirmwareRef))
 		}
 		if firmwareArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-			return r.setPending(ctx, &bc, fmt.Sprintf("waiting for firmware artifact %q to be Ready", bc.Spec.Firmware.Ref))
+			return r.setPending(ctx, &bc, fmt.Sprintf("waiting for firmware artifact %q to be Ready", nb.FirmwareRef))
 		}
 	}
 
@@ -431,9 +432,9 @@ func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, o
 	var requests []reconcile.Request
 	for i := range configs.Items {
 		bc := &configs.Items[i]
-		if (bc.Spec.Kernel != nil && bc.Spec.Kernel.Ref == obj.GetName()) ||
-			(bc.Spec.Initrd != nil && bc.Spec.Initrd.Ref == obj.GetName()) ||
-			(bc.Spec.Firmware != nil && bc.Spec.Firmware.Ref == obj.GetName()) ||
+		if (bc.Spec.Netboot != nil && (bc.Spec.Netboot.KernelRef == obj.GetName() ||
+			bc.Spec.Netboot.InitrdRef == obj.GetName() ||
+			bc.Spec.Netboot.FirmwareRef == obj.GetName())) ||
 			(bc.Spec.ISO != nil && bc.Spec.ISO.ArtifactRef == obj.GetName()) {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: client.ObjectKeyFromObject(bc),

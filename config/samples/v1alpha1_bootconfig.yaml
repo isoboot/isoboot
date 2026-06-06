@@ -7,11 +7,10 @@ metadata:
   name: rocky-9
 spec:
   # Mode A: direct refs
-  kernel:
-    ref: rocky-9-kernel
-  initrd:
-    ref: rocky-9-initrd
-  # Mode B: ISO extraction (mutually exclusive with kernel/initrd)
+  netboot:
+    kernelRef: rocky-9-kernel
+    initrdRef: rocky-9-initrd
+  # Mode B: ISO extraction (mutually exclusive with netboot)
   # iso:
   #   artifactRef: ubuntu-24-iso
   #   kernelPath: casper/vmlinuz

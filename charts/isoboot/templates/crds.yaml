@@ -132,22 +132,6 @@ spec:
           spec:
             description: spec defines the desired state of BootConfig
             properties:
-              firmware:
-                properties:
-                  ref:
-                    minLength: 1
-                    type: string
-                required:
-                - ref
-                type: object
-              initrd:
-                properties:
-                  ref:
-                    minLength: 1
-                    type: string
-                required:
-                - ref
-                type: object
               iso:
                 properties:
                   artifactRef:
@@ -164,23 +148,26 @@ spec:
                 - initrdPath
                 - kernelPath
                 type: object
-              kernel:
+              kernelArgs:
+                type: string
+              netboot:
                 properties:
-                  args:
+                  firmwareRef:
                     type: string
-                  ref:
+                  initrdRef:
+                    minLength: 1
+                    type: string
+                  kernelRef:
                     minLength: 1
                     type: string
                 required:
-                - ref
+                - initrdRef
+                - kernelRef
                 type: object
             type: object
             x-kubernetes-validations:
-            - message: must use either kernel+initrd or iso, not both
-              rule: (has(self.kernel) && has(self.initrd) && !has(self.iso))
-                || (!has(self.kernel) && !has(self.initrd) && has(self.iso))
-            - message: firmware is not supported with iso mode
-              rule: '!has(self.iso) || !has(self.firmware)'
+            - message: must set exactly one of netboot or iso
+              rule: has(self.netboot) != has(self.iso)
           status:
             description: status defines the observed state of BootConfig
             properties:

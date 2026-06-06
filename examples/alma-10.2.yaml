@@ -25,8 +25,7 @@ metadata:
   labels:
     app.kubernetes.io/name: isoboot
 spec:
-  kernel:
-    ref: alma-10.2-kernel
-    args: "ip=dhcp {{if .ProxyURL}}inst.proxy={{.ProxyURL}} {{end}}inst.repo=http://repo.almalinux.org/almalinux/10.2/BaseOS/x86_64/os inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg"
-  initrd:
-    ref: alma-10.2-initrd
+  netboot:
+    kernelRef: alma-10.2-kernel
+    initrdRef: alma-10.2-initrd
+  kernelArgs: "ip=dhcp {{if .ProxyURL}}inst.proxy={{.ProxyURL}} {{end}}inst.repo=http://repo.almalinux.org/almalinux/10.2/BaseOS/x86_64/os inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg"

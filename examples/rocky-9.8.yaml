@@ -25,8 +25,7 @@ metadata:
   labels:
     app.kubernetes.io/name: isoboot
 spec:
-  kernel:
-    ref: rocky-9.8-kernel
-    args: "ip=dhcp {{if .ProxyURL}}inst.proxy={{.ProxyURL}} {{end}}inst.repo=http://download.rockylinux.org/pub/rocky/9.8/BaseOS/x86_64/os inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg"
-  initrd:
-    ref: rocky-9.8-initrd
+  netboot:
+    kernelRef: rocky-9.8-kernel
+    initrdRef: rocky-9.8-initrd
+  kernelArgs: "ip=dhcp {{if .ProxyURL}}inst.proxy={{.ProxyURL}} {{end}}inst.repo=http://download.rockylinux.org/pub/rocky/9.8/BaseOS/x86_64/os inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg"
