@@ -162,7 +162,7 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 
 		// The ISO is also served as image.iso — a sibling symlink to the artifact
 		// that resolves to the real file (so installers can fetch their root fs).
-		isoLink := filepath.Join(dataDir, "boot", "iso-bc-ok", "image.iso")
+		isoLink := filepath.Join(dataDir, "boot", "iso-bc-ok", "test.iso")
 		target, err := os.Readlink(isoLink)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(target).To(Equal(filepath.Join("..", "..", "artifacts", "iso-ok", "test.iso")))
@@ -189,6 +189,11 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		after, err := os.Stat(vmlinuzPath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.SameFile(before, after)).To(BeTrue())
+
+		// The ISO symlink is also stable across reconciles.
+		isoTarget, err := os.Readlink(filepath.Join(dataDir, "boot", "iso-bc-idem", "test.iso"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(isoTarget).To(Equal(filepath.Join("..", "..", "artifacts", "iso-idem", "test.iso")))
 	})
 
 	It("is Pending when the ISO artifact is not Ready", func() {

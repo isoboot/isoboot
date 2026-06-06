@@ -201,10 +201,11 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 		return r.setError(ctx, bc, fmt.Sprintf("extracting from iso: %v", err))
 	}
 
-	// Serve the ISO itself (as image.iso) so installers can fetch their root
-	// filesystem over HTTP. Sibling-safe so it doesn't disturb vmlinuz/initrd.
+	// Serve the ISO itself (under its own filename) so installers can fetch
+	// their root filesystem over HTTP. Sibling-safe so it doesn't disturb
+	// the extracted vmlinuz/initrd.
 	isoTarget := filepath.Join("..", "..", "artifacts", isoArtifact.Name, isoFilename)
-	if err := ensureFileSymlink(filepath.Join(bootDir, "image.iso"), isoTarget); err != nil {
+	if err := ensureFileSymlink(filepath.Join(bootDir, isoFilename), isoTarget); err != nil {
 		return r.setError(ctx, bc, fmt.Sprintf("creating iso symlink: %v", err))
 	}
 
