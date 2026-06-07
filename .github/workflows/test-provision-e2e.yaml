@@ -643,6 +643,8 @@ jobs:
                 storage:
                   layout:
                     name: direct
+                user-data:
+                  ssh_deletekeys: false
                 early-commands:
                   - curl -X POST -d 'provisionName={{.ProvisionName}}&phase=InProgress' {{.UpdatePhaseURL}}
                 late-commands:
