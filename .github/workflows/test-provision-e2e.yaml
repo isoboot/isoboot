@@ -2,6 +2,11 @@ name: Provision E2E
 
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Run only this manifest (e.g. ubuntu-26.04); blank = all"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -101,6 +106,7 @@ jobs:
   provision-test:
     name: Provision E2E — ${{ matrix.distro }} ${{ matrix.version }}${{ matrix.name_suffix }}
     needs: build
+    if: ${{ github.event.inputs.only == '' || github.event.inputs.only == matrix.manifest }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -183,7 +189,7 @@ jobs:
             kernel_path: "vmlinuz"
             initrd_path: "initrd"
             nic_device: "rtl8168"
-            qemu_ram: "8192"
+            qemu_ram: "12288"
     steps:
     - uses: actions/checkout@v4
 

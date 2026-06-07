@@ -23,4 +23,4 @@ spec:
     artifactRef: ubuntu-26.04-iso
     kernelPath: casper/vmlinuz
     initrdPath: casper/initrd
-  kernelArgs: "ip=dhcp url={{.ISOURL}} autoinstall ds=nocloud-net;s={{.ProvisionAutomationBaseURL}}/"
+  kernelArgs: "console=ttyS0,115200 ip=dhcp url={{.ISOURL}} autoinstall ds=nocloud-net;s={{.ProvisionAutomationBaseURL}}/"
