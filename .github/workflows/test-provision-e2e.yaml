@@ -112,8 +112,7 @@ jobs:
             manifest: "rocky-10.2"
             hostname: "rocky10"
             os_id: "rocky"
-            mac_hyphen: "02-00-00-ab-cd-01"
-            mac_colon: "02:00:00:ab:cd:01"
+            mac: "02-00-00-ab-cd-01"
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
@@ -123,8 +122,7 @@ jobs:
             manifest: "rocky-9.8"
             hostname: "rocky9"
             os_id: "rocky"
-            mac_hyphen: "02-00-00-ab-cd-02"
-            mac_colon: "02:00:00:ab:cd:02"
+            mac: "02-00-00-ab-cd-02"
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
@@ -134,8 +132,7 @@ jobs:
             manifest: "alma-10.2"
             hostname: "alma10"
             os_id: "almalinux"
-            mac_hyphen: "02-00-00-ab-cd-04"
-            mac_colon: "02:00:00:ab:cd:04"
+            mac: "02-00-00-ab-cd-04"
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
@@ -145,8 +142,7 @@ jobs:
             manifest: "alma-9.8"
             hostname: "alma9"
             os_id: "almalinux"
-            mac_hyphen: "02-00-00-ab-cd-05"
-            mac_colon: "02:00:00:ab:cd:05"
+            mac: "02-00-00-ab-cd-05"
             installer: "kickstart"
             kernel_filename: "vmlinuz"
             initrd_filename: "initrd.img"
@@ -156,8 +152,7 @@ jobs:
             manifest: "debian-13"
             hostname: "deb13nfw"
             os_id: "debian"
-            mac_hyphen: "02-00-00-ab-cd-07"
-            mac_colon: "02:00:00:ab:cd:07"
+            mac: "02-00-00-ab-cd-07"
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
@@ -171,8 +166,7 @@ jobs:
             bootconfig: "debian-13-firmware"
             hostname: "deb13fw"
             os_id: "debian"
-            mac_hyphen: "02-00-00-ab-cd-08"
-            mac_colon: "02:00:00:ab:cd:08"
+            mac: "02-00-00-ab-cd-08"
             installer: "preseed"
             kernel_filename: "linux"
             initrd_filename: "initrd.gz"
@@ -184,6 +178,12 @@ jobs:
 
     - name: Read Alpine version
       run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
+
+    # Single source of truth for the MAC is matrix.mac (hyphen form, used
+    # directly as Machine.spec.mac to match iPXE's ${net0/mac:hexhyp}).
+    # QEMU and the DHCP-lease grep need colon form — derive it once here.
+    - name: Derive colon-form MAC
+      run: echo "MAC_COLON=$(printf '%s' '${{ matrix.mac }}' | tr '-' ':')" >> "$GITHUB_ENV"
 
     # ── Network tools ──────────────────────────────────────────────
     - name: Install runtime packages
@@ -426,7 +426,7 @@ jobs:
         metadata:
           name: qemu-vm1
         spec:
-          mac: "${{ matrix.mac_hyphen }}"
+          mac: "${{ matrix.mac }}"
         ---
         apiVersion: isoboot.github.io/v1alpha1
         kind: ProvisionAutomation
@@ -537,7 +537,7 @@ jobs:
         metadata:
           name: qemu-vm1
         spec:
-          mac: "${{ matrix.mac_hyphen }}"
+          mac: "${{ matrix.mac }}"
         ---
         apiVersion: isoboot.github.io/v1alpha1
         kind: ProvisionAutomation
@@ -628,7 +628,7 @@ jobs:
           -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
           -device virtio-blk-pci,drive=disk0 \
           -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-          -device rtl8168,netdev=pxe0,bootindex=1,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }} \
+          -device rtl8168,netdev=pxe0,bootindex=1,romfile=efi-rtl8168.rom,mac=${MAC_COLON} \
           -boot n \
           -display none \
           -serial file:/tmp/qemu-serial.log \
@@ -637,7 +637,7 @@ jobs:
           -pidfile /tmp/qemu-pxe.pid
 
         sleep 1 && sudo chmod 644 /tmp/qemu-serial.log 2>/dev/null || true
-        echo "QEMU VM launched (tap-vm on br-pxe, MAC=${{ matrix.mac_colon }})"
+        echo "QEMU VM launched (tap-vm on br-pxe, MAC=${MAC_COLON})"
 
     # ── Monitor DHCP and PXE boot ──────────────────────────────────
     - name: Wait for VM DHCP lease
@@ -647,7 +647,7 @@ jobs:
         VM_IP=""
         for i in $(seq 1 120); do
           VM_IP=$(docker exec dhcp-srv grep -a "DHCPACK" /tmp/dnsmasq.log 2>/dev/null \
-            | grep -i "${{ matrix.mac_colon }}" | tail -1 \
+            | grep -i "${MAC_COLON}" | tail -1 \
             | grep -oP '192\.168\.101\.\d+' | head -1)
           [ -n "$VM_IP" ] && break
           sleep 5
@@ -770,7 +770,7 @@ jobs:
       if: matrix.expect_provision_failure != 'true'
       run: |
         SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/e2e-known-hosts"
-        MAC="${{ matrix.mac_colon }}"
+        MAC="${MAC_COLON}"
         MAX_ATTEMPTS=5
         VM_IP=""
 
@@ -809,7 +809,7 @@ jobs:
             -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2,if=none,id=disk0 \
             -device virtio-blk-pci,drive=disk0,bootindex=1 \
             -netdev tap,id=pxe0,ifname=tap-vm,script=no,downscript=no \
-            -device rtl8168,netdev=pxe0,romfile=efi-rtl8168.rom,mac=${{ matrix.mac_colon }} \
+            -device rtl8168,netdev=pxe0,romfile=efi-rtl8168.rom,mac=${MAC_COLON} \
             -display none \
             -serial file:/tmp/qemu-serial-boot.log \
             -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
