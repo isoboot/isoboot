@@ -654,6 +654,7 @@ jobs:
                   - chmod 600 /target/etc/ssh/ssh_host_ecdsa_key /target/etc/ssh/ssh_host_ed25519_key /target/etc/ssh/ssh_host_rsa_key
                   - curtin in-target --target=/target -- sh -c 'for t in ecdsa ed25519 rsa; do ssh-keygen -y -f /etc/ssh/ssh_host_${t}_key > /etc/ssh/ssh_host_${t}_key.pub; chmod 644 /etc/ssh/ssh_host_${t}_key.pub; done'
                   - printf '%s\n' '{{ index .ConfigMaps "machine_id" }}' > /target/etc/machine-id
+                  - chmod 444 /target/etc/machine-id
                   - curtin in-target --target=/target -- sh -c 'printf "GRUB_CMDLINE_LINUX=\"console=ttyS0,115200\"\n" >> /etc/default/grub'
                   - curtin in-target --target=/target -- update-grub
                   - curl -X POST -d 'provisionName={{.ProvisionName}}&phase=Complete' {{.UpdatePhaseURL}}
