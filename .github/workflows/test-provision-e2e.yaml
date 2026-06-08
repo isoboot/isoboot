@@ -177,8 +177,6 @@ jobs:
             kernel_path: "vmlinuz"
             initrd_path: "initrd"
             qemu_ram: "12288"
-          # 24.04 deliberately omits qemu_ram (default 8 GB) to test whether
-          # casper's ISO-to-RAM needs the same 12 GB bump 26.04 required.
           - distro: "Ubuntu"
             version: "24.04"
             manifest: "ubuntu-24.04"
@@ -188,6 +186,7 @@ jobs:
             installer: "autoinstall"
             kernel_path: "vmlinuz"
             initrd_path: "initrd"
+            qemu_ram: "12288"
     steps:
     - uses: actions/checkout@v4
 
