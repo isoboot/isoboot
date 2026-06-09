@@ -7,6 +7,9 @@
   `kernelArgs`. Migration: `spec.kernel.ref` → `spec.netboot.kernelRef`,
   `spec.initrd.ref` → `spec.netboot.initrdRef`, `spec.firmware.ref` →
   `spec.netboot.firmwareRef`, `spec.kernel.args` → `spec.kernelArgs`.
+- Add BootConfig Mode B: extract kernel and initrd from an ISO artifact
+- Serve the ISO over HTTP and add the `{{.ISOURL}}` kernel args template variable
+- Add Ubuntu 24.04 and 26.04 live-server autoinstall examples
 
 ## v0.0.2-rc3
 
