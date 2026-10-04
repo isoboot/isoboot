@@ -147,6 +147,21 @@ docker-buildx-httpd: ## Build and push docker image for httpd for cross-platform
 	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG}-httpd -f Dockerfile.httpd .
 	- $(CONTAINER_TOOL) buildx rm isoboot-builder
 
+.PHONY: build-nfsd
+build-nfsd: ## Build nfsd binary.
+	go build -o bin/nfsd ./cmd/nfsd/
+
+.PHONY: docker-build-nfsd
+docker-build-nfsd: ## Build docker image with nfsd.
+	$(CONTAINER_TOOL) build -t ${IMG}-nfsd -f Dockerfile.nfsd .
+
+.PHONY: docker-buildx-nfsd
+docker-buildx-nfsd: ## Build and push docker image for nfsd for cross-platform support
+	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
+	$(CONTAINER_TOOL) buildx use isoboot-builder
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG}-nfsd -f Dockerfile.nfsd .
+	- $(CONTAINER_TOOL) buildx rm isoboot-builder
+
 .PHONY: docker-build-dnsmasq
 docker-build-dnsmasq: ## Build docker image with dnsmasq.
 	$(CONTAINER_TOOL) build --build-arg ALPINE_VERSION=$(ALPINE_VERSION) -t ${IMG}-dnsmasq -f Dockerfile.dnsmasq .
