@@ -1,0 +1,13 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-ipxe"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+spec:
+  url: "{{ .Values.dnsmasq.ipxe.url }}"
+  sha512: "{{ .Values.dnsmasq.ipxe.sha512 }}"

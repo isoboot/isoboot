@@ -1,0 +1,9 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: Machine
+metadata:
+  labels:
+    app.kubernetes.io/name: isoboot
+    app.kubernetes.io/managed-by: kustomize
+  name: machine-sample
+spec:
+  mac: "aa-bb-cc-dd-ee-ff"

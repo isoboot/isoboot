@@ -1,0 +1,62 @@
+{{- include "isoboot.requireNodeName" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-controller-manager"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+    spec:
+      serviceAccountName: "{{ include "isoboot.fullname" . }}-controller-manager"
+      terminationGracePeriodSeconds: 10
+      {{- include "isoboot.affinity" (dict "context" . "component" "controller") | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: manager
+        command:
+        - /manager
+        args:
+        - --health-probe-bind-address=:8081
+        - --metrics-bind-address=:8443
+        - "--data-dir={{ .Values.dataDir }}/nginx/static"
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: "{{ .Values.image.pullPolicy }}"
+        {{- include "isoboot.restrictedSecurityContext" . | nindent 8 }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: "{{ .Values.dataDir }}"
+      volumes:
+      - name: data
+        hostPath:
+          path: "{{ .Values.dataDir }}"
+          type: Directory

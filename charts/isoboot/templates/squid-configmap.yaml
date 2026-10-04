@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-squid"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+data:
+  squid.conf: |
+    acl localnet src {{ .Values.dnsmasq.subnet }}
+    http_access allow localnet
+    http_access allow localhost
+    http_access deny all
+    http_port {{ .Values.squid.port }}
+    maximum_object_size {{ .Values.squid.maxObjectSize }}
+    cache_mem {{ .Values.squid.cacheMemMB }} MB
+    cache_dir ufs /var/cache/squid {{ .Values.squid.cacheSizeMB }} 16 256
+    {{- if .Values.squid.log.access }}
+    access_log stdio:/var/log/squid/access.log
+    {{- else }}
+    access_log none
+    {{- end }}
+    cache_log /var/log/squid/cache.log
+    pid_filename /run/squid/squid.pid

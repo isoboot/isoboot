@@ -1,0 +1,97 @@
+# Override the full resource name prefix (default: release-chartname or release if it contains chartname).
+fullnameOverride: ""
+# Override just the chart name portion of the resource name prefix.
+nameOverride: ""
+
+# nodeName is required — the node where the controller pod will be scheduled.
+# All data is stored on this node via hostPath.
+nodeName: ""
+
+alpineImage: alpine:3.23
+image:
+  repository: ghcr.io/isoboot/isoboot
+  # tag defaults to .Chart.AppVersion if omitted
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# dataDir must be pre-created on the target node and writable by UID 65532.
+# Example: sudo mkdir -p /data/isoboot && sudo chown 65532:65532 /data/isoboot
+dataDir: /data/isoboot
+
+# Set to false to skip CRD installation (e.g. if CRDs are managed separately).
+crds:
+  enabled: true
+
+nginx:
+  image:
+    repository: nginxinc/nginx-unprivileged
+    tag: "1.29-alpine"
+  port: 8080
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+httpd:
+  image:
+    repository: ghcr.io/isoboot/isoboot-httpd
+    # tag defaults to .Chart.AppVersion if omitted
+    tag: ""
+  # No conflict with nginx.port — httpd uses ClusterIP networking, nginx uses hostNetwork.
+  port: 8080
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+squid:
+  image:
+    repository: ghcr.io/isoboot/isoboot-squid
+    # tag defaults to .Chart.AppVersion if omitted
+    tag: ""
+  port: 3128
+  maxObjectSize: "1024 MB"
+  # 0 uses squid's compiled-in default (typically 256 MB).
+  cacheMemMB: 0
+  cacheSizeMB: 8000
+  log:
+    access: false
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+dnsmasq:
+  # subnet is required (e.g. "192.168.101.0/24").
+  subnet: ""
+  ipxe:
+    url: "https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz"
+    sha512: "14ab6e793b87f5ee8437b79bcba1edc39a1e10a69a6c71dac3e2b17422bdbc7a8184d2b2a4b3a3193674850239994bb0b95907b89a7a630454d57c30af09089b"
+  image:
+    repository: ghcr.io/isoboot/isoboot-dnsmasq
+    # tag defaults to .Chart.AppVersion if omitted
+    tag: ""
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi

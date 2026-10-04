@@ -1,0 +1,20 @@
+resources:
+- ../default
+
+# The JSON Patch below assumes the "data" volume is at index 0.
+# The "op: test" guard will cause a clear failure if the index changes.
+patches:
+- target:
+    kind: Deployment
+    name: isoboot-controller-manager
+  patch: |-
+    - op: test
+      path: /spec/template/spec/volumes/0/name
+      value: data
+    - op: remove
+      path: /spec/template/spec/volumes/0/emptyDir
+    - op: add
+      path: /spec/template/spec/volumes/0/hostPath
+      value:
+        path: /data/isoboot
+        type: DirectoryOrCreate

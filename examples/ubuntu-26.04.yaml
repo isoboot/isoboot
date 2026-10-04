@@ -1,0 +1,26 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: ubuntu-26.04-iso
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-amd64.iso
+  sha256: "dec49008a71f6098d0bcfc822021f4d042d5f2db279e4d75bdd981304f1ca5d9"
+---
+# Mode B (ISO extraction): Ubuntu ships no traditional netboot kernel/initrd —
+# the live-server installer (casper) boots the kernel/initrd extracted from the
+# ISO and fetches its root filesystem (filesystem.squashfs) from the ISO over
+# HTTP via url={{.ISOURL}}, which isoboot serves from the same boot directory.
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: ubuntu-26.04
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  iso:
+    artifactRef: ubuntu-26.04-iso
+    kernelPath: casper/vmlinuz
+    initrdPath: casper/initrd
+  kernelArgs: "console=ttyS0,115200 ip=dhcp url={{.ISOURL}} autoinstall ds=nocloud-net;s={{.ProvisionAutomationBaseURL}}/"

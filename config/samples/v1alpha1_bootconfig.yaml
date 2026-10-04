@@ -1,0 +1,17 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  labels:
+    app.kubernetes.io/name: isoboot
+    app.kubernetes.io/managed-by: kustomize
+  name: rocky-9
+spec:
+  # Mode A: direct refs
+  netboot:
+    kernelRef: rocky-9-kernel
+    initrdRef: rocky-9-initrd
+  # Mode B: ISO extraction (mutually exclusive with netboot)
+  # iso:
+  #   artifactRef: ubuntu-24-iso
+  #   kernelPath: casper/vmlinuz
+  #   initrdPath: casper/initrd

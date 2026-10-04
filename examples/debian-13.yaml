@@ -1,0 +1,31 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: debian-13-kernel
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux
+  sha256: "4cc864b8e34c86c281f66b36157a52945a95a1b290762245c608b7c7e3934a11"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: debian-13-initrd
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz
+  sha256: "53376f70d695276c5d9c903589348a966d0f57dc0bbd6a701d4a97300761ba40"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: debian-13
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  netboot:
+    kernelRef: debian-13-kernel
+    initrdRef: debian-13-initrd
+  kernelArgs: "console=ttyS0,115200 auto=true priority=critical {{if .ProxyURL}}mirror/http/proxy={{.ProxyURL}} {{end}}preseed/url={{.ProvisionAutomationBaseURL}}/preseed.cfg"

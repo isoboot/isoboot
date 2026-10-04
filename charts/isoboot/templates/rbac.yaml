@@ -1,0 +1,183 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-manager-role"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootartifacts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootartifacts/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootartifacts/status
+  - bootconfigs/status
+  - provisions/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootconfigs
+  - machines
+  - provisions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - provisionautomations
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-manager-rolebinding"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: "{{ include "isoboot.fullname" . }}-manager-role"
+subjects:
+- kind: ServiceAccount
+  name: "{{ include "isoboot.fullname" . }}-controller-manager"
+  namespace: "{{ .Release.Namespace }}"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-metrics-auth-role"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-metrics-auth-rolebinding"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: "{{ include "isoboot.fullname" . }}-metrics-auth-role"
+subjects:
+- kind: ServiceAccount
+  name: "{{ include "isoboot.fullname" . }}-controller-manager"
+  namespace: "{{ .Release.Namespace }}"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-httpd-role"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  verbs:
+  - get
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - bootartifacts
+  - bootconfigs
+  - provisionautomations
+  verbs:
+  - get
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - machines
+  - provisions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - isoboot.github.io
+  resources:
+  - provisions/status
+  verbs:
+  - get
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-httpd-rolebinding"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: "{{ include "isoboot.fullname" . }}-httpd-role"
+subjects:
+- kind: ServiceAccount
+  name: "{{ include "isoboot.fullname" . }}-httpd"
+  namespace: "{{ .Release.Namespace }}"
+---
+# metrics-reader: bind this role to any subject that needs to scrape /metrics
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-metrics-reader"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
