@@ -232,16 +232,18 @@ expect fail "three Error phases in a row fail at once" "stays in phase Error: ha
   wait_case never grow Error
 
 # clean_case <E2E_KEEP_DOWNLOADS value>: run clean_data_dir on a scratch copy
-# of the data directory layout and list what is left.
+# of the chart's data directory layout and list the directories left.
 clean_case() {
   local dir=$tmp/data-$1
-  mkdir -p "$dir/squid/cache" "$dir/artifacts/ubuntu-26.04-iso" "$dir/boot/ubuntu-26.04" "$dir/nfs/ubuntu-26.04"
+  mkdir -p "$dir/squid/cache" "$dir/nfs/ubuntu-26.04/casper" "$dir/nfs/.source_ubuntu-26.04" \
+    "$dir/nginx/static/artifacts/ubuntu-26.04-iso" "$dir/nginx/static/boot/ubuntu-26.04"
   sudo() { "$@"; }
   E2E_KEEP_DOWNLOADS=$1 with_lib clean_data_dir "$dir"
-  (cd "$dir" && find . -mindepth 1 -maxdepth 1 | sort | tr '\n' ' ')
+  (cd "$dir" && find . -mindepth 1 -maxdepth 3 -type d | sort | tr '\n' ' ')
 }
-expect pass "cleanup keeps only the squid cache by default" "^\./squid $" clean_case 0
-expect pass "E2E_KEEP_DOWNLOADS=1 also keeps the downloads" "^\./artifacts \./squid $" clean_case 1
+expect pass "cleanup keeps only the squid cache by default" "^\./squid \./squid/cache $" clean_case 0
+expect pass "E2E_KEEP_DOWNLOADS=1 also keeps the controller's downloads" \
+  "^\./nginx \./nginx/static \./nginx/static/artifacts \./squid \./squid/cache $" clean_case 1
 
 # wait-for-resource.sh (Kind and Helm workflows): an unreadable message must
 # not end the wait silently.

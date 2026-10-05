@@ -12,7 +12,8 @@
 #   E2E_QEMU_CACHE where the custom RTL8168 QEMU build is kept (default
 #                  ~/qemu-cache; CI caches this directory).
 #   E2E_KEEP_DOWNLOADS=1  cleanup.sh keeps the downloaded artifacts in
-#                  $DATA_DIR/artifacts, so later rows and runs on the same host
+#                  $DATA_DIR/nginx/static/artifacts, so later rows and runs on
+#                  the same host
 #                  do not fetch them again (hack/e2e-local.sh sets it; CI
 #                  downloads afresh).
 #   E2E_NO_PROGRESS_MINUTES, E2E_WAIT_MAX_MINUTES  limits of wait_ready.
@@ -174,13 +175,24 @@ wait_ready_dump() {
 }
 
 # clean_data_dir <dir>: empty the data directory but keep the squid cache and,
-# with E2E_KEEP_DOWNLOADS=1 (local runs), the downloaded artifacts: the
-# controller checks their hash and reuses them instead of downloading again.
+# with E2E_KEEP_DOWNLOADS=1 (local runs), the downloaded artifacts in
+# nginx/static/artifacts (the chart runs the controller with
+# --data-dir=<dataDir>/nginx/static): the controller checks their hash and
+# reuses them instead of downloading again.
 clean_data_dir() {
-  local kept=(! -name squid)
-  [ "${E2E_KEEP_DOWNLOADS:-0}" = 1 ] && kept+=(! -name artifacts)
-  [ -d "$1" ] || return 0
-  sudo find "$1" -mindepth 1 -maxdepth 1 "${kept[@]}" -exec rm -rf {} +
+  local dir=$1
+  [ -d "$dir" ] || return 0
+  if [ "${E2E_KEEP_DOWNLOADS:-0}" != 1 ]; then
+    sudo find "$dir" -mindepth 1 -maxdepth 1 ! -name squid -exec rm -rf {} +
+    return
+  fi
+  sudo find "$dir" -mindepth 1 -maxdepth 1 ! -name squid ! -name nginx -exec rm -rf {} +
+  if [ -d "$dir/nginx" ]; then
+    sudo find "$dir/nginx" -mindepth 1 -maxdepth 1 ! -name static -exec rm -rf {} +
+  fi
+  if [ -d "$dir/nginx/static" ]; then
+    sudo find "$dir/nginx/static" -mindepth 1 -maxdepth 1 ! -name artifacts -exec rm -rf {} +
+  fi
 }
 
 provision_phase() {
