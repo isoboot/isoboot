@@ -65,7 +65,7 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build and push isoboot image
+    - name: Build and push isoboot image (manager, httpd, nfsd)
       uses: docker/build-push-action@v6
       with:
         context: .
@@ -87,17 +87,6 @@ jobs:
         cache-from: type=gha,scope=dnsmasq
         cache-to: type=gha,mode=max,scope=dnsmasq
 
-    - name: Build and push httpd image
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: Dockerfile.httpd
-        platforms: linux/amd64
-        push: true
-        tags: ${{ env.IMAGE }}-httpd:${{ steps.version.outputs.version }}
-        cache-from: type=gha,scope=httpd
-        cache-to: type=gha,mode=max,scope=httpd
-
     - name: Build and push squid image
       uses: docker/build-push-action@v6
       with:
@@ -109,17 +98,6 @@ jobs:
         tags: ${{ env.IMAGE }}-squid:${{ steps.version.outputs.version }}
         cache-from: type=gha,scope=squid
         cache-to: type=gha,mode=max,scope=squid
-
-    - name: Build and push nfsd image
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: Dockerfile.nfsd
-        platforms: linux/amd64
-        push: true
-        tags: ${{ env.IMAGE }}-nfsd:${{ steps.version.outputs.version }}
-        cache-from: type=gha,scope=nfsd
-        cache-to: type=gha,mode=max,scope=nfsd
 
     - uses: azure/setup-helm@v4
 

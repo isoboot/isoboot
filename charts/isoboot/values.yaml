@@ -8,6 +8,8 @@ nameOverride: ""
 nodeName: ""
 
 alpineImage: alpine:3.24.2
+# The one isoboot image: it holds /manager (the controller), /httpd and /nfsd,
+# and each Deployment runs its own program from it.
 image:
   repository: ghcr.io/isoboot/isoboot
   # tag defaults to .Chart.AppVersion if omitted
@@ -44,10 +46,6 @@ resources:
     memory: 64Mi
 
 httpd:
-  image:
-    repository: ghcr.io/isoboot/isoboot-httpd
-    # tag defaults to .Chart.AppVersion if omitted
-    tag: ""
   # No conflict with nginx.port — httpd uses ClusterIP networking, nginx uses hostNetwork.
   port: 8080
   resources:
@@ -105,10 +103,6 @@ dnsmasq:
 #   sudo systemctl disable --now rpcbind.socket rpcbind.service nfs-server
 nfsd:
   enabled: true
-  image:
-    repository: ghcr.io/isoboot/isoboot-nfsd
-    # tag defaults to .Chart.AppVersion if omitted
-    tag: ""
   # NFS and MOUNT share this port.
   port: 2049
   # The installer's NFS client always asks the port mapper on TCP 111.

@@ -109,8 +109,10 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+build: manifests generate fmt vet ## Build the manager, httpd and nfsd binaries.
+	go build -o bin/manager ./cmd/
+	go build -o bin/httpd ./cmd/httpd/
+	go build -o bin/nfsd ./cmd/nfsd/
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -120,49 +122,19 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-docker-build: ## Build docker image with the manager.
+docker-build: ## Build the docker image with the manager, httpd and nfsd.
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push
-docker-push: ## Push docker image with the manager.
+docker-push: ## Push the docker image with the manager, httpd and nfsd.
 	$(CONTAINER_TOOL) push ${IMG}
 
 PLATFORMS ?= linux/amd64,linux/arm64
 .PHONY: docker-buildx
-docker-buildx: ## Build and push docker image for the manager for cross-platform support
+docker-buildx: ## Build and push the manager, httpd and nfsd image for cross-platform support
 	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
 	$(CONTAINER_TOOL) buildx use isoboot-builder
 	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} .
-	- $(CONTAINER_TOOL) buildx rm isoboot-builder
-
-.PHONY: build-httpd
-build-httpd: ## Build httpd binary.
-	go build -o bin/httpd ./cmd/httpd/
-
-.PHONY: docker-build-httpd
-docker-build-httpd: ## Build docker image with httpd.
-	$(CONTAINER_TOOL) build -t ${IMG}-httpd -f Dockerfile.httpd .
-
-.PHONY: docker-buildx-httpd
-docker-buildx-httpd: ## Build and push docker image for httpd for cross-platform support
-	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
-	$(CONTAINER_TOOL) buildx use isoboot-builder
-	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG}-httpd -f Dockerfile.httpd .
-	- $(CONTAINER_TOOL) buildx rm isoboot-builder
-
-.PHONY: build-nfsd
-build-nfsd: ## Build nfsd binary.
-	go build -o bin/nfsd ./cmd/nfsd/
-
-.PHONY: docker-build-nfsd
-docker-build-nfsd: ## Build docker image with nfsd.
-	$(CONTAINER_TOOL) build -t ${IMG}-nfsd -f Dockerfile.nfsd .
-
-.PHONY: docker-buildx-nfsd
-docker-buildx-nfsd: ## Build and push docker image for nfsd for cross-platform support
-	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
-	$(CONTAINER_TOOL) buildx use isoboot-builder
-	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG}-nfsd -f Dockerfile.nfsd .
 	- $(CONTAINER_TOOL) buildx rm isoboot-builder
 
 .PHONY: docker-build-dnsmasq
