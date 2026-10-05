@@ -7,7 +7,22 @@ metadata:
     {{- include "isoboot.labels" . | nindent 4 }}
 data:
   squid.conf: |
-    acl localnet src {{ .Values.dnsmasq.subnet }}
+    # squid is on the host network: 127.0.0.1 is the node and ClusterIPs are
+    # reachable, so it only fetches from web ports outside the node and the
+    # cluster, and only for the PXE subnet (and the node itself).
+    acl localnet src {{ include "isoboot.subnet" . }}
+    acl SSL_ports port 443
+    # 80 and 443 for package mirrors, nginx.port for installer callbacks.
+    acl Safe_ports port 80 443 {{ .Values.nginx.port }}
+    acl CONNECT method CONNECT
+    http_access deny !Safe_ports
+    http_access deny CONNECT !SSL_ports
+    http_access deny to_localhost
+    http_access deny to_linklocal
+    {{- with .Values.squid.blockedDestinationCIDRs }}
+    acl blocked_destinations dst {{ join " " . }}
+    http_access deny blocked_destinations
+    {{- end }}
     http_access allow localnet
     http_access allow localhost
     http_access deny all

@@ -112,6 +112,10 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 chart-test: helm yq ## Lint the Helm chart and check what it renders.
 	HELM="$(HELM)" YQ="$(YQ)" hack/chart-test.sh
 
+.PHONY: subnet-access-test
+subnet-access-test: helm yq ## Run the chart's squid and nginx in Docker and check who they serve.
+	HELM="$(HELM)" YQ="$(YQ)" hack/subnet-access-test.sh
+
 ##@ Build
 
 .PHONY: build

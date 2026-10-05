@@ -177,6 +177,40 @@ expect "controller gets an empty --nfs-dir with nfsd off" '"--nfs-dir="' \
 expect "no nfsd Deployment with nfsd off" "" \
   "$(query "$without_nfsd" 'select(.kind == "Deployment" and .metadata.name == "rel-isoboot-nfsd") | .metadata.name')"
 
+# The PXE subnet limits who may use nginx, squid and nfsd and is written into
+# their configuration: it must be given and be an IPv4 CIDR.
+expect_render_failure "dnsmasq.subnet is required" "dnsmasq.subnet is required" --set nodeName=node1
+expect_render_failure "dnsmasq.subnet must be an IPv4 CIDR" "must be an IPv4 CIDR" \
+  --set nodeName=node1 --set 'dnsmasq.subnet=10.0.0.0/24;allow all'
+
+# config_lines <rendered> <ConfigMap suffix> <file> <regex>: matching lines of
+# a rendered config file, trimmed, joined with " | ".
+config_lines() {
+  query "$1" "select(.kind == \"ConfigMap\" and .metadata.name == \"$release-isoboot-$2\") | .data[\"$3\"]" \
+    | sed 's/^ *//' | grep -E "$4" | paste -sd'|' - | sed 's/|/ | /g'
+}
+
+# nginx listens on every node address (host network): only the PXE subnet
+# and the node itself may reach /static/ and /dynamic/ (contract 4). The rules
+# sit at server level, before any location.
+expect "nginx allows only the PXE subnet and localhost" \
+  "allow $subnet; | allow 127.0.0.1; | deny all; | location /static/ { | location /dynamic/ {" \
+  "$(config_lines "$default" nginx-config nginx.conf '^(allow|deny|location) ')"
+
+# chart-02: squid (host network) serves only the PXE subnet and localhost, and
+# never fetches from the node itself, link-local addresses, the cluster's pod
+# and service networks, ports other than 80/443/nginx.port, or CONNECTs to
+# anything but 443. Deny rules come before the allows.
+expect "squid ACLs" \
+  "acl localnet src $subnet | acl SSL_ports port 443 | acl Safe_ports port 80 443 8080 | acl CONNECT method CONNECT | acl blocked_destinations dst 10.42.0.0/16 10.43.0.0/16" \
+  "$(config_lines "$default" squid squid.conf '^acl ')"
+expect "squid access rules, denies first" \
+  "http_access deny !Safe_ports | http_access deny CONNECT !SSL_ports | http_access deny to_localhost | http_access deny to_linklocal | http_access deny blocked_destinations | http_access allow localnet | http_access allow localhost | http_access deny all" \
+  "$(config_lines "$default" squid squid.conf '^http_access ')"
+expect "squid.blockedDestinationCIDRs empty drops only that rule" \
+  "http_access deny !Safe_ports | http_access deny CONNECT !SSL_ports | http_access deny to_localhost | http_access deny to_linklocal | http_access allow localnet | http_access allow localhost | http_access deny all" \
+  "$(config_lines "$(render --set 'squid.blockedDestinationCIDRs=null')" squid squid.conf '^http_access ')"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures chart check(s) failed" >&2
   exit 1

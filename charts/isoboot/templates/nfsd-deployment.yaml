@@ -63,7 +63,7 @@ spec:
         - "--listen=:{{ .Values.nfsd.port }}"
         # The installer's NFS client (klibc nfsmount) always asks TCP 111.
         - "--portmap-listen=:111"
-        {{- range (.Values.nfsd.allowedCIDRs | default (list .Values.dnsmasq.subnet)) }}
+        {{- range (.Values.nfsd.allowedCIDRs | default (list (include "isoboot.subnet" .))) }}
         - "--allow-cidr={{ . }}"
         {{- end }}
         - "--log-level={{ .Values.nfsd.logLevel }}"

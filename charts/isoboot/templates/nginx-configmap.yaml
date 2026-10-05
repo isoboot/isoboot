@@ -17,6 +17,12 @@ data:
         sendfile on;
         server {
             listen {{ .Values.nginx.port }};
+            # nginx is on the host network, so it listens on every node
+            # address: only the PXE subnet and the node itself may fetch boot
+            # files and automation files (rendered Secrets) or post status.
+            allow {{ include "isoboot.subnet" . }};
+            allow 127.0.0.1;
+            deny all;
             location /static/ {
                 alias "{{ .Values.dataDir }}/nginx/static/boot/";
             }

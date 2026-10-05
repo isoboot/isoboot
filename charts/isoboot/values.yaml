@@ -62,6 +62,13 @@ squid:
     # tag defaults to .Chart.AppVersion if omitted
     tag: ""
   port: 3128
+  # Destinations squid refuses besides the node itself (127.0.0.0/8) and
+  # link-local addresses: the cluster's pod and service networks, so PXE
+  # clients cannot reach in-cluster services through the proxy. The defaults
+  # are k3s's; set your cluster's.
+  blockedDestinationCIDRs:
+  - 10.42.0.0/16
+  - 10.43.0.0/16
   maxObjectSize: "1024 MB"
   # 0 uses squid's compiled-in default (typically 256 MB).
   cacheMemMB: 0
@@ -77,7 +84,8 @@ squid:
       memory: 128Mi
 
 dnsmasq:
-  # subnet is required (e.g. "192.168.101.0/24").
+  # subnet is required (e.g. "192.168.101.0/24"): the PXE subnet. Only it (and
+  # the node itself) may use nginx, squid and nfsd.
   subnet: ""
   ipxe:
     url: "https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz"
