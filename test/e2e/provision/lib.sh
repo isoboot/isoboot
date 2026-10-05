@@ -30,6 +30,11 @@ DHCP_CONTAINER=dhcp-srv
 DATA_DIR=/data/isoboot
 IMAGE=ghcr.io/isoboot/isoboot
 PROVISION="qemu-vm1-provision"
+
+# Tool versions, pinned so every run installs the same ones; bump on purpose.
+# Keep KUBECTL_VERSION in .devcontainer/post-install.sh on the same minor.
+K3S_VERSION="v1.36.5+k3s1"
+HELM_VERSION="v3.22.0"
 }
 
 E2E_IMAGES=${E2E_IMAGES:-local}

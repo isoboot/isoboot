@@ -19,9 +19,17 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommen
 sudo systemctl enable --now docker >/dev/null 2>&1 || true
 sudo docker info >/dev/null || fail "docker is not working"
 
-if ! command -v helm >/dev/null; then
-  log "Installing helm"
-  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+# CI runner images ship their own helm; install the pinned one over it.
+if [ "$(helm version --template '{{.Version}}' 2>/dev/null || true)" != "$HELM_VERSION" ]; then
+  log "Installing helm $HELM_VERSION"
+  tarball="helm-$HELM_VERSION-linux-amd64.tar.gz"
+  rm -rf "$WORK/helm" && mkdir -p "$WORK/helm"
+  curl -fsSLo "$WORK/helm/$tarball" "https://get.helm.sh/$tarball"
+  sum=$(curl -fsSL "https://get.helm.sh/$tarball.sha256sum" | awk '{print $1}')
+  [ -n "$sum" ] || fail "no published checksum for $tarball"
+  echo "$sum  $WORK/helm/$tarball" | sha256sum -c --quiet - || fail "checksum mismatch for $tarball"
+  tar -xzf "$WORK/helm/$tarball" -C "$WORK/helm" linux-amd64/helm
+  sudo install -m 0755 "$WORK/helm/linux-amd64/helm" /usr/local/bin/helm
 fi
 
 echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \

@@ -1,6 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
+# Tool versions, pinned so every devcontainer build gets the same tools.
+# Bump them here on purpose. Each download is checked against the checksum
+# its project publishes for that release.
+KIND_VERSION="v0.33.0"
+# Matches cliVersion in PROJECT, the version this project was scaffolded with.
+KUBEBUILDER_VERSION="v4.13.0"
+# Same Kubernetes minor as the k3s the E2E runs (K3S_VERSION in
+# test/e2e/provision/lib.sh).
+KUBECTL_VERSION="v1.36.5"
+
 echo "===================================="
 echo "Kubebuilder DevContainer Setup"
 echo "===================================="
@@ -29,6 +39,25 @@ case "${MACHINE}" in
 esac
 echo "Architecture: ${ARCH}"
 
+# install_binary <name> <url> <sha256>: download to a temporary file, check
+# its checksum, then install it as /usr/local/bin/<name>.
+install_binary() {
+  local name=$1 url=$2 sum=$3 tmp
+  if [ -z "${sum}" ]; then
+    echo "ERROR: no published checksum found for ${name}"
+    exit 1
+  fi
+  tmp=$(mktemp)
+  curl -fsSLo "${tmp}" "${url}"
+  if ! echo "${sum}  ${tmp}" | sha256sum -c --quiet -; then
+    rm -f "${tmp}"
+    echo "ERROR: checksum mismatch for ${name} (${url})"
+    exit 1
+  fi
+  install -m 0755 "${tmp}" "/usr/local/bin/${name}"
+  rm -f "${tmp}"
+}
+
 echo ""
 echo "------------------------------------"
 echo "Setting up bash completion..."
@@ -49,9 +78,10 @@ echo "------------------------------------"
 
 # Install kind
 if ! command -v kind &> /dev/null; then
-  echo "Installing kind..."
-  curl -Lo /usr/local/bin/kind "https://kind.sigs.k8s.io/dl/latest/kind-linux-${ARCH}"
-  chmod +x /usr/local/bin/kind
+  echo "Installing kind ${KIND_VERSION}..."
+  base="https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}"
+  sum=$(curl -fsSL "${base}/kind-linux-${ARCH}.sha256sum" | awk '{print $1}')
+  install_binary kind "${base}/kind-linux-${ARCH}" "${sum}"
   echo "kind installed successfully"
 fi
 
@@ -66,9 +96,10 @@ fi
 
 # Install kubebuilder
 if ! command -v kubebuilder &> /dev/null; then
-  echo "Installing kubebuilder..."
-  curl -Lo /usr/local/bin/kubebuilder "https://go.kubebuilder.io/dl/latest/linux/${ARCH}"
-  chmod +x /usr/local/bin/kubebuilder
+  echo "Installing kubebuilder ${KUBEBUILDER_VERSION}..."
+  base="https://github.com/kubernetes-sigs/kubebuilder/releases/download/${KUBEBUILDER_VERSION}"
+  sum=$(curl -fsSL "${base}/checksums.txt" | awk -v f="kubebuilder_linux_${ARCH}" '$2 == f {print $1}')
+  install_binary kubebuilder "${base}/kubebuilder_linux_${ARCH}" "${sum}"
   echo "kubebuilder installed successfully"
 fi
 
@@ -83,10 +114,10 @@ fi
 
 # Install kubectl
 if ! command -v kubectl &> /dev/null; then
-  echo "Installing kubectl..."
-  KUBECTL_VERSION=$(curl -Ls https://dl.k8s.io/release/stable.txt)
-  curl -Lo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl"
-  chmod +x /usr/local/bin/kubectl
+  echo "Installing kubectl ${KUBECTL_VERSION}..."
+  base="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${ARCH}"
+  sum=$(curl -fsSL "${base}/kubectl.sha256")
+  install_binary kubectl "${base}/kubectl" "${sum}"
   echo "kubectl installed successfully"
 fi
 

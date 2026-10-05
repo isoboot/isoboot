@@ -7,7 +7,7 @@ on:
 jobs:
   verify:
     name: Generated files are up to date
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Clone the code
         uses: actions/checkout@v4

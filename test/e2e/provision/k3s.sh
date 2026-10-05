@@ -7,7 +7,8 @@ source "$(dirname "$0")/lib.sh"
 load_row "${1:-}"
 
 if ! command -v k3s >/dev/null; then
-  curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" INSTALL_K3S_CHANNEL="stable" sh -
+  # The installer checks the release's published sha256 for the k3s binary.
+  curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" INSTALL_K3S_VERSION="$K3S_VERSION" sh -
 fi
 sudo chmod 644 /etc/rancher/k3s/k3s.yaml
 

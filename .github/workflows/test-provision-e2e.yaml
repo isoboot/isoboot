@@ -23,7 +23,7 @@ jobs:
   rows:
     name: Rows
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'e2e')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.rows.outputs.matrix }}
@@ -41,7 +41,7 @@ jobs:
   build:
     name: Build & Push (amd64)
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'e2e')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -138,7 +138,7 @@ jobs:
   provision-test:
     name: Provision E2E — ${{ matrix.name }}
     needs: [rows, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 100
     strategy:
       fail-fast: false

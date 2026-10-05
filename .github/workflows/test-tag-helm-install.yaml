@@ -29,7 +29,7 @@ jobs:
   release-and-test:
     name: Release & E2E DHCP + k3s + Rocky 10.2
     # isc-dhcp-client may be removed from future ubuntu-latest — accepted risk.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
