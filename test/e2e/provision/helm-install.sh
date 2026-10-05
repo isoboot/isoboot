@@ -30,12 +30,23 @@ else
     --app-version "$E2E_VERSION" --destination "$WORK/chart" >/dev/null
   chart=("$WORK/chart/isoboot-$E2E_VERSION.tgz")
 fi
-helm install "$RELEASE" "${chart[@]}" \
-  --namespace "$NS" --create-namespace \
-  --set nodeName="$node" \
-  --set dnsmasq.subnet="$SUBNET" \
-  --set alpineImage="alpine:$ALPINE_VERSION" \
-  --set squid.log.access=true
+values=(--set nodeName="$node" --set dnsmasq.subnet="$SUBNET"
+  --set alpineImage="alpine:$ALPINE_VERSION" --set squid.log.access=true)
+
+# Known chart race (open issue, see PR #389): with crds.enabled=true the CRDs
+# come from templates/, and Helm can build the post-install hook BootArtifact
+# isoboot-ipxe before the API server serves that kind ("no matches for kind
+# BootArtifact"; run 37251281837, Rocky 10.2). Install the CRDs first, wait
+# until they are Established, then the chart with crds.enabled=false, the
+# chart's mode for separately managed CRDs.
+helm template "$RELEASE" "${chart[@]}" --namespace "$NS" "${values[@]}" \
+  --show-only templates/crds.yaml | kubectl apply -f -
+kubectl wait --for=condition=Established --timeout=120s \
+  crd/bootartifacts.isoboot.github.io crd/bootconfigs.isoboot.github.io \
+  crd/machines.isoboot.github.io crd/provisions.isoboot.github.io \
+  crd/provisionautomations.isoboot.github.io
+helm install "$RELEASE" "${chart[@]}" --namespace "$NS" --create-namespace \
+  "${values[@]}" --set crds.enabled=false
 
 wait_pods controller 300
 wait_pods nginx 300
