@@ -112,6 +112,10 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 chart-test: helm yq ## Lint the Helm chart and check what it renders.
 	HELM="$(HELM)" YQ="$(YQ)" hack/chart-test.sh
 
+.PHONY: check-workflows
+check-workflows: actionlint yq ## Lint the GitHub workflows and check their permissions and pins.
+	ACTIONLINT="$(ACTIONLINT)" YQ="$(YQ)" hack/check-workflows.sh
+
 .PHONY: subnet-access-test
 subnet-access-test: helm yq ## Run the chart's squid and nginx in Docker and check who they serve.
 	HELM="$(HELM)" YQ="$(YQ)" hack/subnet-access-test.sh
@@ -216,6 +220,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 HELM ?= $(LOCALBIN)/helm
 YQ ?= $(LOCALBIN)/yq
+ACTIONLINT ?= $(LOCALBIN)/actionlint
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
@@ -236,6 +241,7 @@ GOLANGCI_LINT_VERSION ?= v2.14.0
 # and the workflows; hack/check-workflows.sh fails when they differ.
 HELM_VERSION ?= v3.22.0
 YQ_VERSION ?= v4.54.1
+ACTIONLINT_VERSION ?= v1.7.12
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
@@ -268,6 +274,11 @@ $(HELM): $(LOCALBIN)
 yq: $(YQ) ## Download yq locally if necessary.
 $(YQ): $(LOCALBIN)
 	$(call go-install-tool,$(YQ),github.com/mikefarah/yq/v4,$(YQ_VERSION))
+
+.PHONY: actionlint
+actionlint: $(ACTIONLINT) ## Download actionlint locally if necessary.
+$(ACTIONLINT): $(LOCALBIN)
+	$(call go-install-tool,$(ACTIONLINT),github.com/rhysd/actionlint/cmd/actionlint,$(ACTIONLINT_VERSION))
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
