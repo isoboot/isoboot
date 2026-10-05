@@ -32,7 +32,7 @@ sudo apt-get update -qq
 sudo apt-get install -y -qq \
   build-essential ninja-build python3-venv pkg-config \
   libglib2.0-dev libpixman-1-dev libslirp-dev zlib1g-dev \
-  liblzma-dev
+  liblzma-dev libpng-dev
 
 # ── Build iPXE EFI ROM for PCI 10ec:8168 ────────────────────────
 make -C "$BUILD_DIR/ipxe/src" -j"$(nproc)" bin-x86_64-efi/10ec8168.efirom \
@@ -52,10 +52,14 @@ if ! grep -q 'rtl8168' hw/net/meson.build; then
     hw/net/meson.build
 fi
 
+# VNC and PNG: the E2E shows the VM's screen over VNC and saves it as PNG
+# (lib.sh qemu_start and screendump).
 ./configure \
   --target-list=x86_64-softmmu \
   --enable-kvm \
   --enable-slirp \
+  --enable-vnc \
+  --enable-png \
   --disable-docs \
   --disable-gtk \
   --disable-sdl \

@@ -38,7 +38,7 @@ log "logs for $ROW_ID are in $LOG_DIR"
 
 if [ "${2:-}" = --print ]; then
   for f in "$LOG_DIR"/*; do
-    case $f in *.ppm) continue ;; esac
+    case $f in *.png | *.ppm) continue ;; esac
     echo "=================== $(basename "$f") (last 150 lines) ==================="
     tail -n 150 "$f"
   done
