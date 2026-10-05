@@ -68,6 +68,42 @@ expect pass "E2E_ALLOW_THIS_HOST=1 allows any host" "^allowed$" \
 expect pass "KUBECONFIG is always the k3s one" "^/etc/rancher/k3s/k3s.yaml$" \
   env GITHUB_ACTIONS=true KUBECONFIG=/tmp/some-other-cluster bash -c "source '$here/lib.sh'; echo \"\$KUBECONFIG\""
 
+# ── verify.sh: password login (e2e-02) and host keys ───────────────
+# sshd_case <sshd_config lines...>: start a real sshd with that configuration
+# in a throwaway container and run assert_no_password_auth against it there.
+sshd_case() {
+  tar -C "$repo" -cf - .alpine-version test/e2e/provision/lib.sh \
+    | docker run --rm -i "alpine:$(cat "$repo/.alpine-version")" sh -c '
+        set -e
+        mkdir /repo && tar -xf - -C /repo
+        apk add -q --no-cache bash openssh-server openssh-client >/dev/null
+        ssh-keygen -A >/dev/null
+        adduser -D isoboot && echo isoboot:e2etest | chpasswd 2>/dev/null
+        printf "%s\n" "$@" >> /etc/ssh/sshd_config
+        /usr/sbin/sshd
+        GITHUB_ACTIONS=true bash -c "source /repo/test/e2e/provision/lib.sh && assert_no_password_auth isoboot@127.0.0.1"
+      ' sshd-case "$@"
+}
+expect fail "sshd that accepts passwords is caught" "FAIL: sshd on isoboot@127.0.0.1 offers password login: .*password" \
+  sshd_case "PasswordAuthentication yes"
+expect fail "sshd that offers keyboard-interactive is caught" "FAIL: .*offers password login: .*keyboard-interactive" \
+  sshd_case "PasswordAuthentication no" "KbdInteractiveAuthentication yes"
+expect pass "sshd with key login only passes" "PASS: sshd on isoboot@127.0.0.1 offers only publickey$" \
+  sshd_case "PasswordAuthentication no" "KbdInteractiveAuthentication no"
+expect fail "an unreachable sshd fails instead of passing" "could not read the login methods" \
+  with_lib assert_no_password_auth isoboot@127.0.0.1 -p 1
+
+ssh-keygen -q -t rsa -b 2048 -N "" -f "$tmp/host_rsa_key"
+host_key_case() {
+  local keyscan_output=$1
+  ssh-keyscan() { [ -z "$keyscan_output" ] || echo "192.0.2.1 $keyscan_output"; }
+  with_lib assert_host_key 192.0.2.1 rsa "$tmp/host_rsa_key.pub"
+}
+expect fail "a missing host key fails with a message" "FAIL: rsa host key: expected SHA256:.*, got none" \
+  host_key_case ""
+expect pass "the injected host key passes" "" \
+  host_key_case "$(cut -d' ' -f1,2 "$tmp/host_rsa_key.pub")"
+
 echo
 if [ "$failures" -gt 0 ]; then
   echo "selftest: $failures check(s) failed"

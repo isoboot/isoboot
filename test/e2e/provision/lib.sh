@@ -212,3 +212,38 @@ qemu_start() {
   sudo chmod 644 "$serial"
   log "QEMU started ($(row nic) NIC, $(row ram_mb) MB, boot from $boot, serial $serial)"
 }
+
+# sshd_auth_methods <user@host> [ssh options...]: the login methods sshd
+# offers, read from its answer to the "none" method (ssh -v ends its debug
+# lines with CR LF). Empty if unreachable.
+sshd_auth_methods() {
+  local destination=$1
+  shift
+  ssh -v "$@" -o BatchMode=yes -o PreferredAuthentications=none \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 \
+    "$destination" true 2>&1 | tr -d '\r' \
+    | sed -n 's/.*Authentications that can continue: //p' | head -1 || true
+}
+
+# assert_no_password_auth <user@host> [ssh options...]: fail unless sshd
+# refuses passwords. It asks the server which methods it offers instead of
+# trying a password, so a client-side setting cannot make it pass.
+# keyboard-interactive counts as password login (PAM asks for the password).
+assert_no_password_auth() {
+  local methods
+  methods=$(sshd_auth_methods "$@")
+  [ -n "$methods" ] || fail "could not read the login methods sshd on $1 offers"
+  case ",$methods," in
+    *,password,* | *,keyboard-interactive,*) fail "sshd on $1 offers password login: $methods" ;;
+  esac
+  pass "sshd on $1 offers only $methods"
+}
+
+# assert_host_key <host> <type> <expected public key file>: fail unless the
+# host's SSH host key of that type is the expected one.
+assert_host_key() {
+  local host=$1 type=$2 expected actual
+  expected=$(ssh-keygen -lf "$3" | awk '{print $2}')
+  actual=$(ssh-keyscan -t "$type" "$host" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | awk '{print $2}' || true)
+  [ "$expected" = "$actual" ] || fail "$type host key: expected $expected, got ${actual:-none}"
+}
