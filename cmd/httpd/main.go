@@ -29,6 +29,7 @@ import (
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/controller"
 	"github.com/isoboot/isoboot/internal/httpd"
+	"github.com/isoboot/isoboot/internal/kernelargs"
 )
 
 var macRegexp = regexp.MustCompile(`^([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$`)
@@ -217,8 +218,8 @@ func conditionalBootHandler(
 				}
 				nfsRoot = addr.String() + ":" + directive.NFSExport
 			}
-			rendered, err := httpd.RenderKernelArgs(
-				directive.KernelArgs, httpd.KernelArgsData{
+			rendered, err := kernelargs.Render(
+				directive.KernelArgs, kernelargs.Data{
 					ProvisionAutomationBaseURL: baseURL,
 					ProxyURL:                   proxyURLFor(nodeIP, proxyPort),
 					UpdatePhaseURL:             statusURL,

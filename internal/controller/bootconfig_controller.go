@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
+	"github.com/isoboot/isoboot/internal/kernelargs"
 	"github.com/isoboot/isoboot/internal/urlutil"
 )
 
@@ -172,6 +173,11 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 		r.forgetExtractionFailure(req.NamespacedName)
 		return ctrl.Result{}, nil
+	}
+
+	// A template that cannot render would only fail when a machine boots.
+	if err := kernelargs.Validate(bc.Spec.KernelArgs); err != nil {
+		return r.setError(ctx, &bc, fmt.Sprintf("invalid kernelArgs: %v", err))
 	}
 
 	// Mode B: extract kernel and initrd from an ISO artifact.

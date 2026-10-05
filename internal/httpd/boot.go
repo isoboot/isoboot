@@ -17,12 +17,10 @@ limitations under the License.
 package httpd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"path"
-	"text/template"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -39,33 +37,6 @@ type BootDirective struct {
 	// for ISO-mode BootConfigs, and empty in netboot mode.
 	NFSExport     string
 	ProvisionName string
-}
-
-// KernelArgsData holds the template data for kernel args rendering.
-type KernelArgsData struct {
-	ProvisionAutomationBaseURL string
-	ProxyURL                   string
-	UpdatePhaseURL             string
-	ProvisionName              string
-	// NFSRoot is "<IPv4>:/<bootconfig>" for ISO-mode BootConfigs (the
-	// casper nfsroot= value) and empty in netboot mode.
-	NFSRoot string
-}
-
-// RenderKernelArgs renders kernel args as a Go template with the given data.
-func RenderKernelArgs(args string, data KernelArgsData) (string, error) {
-	tmpl, err := template.New("kernelArgs").
-		Option("missingkey=error").Parse(args)
-	if err != nil {
-		return "", fmt.Errorf("parsing kernel args template: %w", err)
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("executing kernel args template: %w", err)
-	}
-
-	return buf.String(), nil
 }
 
 // IsDuplicateError reports whether err indicates a duplicate machine or provision.

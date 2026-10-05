@@ -79,6 +79,8 @@ type BootConfigSpec struct {
 	// modes. May contain Go template variables interpolated at provision time:
 	// ProvisionAutomationBaseURL, ProxyURL, UpdatePhaseURL, ProvisionName and,
 	// in iso mode, NFSRoot ("<IPv4>:/<bootconfig-name>", for casper's nfsroot=).
+	// It must render to a single line. The controller renders it with sample
+	// values and sets the BootConfig to Error when it cannot.
 	// +optional
 	KernelArgs string `json:"kernelArgs,omitempty"`
 }
