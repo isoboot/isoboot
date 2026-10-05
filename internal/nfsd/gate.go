@@ -100,13 +100,15 @@ func (g *connectionGate) refuse(conn net.Conn, reason string) {
 }
 
 // hostAddr returns the IP address of a TCP peer, with IPv4 addresses that
-// a dual-stack listener reports as IPv6 ("::ffff:10.0.0.5") unmapped.
+// a dual-stack listener reports as IPv6 ("::ffff:10.0.0.5") unmapped, and
+// without the zone of a link-local address ("fe80::1%eth0"): a network
+// never contains an address with a zone.
 func hostAddr(addr net.Addr) (netip.Addr, bool) {
 	tcp, ok := addr.(*net.TCPAddr)
 	if !ok {
 		return netip.Addr{}, false
 	}
-	return tcp.AddrPort().Addr().Unmap(), true
+	return tcp.AddrPort().Addr().Unmap().WithZone(""), true
 }
 
 // throttledLog logs warnings, at most one per interval. The next warning

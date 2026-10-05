@@ -92,7 +92,9 @@ func TestGateLimitsConnectionsInTotal(t *testing.T) {
 }
 
 func TestGateAllowList(t *testing.T) {
-	allow := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/24"), netip.MustParsePrefix("fd00::/64")}
+	allow := []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/24"), netip.MustParsePrefix("fd00::/64"), netip.MustParsePrefix("fe80::/64"),
+	}
 	gate := newConnectionGate("test", allow, 100, 100, quietWarnings())
 	tests := []struct {
 		conn net.Conn
@@ -101,6 +103,8 @@ func TestGateAllowList(t *testing.T) {
 		{peerAt("10.0.0.5:700"), true},
 		{peerAt("[::ffff:10.0.0.7]:700"), true},
 		{peerAt("[fd00::1]:700"), true},
+		// A link-local peer comes with the zone of its interface.
+		{peerAt("[fe80::1%eth0]:700"), true},
 		{peerAt("10.0.1.5:700"), false},
 		{peerAt("127.0.0.1:700"), false},
 		{peerAt("[fd00:0:0:1::1]:700"), false},
