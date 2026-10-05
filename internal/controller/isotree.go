@@ -328,10 +328,11 @@ const syncEvery = 32 << 20
 
 // syncWriter writes to f and flushes it to disk every syncEvery bytes.
 // Page cache dirtied by a write is charged to the container's memory cgroup
-// until it is written back. Unpacking an ISO copies from disk to disk faster
-// than writeback, so without the fsyncs a 1-2 GB squashfs left that much dirty
-// cache and got the controller OOM-killed at its 128Mi limit. Written-back
-// pages are clean and the kernel reclaims them under the limit.
+// until it is written back. Downloading a 3 GB ISO over a fast link, or
+// unpacking it disk to disk, writes faster than writeback, so without the
+// fsyncs the dirty cache got the controller OOM-killed at its 128Mi limit.
+// Written-back pages are clean and the kernel reclaims them under the limit.
+// Every large file the controller writes goes through it.
 // It has no ReadFrom, so io.CopyBuffer uses the caller's buffer.
 type syncWriter struct {
 	f       *os.File

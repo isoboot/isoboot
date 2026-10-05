@@ -180,7 +180,7 @@ func (r *BootArtifactReconciler) download(ctx context.Context, artifact *isoboot
 		h = sha512.New()
 	}
 
-	written, err := io.Copy(tmpFile, io.TeeReader(resp.Body, h))
+	written, err := io.Copy(&syncWriter{f: tmpFile}, io.TeeReader(resp.Body, h))
 	if err != nil {
 		_ = tmpFile.Close()
 		return r.setFailure(ctx, artifact, fmt.Sprintf("writing file: %v", err))

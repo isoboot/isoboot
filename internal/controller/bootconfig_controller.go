@@ -295,7 +295,7 @@ func concatenateFiles(dst, srcA, srcB string) error {
 		if err != nil {
 			return fmt.Errorf("opening %s: %w", src, err)
 		}
-		_, err = io.Copy(tmp, f)
+		_, err = io.Copy(&syncWriter{f: tmp}, f)
 		_ = f.Close()
 		if err != nil {
 			return fmt.Errorf("copying %s: %w", src, err)
