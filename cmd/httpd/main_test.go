@@ -509,3 +509,39 @@ func TestCacheOptions(t *testing.T) {
 		t.Errorf("cache namespaces = %v, want only isoboot-system", got)
 	}
 }
+
+// TestNoStore checks that boot scripts and automation files, which can carry
+// secrets, are never stored by squid or any other cache, whatever the answer.
+func TestNoStore(t *testing.T) {
+	automation := func(render renderAutomationFunc) http.Handler {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /automation/{provisionName}/{fileName}", automationFileHandler(render, ""))
+		return mux
+	}
+	rendered := func(_ context.Context, _, _, _, _ string) (string, error) { return "secret", nil }
+	notServed := func(_ context.Context, _, _, _, _ string) (string, error) { return "", httpd.ErrFileNotFound }
+	tests := []struct {
+		name       string
+		handler    http.Handler
+		url        string
+		wantStatus int
+	}{
+		{"boot script", conditionalBootHandler(fixedDirective(), ""), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusOK},
+		{"no boot script", conditionalBootHandler(noMatchDirective(), ""), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusNotFound},
+		{"bad mac", conditionalBootHandler(fixedDirective(), ""), "/conditional-boot?mac=x", http.StatusBadRequest},
+		{"automation file", automation(rendered), "/automation/my-provision/user-data", http.StatusOK},
+		{"automation file not served", automation(notServed), "/automation/my-provision/user-data", http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tt.handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tt.url, nil))
+			if w.Result().StatusCode != tt.wantStatus {
+				t.Fatalf("expected %d, got: %d", tt.wantStatus, w.Result().StatusCode)
+			}
+			if got := w.Result().Header.Get("Cache-Control"); got != "no-store" {
+				t.Errorf("Cache-Control = %q, want no-store", got)
+			}
+		})
+	}
+}

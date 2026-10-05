@@ -169,6 +169,7 @@ func conditionalBootHandler(
 	getDirective bootDirectiveFunc, proxyPort string,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		mac := r.URL.Query().Get("mac")
 		if mac == "" {
 			http.Error(w, "missing required parameter: mac", http.StatusBadRequest)
@@ -288,6 +289,9 @@ var nameRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 
 func automationFileHandler(render renderAutomationFunc, proxyPort string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Rendered files carry Secrets: no cache (squid's included) may keep
+		// them on disk.
+		w.Header().Set("Cache-Control", "no-store")
 		provisionName := r.PathValue("provisionName")
 		fileName := r.PathValue("fileName")
 
