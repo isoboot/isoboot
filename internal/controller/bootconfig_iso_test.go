@@ -929,3 +929,15 @@ var _ = Describe("syncWriter", func() {
 		Expect(w.pending).To(Equal(int64(total - syncEvery)))
 	})
 })
+
+var _ = Describe("extraction backoff", func() {
+	It("never waits longer than extractionRetryMax", func() {
+		r := &BootConfigReconciler{now: func() time.Time { return time.Unix(1_000_000, 0) }}
+		key := types.NamespacedName{Namespace: "default", Name: "bc"}
+		var delay time.Duration
+		for range 20 {
+			delay = r.recordExtractionFailure(key, "same iso", "failed")
+		}
+		Expect(delay).To(Equal(extractionRetryMax))
+	})
+})
