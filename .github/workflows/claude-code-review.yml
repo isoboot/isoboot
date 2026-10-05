@@ -12,6 +12,8 @@ on:
 
 jobs:
   claude-review:
+    # Draft PRs are work in progress; review once marked ready.
+    if: github.event.pull_request.draft == false
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
