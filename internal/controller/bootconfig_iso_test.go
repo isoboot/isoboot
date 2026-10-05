@@ -631,16 +631,21 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(os.WriteFile(filepath.Join(nfsDir, ".source_gone"), nil, 0o644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(nfsDir, ".tmp_.source_gone"), nil, 0o644)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(dataDir, "boot", "gone"), 0o755)).To(Succeed())
-		// Not the controller's: kept.
+		// Not the controller's: kept. dnsmasq writes boot.ipxe, the script
+		// every machine chains first, beside the boot directories.
 		Expect(os.WriteFile(filepath.Join(nfsDir, ".unknown"), nil, 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dataDir, "boot", "boot.ipxe"), []byte("#!ipxe"), 0o644)).To(Succeed())
 
 		Expect(reconciler.removeOrphans(ctx)).To(Succeed())
 
 		Expect(nfsEntries()).To(ConsistOf("iso-bc-live", ".source_iso-bc-live", ".unknown"))
 		bootEntries, err := os.ReadDir(filepath.Join(dataDir, "boot"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(bootEntries).To(HaveLen(1))
-		Expect(bootEntries[0].Name()).To(Equal("iso-bc-live"))
+		bootNames := make([]string, 0, len(bootEntries))
+		for _, e := range bootEntries {
+			bootNames = append(bootNames, e.Name())
+		}
+		Expect(bootNames).To(ConsistOf("iso-bc-live", "boot.ipxe"))
 		_, err = os.Stat(filepath.Join(nfsDir, "iso-bc-live", "casper", "vmlinuz"))
 		Expect(err).NotTo(HaveOccurred())
 	})

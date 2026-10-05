@@ -575,10 +575,15 @@ func (r *BootConfigReconciler) removeOrphans(ctx context.Context) error {
 			log.Error(err, "Failed to remove", "path", p)
 		}
 	}
+	// Only directories: the boot directory of each BootConfig is one, and
+	// the files beside them are not the controller's (dnsmasq writes the
+	// boot.ipxe that every machine chains first).
 	bootDir := filepath.Join(r.DataDir, "boot")
 	if entries, err := os.ReadDir(bootDir); err == nil {
 		for _, e := range entries {
-			remove(bootDir, e.Name(), e.Name())
+			if e.IsDir() {
+				remove(bootDir, e.Name(), e.Name())
+			}
 		}
 	}
 	if r.NFSDir != "" {
