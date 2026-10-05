@@ -393,11 +393,38 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(nfsEntries()).To(ConsistOf("iso-bc-nokernel", ".source_iso-bc-nokernel"))
 	})
 
+	It("writes the same status message when the same failure repeats", func() {
+		if os.Geteuid() == 0 {
+			Skip("root ignores directory permissions")
+		}
+		defer readyISOArtifact("iso-ro", contents, nil)()
+		defer makeISOConfig("iso-bc-ro", "iso-ro", "casper/vmlinuz", "casper/initrd")()
+		// The kernel copy cannot be created in a read-only boot directory.
+		bootDir := filepath.Join(dataDir, "boot", "iso-bc-ro")
+		Expect(os.MkdirAll(bootDir, 0o755)).To(Succeed())
+		Expect(os.Chmod(bootDir, 0o555)).To(Succeed())
+
+		_, _ = doReconcile("iso-bc-ro")
+		var first isobootgithubiov1alpha1.BootConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "iso-bc-ro", Namespace: "default"}, &first)).To(Succeed())
+		Expect(first.Status.Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+
+		// A message that differs on every attempt (a random temporary
+		// name) would be a new status write, and a new reconcile, each time.
+		_, _ = doReconcile("iso-bc-ro")
+		var second isobootgithubiov1alpha1.BootConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "iso-bc-ro", Namespace: "default"}, &second)).To(Succeed())
+		Expect(second.Status.Message).To(Equal(first.Status.Message))
+		Expect(second.ResourceVersion).To(Equal(first.ResourceVersion))
+	})
+
 	It("cleans up stale temporary directories and the old ISO symlink", func() {
 		defer readyISOArtifact("iso-stale", contents, nil)()
 		defer makeISOConfig("iso-bc-stale", "iso-stale", "casper/vmlinuz", "casper/initrd")()
 
-		Expect(os.MkdirAll(filepath.Join(nfsDir, ".extract_iso-bc-stale_123", "x"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(nfsDir, ".extract_iso-bc-stale", "x"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(nfsDir, ".old_iso-bc-stale", "x"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(nfsDir, ".tmp_.source_iso-bc-stale"), nil, 0o600)).To(Succeed())
 		bootDir := filepath.Join(dataDir, "boot", "iso-bc-stale")
 		Expect(os.MkdirAll(bootDir, 0o755)).To(Succeed())
 		Expect(os.Symlink("../../artifacts/iso-stale/test.iso", filepath.Join(bootDir, "test.iso"))).To(Succeed())

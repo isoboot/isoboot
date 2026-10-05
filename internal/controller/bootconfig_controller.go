@@ -28,9 +28,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
@@ -405,7 +407,9 @@ func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, o
 // SetupWithManager sets up the controller with the Manager.
 func (r *BootConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&isobootgithubiov1alpha1.BootConfig{}).
+		// Only spec changes (and creates and deletes): the controller's own
+		// status writes must not trigger another reconcile at once.
+		For(&isobootgithubiov1alpha1.BootConfig{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&isobootgithubiov1alpha1.BootArtifact{}, handler.EnqueueRequestsFromMapFunc(
 			r.findBootConfigsForArtifact,
 		)).

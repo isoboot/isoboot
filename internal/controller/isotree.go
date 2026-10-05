@@ -40,10 +40,16 @@ import (
 // the temporary directories used while (re)extracting. Kubernetes object
 // names never contain "_", so the prefixes below cannot collide between
 // BootConfigs.
+//
+// Temporary names are fixed, not random: errors naming them end up in the
+// BootConfig status, and a message that changed on every attempt would be a
+// new status write each time. One controller replica writes the directory,
+// and a leftover from an interrupted attempt is removed before reuse.
 const (
-	isoTreeMarkerPrefix = ".source_"
-	isoTreeExtractInfix = ".extract_"
-	isoTreeOldInfix     = ".old_"
+	isoTreeMarkerPrefix  = ".source_"
+	isoTreeExtractPrefix = ".extract_"
+	isoTreeOldPrefix     = ".old_"
+	tempFilePrefix       = ".tmp_"
 
 	// maxISOTreeDepth guards against directory loops in a crafted ISO.
 	maxISOTreeDepth = 64
@@ -88,8 +94,8 @@ func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string, requir
 	}
 
 	removeStaleISOTemps(nfsDir, name)
-	tmp, err := os.MkdirTemp(nfsDir, isoTreeExtractInfix+name+"_")
-	if err != nil {
+	tmp := filepath.Join(nfsDir, isoTreeExtractPrefix+name)
+	if err := os.Mkdir(tmp, 0o700); err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tmp) }() // no-op after the rename
@@ -115,7 +121,7 @@ func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string, requir
 	}
 	var old string
 	if _, err := os.Lstat(dest); err == nil {
-		old = filepath.Join(nfsDir, isoTreeOldInfix+name+"_"+strings.TrimPrefix(filepath.Base(tmp), isoTreeExtractInfix+name+"_"))
+		old = filepath.Join(nfsDir, isoTreeOldPrefix+name)
 		if err := os.Rename(dest, old); err != nil {
 			return fmt.Errorf("moving old tree aside: %w", err)
 		}
@@ -152,25 +158,38 @@ func removeISOTree(nfsDir, name string) error {
 	return os.RemoveAll(filepath.Join(nfsDir, name))
 }
 
-// removeStaleISOTemps removes temporary directories left behind for name by
-// an interrupted extraction.
+// removeStaleISOTemps removes what an interrupted extraction left behind for
+// name.
 func removeStaleISOTemps(nfsDir, name string) {
-	entries, err := os.ReadDir(nfsDir)
-	if err != nil {
-		return
+	for _, leftover := range []string{
+		filepath.Join(nfsDir, isoTreeExtractPrefix+name),
+		filepath.Join(nfsDir, isoTreeOldPrefix+name),
+		tempFileFor(isoTreeMarker(nfsDir, name)),
+	} {
+		_ = os.RemoveAll(leftover)
 	}
-	for _, e := range entries {
-		n := e.Name()
-		if strings.HasPrefix(n, isoTreeExtractInfix+name+"_") || strings.HasPrefix(n, isoTreeOldInfix+name+"_") {
-			_ = os.RemoveAll(filepath.Join(nfsDir, n))
-		}
+}
+
+// tempFileFor returns the fixed name of the temporary file through which p
+// is written: ".tmp_<name of p>" in the same directory.
+func tempFileFor(p string) string {
+	return filepath.Join(filepath.Dir(p), tempFilePrefix+filepath.Base(p))
+}
+
+// createTempFileFor creates tempFileFor(p) for writing, replacing a leftover
+// from an interrupted attempt.
+func createTempFileFor(p string) (*os.File, error) {
+	tmpPath := tempFileFor(p)
+	if err := os.Remove(tmpPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
 	}
+	return os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 }
 
 // writeFileAtomic writes data to p (mode 0644) through a temporary file and
 // flushes it to disk.
 func writeFileAtomic(p string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(p), ".tmp-*")
+	tmp, err := createTempFileFor(p)
 	if err != nil {
 		return err
 	}
@@ -448,7 +467,7 @@ func copyFromTree(treeDir, rel, dst string) error {
 		return fmt.Errorf("%q in iso is not a regular file", rel)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".extract-*")
+	tmp, err := createTempFileFor(dst)
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
