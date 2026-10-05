@@ -115,6 +115,19 @@ jobs:
         cache-from: type=gha,scope=squid
         cache-to: type=gha,mode=max,scope=squid
 
+    - name: Build and push nfsd image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile.nfsd
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.IMAGE }}-nfsd:${{ steps.version.outputs.version }}
+          ${{ !contains(steps.version.outputs.version, '-') && format('{0}-nfsd:latest', env.IMAGE) || '' }}
+        cache-from: type=gha,scope=nfsd
+        cache-to: type=gha,mode=max,scope=nfsd
+
     - uses: azure/setup-helm@v4
 
     - name: Package and push Helm chart
