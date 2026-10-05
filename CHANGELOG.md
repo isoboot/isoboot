@@ -47,6 +47,10 @@
   kubebuilder v4.13.0 (the `PROJECT` scaffold version), kubectl v1.36.5. E2E:
   k3s v1.36.5+k3s1 and Helm v3.22.0 (`test/e2e/provision/lib.sh`). Lint plugin
   logtools v0.10.1. CI runners: ubuntu-24.04 instead of ubuntu-latest.
+  Images: Go builder golang:1.27.1, runtime distroless/static pinned by
+  digest, Alpine 3.24.2 (was 3.23) for dnsmasq, squid and init containers,
+  nginx-unprivileged 1.31.6-alpine (was the floating 1.29-alpine). Alpine
+  packages (`apk add`) still come from the 3.24 branch at build time.
 - Fix the controller being OOM-killed at its 128Mi limit while downloading or
   unpacking a multi-GB ISO: large writes are flushed to disk every 32 MiB, so
   dirty page cache no longer counts against the pod
