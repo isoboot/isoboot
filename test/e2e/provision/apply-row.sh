@@ -80,4 +80,5 @@ for i in $(seq 1 30); do
   [ "$i" = 30 ] && fail "Provision did not reach phase Pending (got '$(provision_phase)')"
   sleep 2
 done
+assert_no_restarts
 pass "row $ROW_ID resources applied; Provision is Pending"

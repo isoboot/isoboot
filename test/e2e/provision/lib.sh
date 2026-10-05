@@ -247,3 +247,61 @@ assert_host_key() {
   actual=$(ssh-keyscan -t "$type" "$host" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | awk '{print $2}' || true)
   [ "$expected" = "$actual" ] || fail "$type host key: expected $expected, got ${actual:-none}"
 }
+
+# assert_stalls <checks> <seconds between checks>: the negative row's proof.
+# The installer has no firmware for its NIC, so it never gets a network: the
+# Provision must stay exactly Pending throughout (an unreadable phase fails
+# too), and nginx must never have served the Provision's automation files,
+# which are the installer's first fetch once it has a network.
+assert_stalls() {
+  local checks=$1 interval=$2 phase access i
+  for i in $(seq 1 "$checks"); do
+    phase=$(provision_phase)
+    [ "$phase" = Pending ] \
+      || fail "Provision is '${phase:-<unreadable>}' at check $i/$checks; it must stay Pending (no NIC firmware, so no network)"
+    [ $((i % 6)) = 1 ] && log "phase=$phase (check $i/$checks)"
+    sleep "$interval"
+  done
+  access=$(nginx_access_log)
+  [ -n "$access" ] || fail "could not read the nginx access log"
+  if grep -F "GET /dynamic/automation/$PROVISION/" <<<"$access"; then
+    fail "the installer fetched its automation files (above): it had a network without NIC firmware"
+  fi
+  pass "Provision stayed Pending and the installer fetched nothing: no network without NIC firmware"
+}
+
+# assert_nfs_cmdline <serial log> <bootconfig>: the guest kernel's own command
+# line (printed on the serial console) mounts the tree over NFS and has
+# nothing that copies the ISO into RAM (url=, iso-url=, toram).
+assert_nfs_cmdline() {
+  local serial=$1 bootconfig=$2 cmdline
+  cmdline=$(grep -a -m1 'Command line:' "$serial" | tr -d '\r') \
+    || fail "no kernel command line in $serial"
+  cmdline=" ${cmdline#*Command line: } "
+  case $cmdline in
+    *" netboot=nfs "*) ;;
+    *) fail "kernel command line has no netboot=nfs:$cmdline" ;;
+  esac
+  case $cmdline in
+    *" nfsroot=$HOST_IP:/$bootconfig "*) ;;
+    *) fail "kernel command line has no nfsroot=$HOST_IP:/$bootconfig:$cmdline" ;;
+  esac
+  case $cmdline in
+    *" url="* | *" iso-url="* | *" toram "* | *" toram="*)
+      fail "kernel command line would copy the ISO into RAM:$cmdline" ;;
+  esac
+  pass "kernel command line: netboot=nfs nfsroot=$HOST_IP:/$bootconfig, no url=, iso-url= or toram"
+}
+
+# assert_no_restarts: fail if any container of an isoboot pod has restarted
+# (an OOM kill the controller recovers from would otherwise go unnoticed).
+assert_no_restarts() {
+  local restarts
+  restarts=$(kc get pods -o json | jq -r '.items[] | .metadata.name as $pod
+      | ((.status.initContainerStatuses // []) + (.status.containerStatuses // []))[]
+      | select(.restartCount > 0)
+      | "\($pod)/\(.name) restarts=\(.restartCount) last=\(.lastState.terminated.reason // "?")"') \
+    || fail "could not list the isoboot pods"
+  [ -z "$restarts" ] || fail "isoboot pods restarted: $restarts"
+  pass "no isoboot pod restarted"
+}

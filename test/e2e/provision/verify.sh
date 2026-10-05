@@ -89,4 +89,5 @@ if [ "$(row verify_rtl_firmware)" = true ]; then
   pass "r8169 detected the RTL8168 device"
 fi
 
+assert_no_restarts
 pass "all checks for $ROW_ID"
