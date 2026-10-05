@@ -16,11 +16,20 @@ if [ "$E2E_IMAGES" = ghcr ]; then
 fi
 
 cd "$REPO_ROOT"
+# Builds fetch base images and packages over the network, so a flaky link
+# (seen on a WiFi test box: apk add failing once) gets two more tries. A
+# broken Dockerfile fails all three.
 build() {
-  local tag=$1 file=$2
-  log "Building $tag"
-  sudo DOCKER_BUILDKIT=1 docker build -q -f "$file" \
-    --build-arg "ALPINE_VERSION=$ALPINE_VERSION" -t "$tag" . >/dev/null
+  local tag=$1 file=$2 attempt
+  for attempt in 1 2 3; do
+    log "Building $tag (attempt $attempt of 3)"
+    if sudo DOCKER_BUILDKIT=1 docker build -q -f "$file" \
+      --build-arg "ALPINE_VERSION=$ALPINE_VERSION" -t "$tag" . >/dev/null; then
+      return 0
+    fi
+    [ "$attempt" = 3 ] || sleep 15
+  done
+  fail "could not build $tag in 3 attempts"
 }
 build "$IMAGE:$E2E_VERSION" Dockerfile
 build "$IMAGE-dnsmasq:$E2E_VERSION" Dockerfile.dnsmasq
