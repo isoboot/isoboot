@@ -28,9 +28,11 @@ import (
 	"github.com/diskfs/go-diskfs/disk"
 	"github.com/diskfs/go-diskfs/filesystem"
 	"github.com/diskfs/go-diskfs/filesystem/iso9660"
+	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/types"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
@@ -391,6 +393,60 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(initrd)).To(Equal("INITRD-BYTES"))
 		Expect(nfsEntries()).To(ConsistOf("iso-bc-nokernel", ".source_iso-bc-nokernel"))
+	})
+
+	It("does not extract an ISO again right after its extraction failed", func() {
+		// Count extractions through the log the reconciler is given.
+		extractions := 0
+		ctx = logf.IntoContext(ctx, funcr.New(func(_, args string) {
+			if strings.Contains(args, `"Extracting ISO tree"`) {
+				extractions++
+			}
+		}, funcr.Options{}))
+		// A name extraction rejects, so every attempt fails the same way.
+		defer readyISOArtifact("iso-fail", map[string]string{`casper/a\b`: "x", "casper/vmlinuz": "K", "casper/initrd": "I"}, nil)()
+		defer makeISOConfig("iso-bc-fail", "iso-fail", "casper/vmlinuz", "casper/initrd")()
+
+		var results []reconcile.Result
+		for range 3 {
+			result, err := doReconcile("iso-bc-fail")
+			Expect(err).NotTo(HaveOccurred())
+			results = append(results, result)
+		}
+		Expect(extractions).To(Equal(1))
+		status := getStatus("iso-bc-fail")
+		Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+		Expect(status.Message).To(ContainSubstring("unsafe name"))
+		for _, r := range results {
+			Expect(r.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(r.RequeueAfter).To(BeNumerically("<=", 10*time.Second))
+		}
+
+		// A new ISO file is tried at once.
+		Expect(writeTestISO(isoPathFor("iso-fail"), contents, nil)).To(Succeed())
+		later := time.Now().Add(time.Minute)
+		Expect(os.Chtimes(isoPathFor("iso-fail"), later, later)).To(Succeed())
+		_, err := doReconcile("iso-bc-fail")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(extractions).To(Equal(2))
+		Expect(getStatus("iso-bc-fail").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+	})
+
+	It("waits twice as long after each failed extraction of the same ISO", func() {
+		reconciler.now = func() time.Time { return time.Unix(1_000_000, 0) }
+		defer readyISOArtifact("iso-fail2", map[string]string{`casper/a\b`: "x"}, nil)()
+		defer makeISOConfig("iso-bc-fail2", "iso-fail2", "casper/vmlinuz", "casper/initrd")()
+
+		var delays []time.Duration
+		for range 3 {
+			result, err := doReconcile("iso-bc-fail2")
+			Expect(err).NotTo(HaveOccurred())
+			delays = append(delays, result.RequeueAfter)
+			// Let the backoff pass, so the next reconcile extracts again.
+			current := reconciler.now()
+			reconciler.now = func() time.Time { return current.Add(result.RequeueAfter) }
+		}
+		Expect(delays).To(Equal([]time.Duration{10 * time.Second, 20 * time.Second, 40 * time.Second}))
 	})
 
 	It("writes the same status message when the same failure repeats", func() {

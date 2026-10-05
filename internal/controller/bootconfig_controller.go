@@ -24,9 +24,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,6 +49,85 @@ type BootConfigReconciler struct {
 	// NFSDir holds one extracted ISO tree per ISO-mode BootConfig; nfsd
 	// exports each of its subdirectories.
 	NFSDir string
+
+	// now returns the current time; nil means time.Now. Tests set it.
+	now func() time.Time
+
+	mu sync.Mutex
+	// extractionFailures remembers, per BootConfig, the ISO whose extraction
+	// last failed, so that it is not unpacked again before its backoff ends.
+	extractionFailures map[types.NamespacedName]*extractionFailure
+}
+
+// extractionFailure records failed extractions of one ISO for one BootConfig.
+type extractionFailure struct {
+	// attempt identifies what was extracted: the ISO file and the files
+	// required in its tree.
+	attempt  string
+	message  string
+	failures int
+	retryAt  time.Time
+}
+
+// First and longest wait before extracting an ISO again after a failure.
+// The wait doubles with each failure in between: a multi-GB extraction that
+// fails the same way every time (an unsupported ISO, a full disk) must not
+// run every few seconds.
+const (
+	extractionRetryFirst = 10 * time.Second
+	extractionRetryMax   = 30 * time.Minute
+)
+
+func (r *BootConfigReconciler) currentTime() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
+}
+
+// pendingExtractionFailure returns the failure recorded for key and attempt
+// while its backoff has not ended, or nil.
+func (r *BootConfigReconciler) pendingExtractionFailure(key types.NamespacedName, attempt string) *extractionFailure {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	f := r.extractionFailures[key]
+	if f == nil || f.attempt != attempt || !r.currentTime().Before(f.retryAt) {
+		return nil
+	}
+	return f
+}
+
+// recordExtractionFailure records a failed extraction and returns how long to
+// wait before the next one.
+func (r *BootConfigReconciler) recordExtractionFailure(key types.NamespacedName, attempt, message string) time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.extractionFailures == nil {
+		r.extractionFailures = map[types.NamespacedName]*extractionFailure{}
+	}
+	f := r.extractionFailures[key]
+	if f == nil || f.attempt != attempt {
+		f = &extractionFailure{attempt: attempt}
+		r.extractionFailures[key] = f
+	}
+	delay := extractionRetryFirst
+	for range f.failures {
+		delay *= 2
+		if delay >= extractionRetryMax {
+			delay = extractionRetryMax
+			break
+		}
+	}
+	f.failures++
+	f.message = message
+	f.retryAt = r.currentTime().Add(delay)
+	return delay
+}
+
+func (r *BootConfigReconciler) forgetExtractionFailure(key types.NamespacedName) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.extractionFailures, key)
 }
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootconfigs,verbs=get;list;watch
@@ -69,6 +150,7 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if err := removeISOTree(r.NFSDir, req.Name); err != nil {
 			log.Error(err, "Failed to clean up NFS tree", "name", req.Name)
 		}
+		r.forgetExtractionFailure(req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
 
@@ -210,9 +292,18 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 	if err != nil {
 		return r.setError(ctx, bc, err.Error())
 	}
-	if err := ensureISOTree(log, isoPath, source, r.NFSDir, bc.Name, []string{iso.KernelPath, iso.InitrdPath}); err != nil {
-		return r.setError(ctx, bc, fmt.Sprintf("extracting iso tree: %v", err))
+	key := client.ObjectKeyFromObject(bc)
+	attempt := fmt.Sprintf("%skernel=%s\ninitrd=%s\n", source, iso.KernelPath, iso.InitrdPath)
+	if f := r.pendingExtractionFailure(key, attempt); f != nil {
+		return r.setErrorUntil(ctx, bc, f.message, f.retryAt.Sub(r.currentTime()))
 	}
+	if err := ensureISOTree(log, isoPath, source, r.NFSDir, bc.Name, []string{iso.KernelPath, iso.InitrdPath}); err != nil {
+		message := fmt.Sprintf("extracting iso tree: %v", err)
+		delay := r.recordExtractionFailure(key, attempt, message)
+		log.Info("ISO extraction failed, waiting before the next attempt", "retryAfter", delay)
+		return r.setErrorUntil(ctx, bc, message, delay)
+	}
+	r.forgetExtractionFailure(key)
 
 	bootDir := filepath.Join(r.DataDir, "boot", bc.Name)
 	if err := os.MkdirAll(bootDir, 0o755); err != nil {
@@ -370,8 +461,16 @@ func (r *BootConfigReconciler) setPending(ctx context.Context, bc *isobootgithub
 }
 
 func (r *BootConfigReconciler) setError(ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig, message string) (ctrl.Result, error) {
+	return r.setErrorUntil(ctx, bc, message, 10*time.Second)
+}
+
+// setErrorUntil sets the Error phase and asks to be reconciled again after
+// retryAfter.
+func (r *BootConfigReconciler) setErrorUntil(
+	ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig, message string, retryAfter time.Duration,
+) (ctrl.Result, error) {
 	if bc.Status.Phase == isobootgithubiov1alpha1.BootConfigPhaseError && bc.Status.Message == message {
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 	log := logf.FromContext(ctx)
 	log.Info("BootConfig error", "message", message)
@@ -380,7 +479,7 @@ func (r *BootConfigReconciler) setError(ctx context.Context, bc *isobootgithubio
 	if err := r.Status().Update(ctx, bc); err != nil {
 		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
 	}
-	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: retryAfter}, nil
 }
 
 func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, obj client.Object) []reconcile.Request {
