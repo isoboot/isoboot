@@ -58,6 +58,92 @@
   Linux (the skip check compared coarse timestamps); they are now compared by
   content and keep their inode when unchanged
 
+### From the adversarial review of PR #389
+
+Security:
+- `/automation` files are served only while the Provision is `Pending` or
+  `InProgress` (404 otherwise), so SSH host keys and password hashes are no
+  longer readable after an install. `/automation` and `/conditional-boot`
+  answers carry `Cache-Control: no-store`, so squid no longer stores rendered
+  install files on disk.
+- **BREAKING (chart)**: the controller (new flag `--namespace`) and httpd see
+  only the release namespace, with a Role and RoleBinding there instead of
+  ClusterRoles. The controller no longer has any access to Secrets or
+  ConfigMaps; only httpd reads them.
+- nginx serves `/static/` and `/dynamic/` only to `dnsmasq.subnet` and
+  localhost. squid serves only that subnet and refuses loopback
+  (127.0.0.0/8), link-local addresses, `squid.blockedDestinationCIDRs`
+  (default: the k3s pod and service networks), ports other than 80, 443 and
+  nginx's port, and CONNECT except to 443.
+- nfsd: new repeatable `--allow-cidr` (chart value `nfsd.allowedCIDRs`,
+  default `dnsmasq.subnet`); connections from other addresses are closed and
+  logged, rate-limited. Link-local IPv6 clients match too.
+- nfsd: requests are checked before go-nfs decodes them (at most 8 KiB;
+  credentials at most 400 bytes; every declared length must fit), so a
+  76-byte call can no longer make nfsd allocate gigabytes.
+- nfsd: at most 8 NFS connections per client address and 512 in all, 4
+  port-mapper connections per address and 1024 in all; port-mapper calls must
+  arrive within 2 s and NFS requests within 10 s.
+- nfsd: READs are capped at 1 MiB and share a 32 MiB in-flight budget; FSINFO
+  advertises 1 MiB reads and 4 KiB writes instead of 1 GiB. `GOMEMLIMIT`
+  (chart value `nfsd.goMemLimit`, 200MiB) keeps it under its memory limit.
+
+Fixes:
+- nfsd: no longer leaks the goroutines and replies of every connection whose
+  reply write failed (a go-nfs bug, worked around in isoboot).
+- `/conditional-boot` boots the installer only when the BootConfig is Ready;
+  otherwise it answers 404 and logs why. MACs are compared in lower case.
+- The BootConfig controller checks `kernelArgs` (rendered with sample values,
+  one line; a final line break is allowed) and sets Error with
+  "invalid kernelArgs: ..." instead of failing when a machine boots.
+- A new ISO whose kernel or initrd path is missing no longer replaces the
+  exported tree. A failed extraction is retried with backoff (10 s doubling to
+  30 min), not every 10 s, and error messages no longer contain random temp
+  names that made every status update trigger another reconcile.
+- The extracted tree, its marker and the kernel/initrd copies are fsynced
+  before the marker is written; editing only an ISO artifact's hash text no
+  longer re-extracts it; switching a BootConfig between netboot and iso mode
+  no longer leaves it in Error; trees and boot directories of BootConfigs
+  deleted while the controller was down are removed at startup.
+- IPv6 `X-Forwarded-Host` values no longer produce `[[addr]]` URLs.
+- New `required` template function for install files
+  (`{{ required .Secrets "key" }}`) fails the render when a key is missing.
+- **BREAKING**: BootConfig names are limited to 200 characters.
+
+Packaging and CI:
+- **BREAKING (chart)**: one `isoboot` image holds `/manager`, `/httpd` and
+  `/nfsd`; the `isoboot-httpd` and `isoboot-nfsd` images and the chart's
+  `httpd.image` and `nfsd.image` values are gone. `nfsd.portmapPort` is
+  removed (always 111). `dnsmasq.subnet` must be an IPv4 CIDR.
+- The node-pinned Deployments use strategy `Recreate`, so `helm upgrade` no
+  longer hangs; nginx restarts when its configuration changes; the metrics
+  Service selects only the controller.
+- Every PR lints and renders the chart, runs squid and nginx in Docker to check
+  who they serve, checks the workflows (actionlint, permissions, pins), checks
+  `rows.json`, self-tests the E2E scripts and runs shellcheck. Actions are
+  pinned by commit SHA; tokens are read-only except in jobs that push; labels
+  other than `e2e` no longer restart the provision E2E.
+- Release: images are pushed with the version tag and tested before the chart
+  and `latest` are published.
+
+E2E:
+- The scripts refuse to run on a host that is not a GitHub runner, a VM made
+  by `hack/e2e-local.sh` or explicitly allowed (`E2E_ALLOW_THIS_HOST=1`), and
+  always use k3s's own kubeconfig.
+- Checks that could never fail now can: password login, the Debian
+  no-firmware row (must stay Pending and never fetch its preseed), a missing
+  host key. Ubuntu rows check the guest's real kernel command line
+  (`netboot=nfs`, `nfsroot=`, no `url=`). A row fails if any isoboot container
+  restarted.
+- Waits follow download and unpack progress instead of a fixed 10 minutes.
+  The local runner keeps downloads in its VM, never deletes a VM it did not
+  create, and treats zero rows as an error.
+- QEMU, iPXE and the k3s install script are pinned and checksummed. The Kind
+  E2E pins the hash of its test file.
+- Docs: README describes the current system, its security defaults and
+  limitations; AGENTS.md is specific to this repo; PLAN.md is removed;
+  `config/samples` use the pinned Rocky 10.2 artifacts.
+
 ## v0.0.2-rc3
 
 - Add `POST /dynamic/status` endpoint for provision phase updates
