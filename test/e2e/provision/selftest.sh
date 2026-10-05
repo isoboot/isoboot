@@ -373,6 +373,49 @@ else
   expect pass "... and never runs it" "" bash -c "! grep '^sh ' '$tmp/build-calls'"
 fi
 
+# ── check-rows.sh (contract 8, e2e-09) ─────────────────────────────
+# rows_case <jq edit of rows.json> [sed edit of examples/ubuntu-26.04.yaml]
+rows_case() {
+  local dir
+  dir=$(mktemp -d "$tmp/rows.XXXX")
+  cp -R "$repo/examples" "$dir/examples"
+  jq "$1" "$here/rows.json" > "$dir/rows.json"
+  [ -z "${2:-}" ] || sed -i "$2" "$dir/examples/ubuntu-26.04.yaml"
+  "$here/check-rows.sh" "$dir/rows.json" "$dir/examples"
+}
+ubuntu='(.[] | select(.id == "ubuntu-26.04"))'
+expect pass "rows: the real rows.json passes" "6 rows .* are consistent" "$here/check-rows.sh"
+expect fail "rows: an NFS row without \"nfs\" fails" 'ubuntu-26.04: a row with iso_artifact boots over NFS and needs "nfs": true' \
+  rows_case "$ubuntu |= del(.nfs)"
+expect fail "rows: \"nfs\": \"yes\" fails" '"nfs" must be true or false' \
+  rows_case "$ubuntu.nfs = \"yes\""
+expect fail "rows: an NFS row with 8192 MB fails" "must have ram_mb <= 2048 \(has 8192\)" \
+  rows_case "$ubuntu.ram_mb = 8192"
+expect fail "rows: a misspelt expect fails" 'expect "stal" must be complete or stall' \
+  rows_case '(.[] | select(.id == "debian-13")).expect = "stal"'
+expect fail "rows: a stall row on virtio fails" "the stall row proves the missing NIC firmware" \
+  rows_case '(.[] | select(.id == "debian-13")).nic = "virtio"'
+expect fail "rows: a misspelt field fails" 'unknown field "nsf"' \
+  rows_case "$ubuntu.nsf = true"
+expect fail "rows: a duplicate MAC fails" 'duplicate mac "02-00-00-ab-cd-04"' \
+  rows_case '(.[] | select(.id == "rocky-10.2")).mac = "02-00-00-ab-cd-04"'
+expect fail "rows: a MAC with colons fails" "must be lower-case hex pairs joined by hyphens" \
+  rows_case "$ubuntu.mac = \"02:00:00:ab:cd:09\""
+expect fail "rows: a missing manifest fails" "examples/ubuntu-27.04.yaml does not exist" \
+  rows_case "$ubuntu.manifests = [\"ubuntu-27.04\"]"
+expect fail "rows: a missing automation file fails" "automation/user-data-27 does not exist" \
+  rows_case "$ubuntu.automation[\"user-data\"] = \"user-data-27\""
+expect fail "rows: a BootConfig the manifests do not define fails" 'define no BootConfig "ubuntu-26.4"' \
+  rows_case "$ubuntu.bootconfig = \"ubuntu-26.4\""
+expect fail "rows: a netboot row whose kernel differs from the BootConfig's fails" 'uses kernel "alma-10.2-kernel", the row says "rocky-10.2-kernel"' \
+  rows_case '(.[] | select(.id == "alma-10.2")).kernel_artifact = "rocky-10.2-kernel" | (.[] | select(.id == "alma-10.2")).manifests += ["rocky-10.2"]'
+expect fail "rows: kernelArgs with url= fail" "would copy the ISO into RAM" \
+  rows_case . 's| fsck.mode=skip| url=http://example.org/u.iso fsck.mode=skip|'
+expect fail "rows: kernelArgs without netboot=nfs fail" "kernelArgs must have netboot=nfs" \
+  rows_case . 's| netboot=nfs||'
+expect fail "rows: invalid JSON fails" "is not valid JSON" \
+  bash -c "echo '[{' > '$tmp/broken.json'; '$here/check-rows.sh' '$tmp/broken.json'"
+
 echo
 if [ "$failures" -gt 0 ]; then
   echo "selftest: $failures check(s) failed"
