@@ -8,6 +8,11 @@ metadata:
     {{- include "isoboot.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  # One pod pinned to one node, kept apart from its own replacement by
+  # anti-affinity (and host ports): a rolling update's extra pod could never
+  # be scheduled, so stop the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "isoboot.selectorLabels" . | nindent 6 }}
@@ -34,8 +39,10 @@ spec:
         args:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=:8443
+        - "--namespace={{ .Release.Namespace }}"
         - "--data-dir={{ .Values.dataDir }}/nginx/static"
-        - "--nfs-dir={{ .Values.dataDir }}/nfs"
+        # Empty without nfsd: iso-mode BootConfigs then go to Error.
+        - "--nfs-dir={{ if .Values.nfsd.enabled }}{{ .Values.dataDir }}/nfs{{ end }}"
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: "{{ .Values.image.pullPolicy }}"
         {{- include "isoboot.restrictedSecurityContext" . | nindent 8 }}

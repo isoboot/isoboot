@@ -2,17 +2,22 @@ name: Provision E2E
 
 on:
   workflow_dispatch:
-  # Runs on PRs carrying the "e2e" label (and on each push to them).
+  # Runs on PRs carrying the "e2e" label: when the label is added and on each
+  # push to (or reopen of) such a PR. Adding any other label runs nothing.
+  # Fork PRs get a read-only token and cannot push the images: a maintainer
+  # runs those with workflow_dispatch on a branch of this repository.
   pull_request:
     types: [labeled, synchronize, reopened]
 
+# Read-only by default; only the build job may push packages.
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  # The suffix keeps label events on unlabeled PRs from cancelling real runs.
-  group: provision-e2e-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'e2e') }}
+  # The suffix is the jobs' run condition (without the fork check), so events
+  # that run nothing (another label added, any event on an unlabelled PR)
+  # never cancel a real run.
+  group: provision-e2e-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' || (contains(github.event.pull_request.labels.*.name, 'e2e') && (github.event.action != 'labeled' || github.event.label.name == 'e2e')) }}
   cancel-in-progress: true
 
 env:
@@ -22,13 +27,21 @@ env:
 jobs:
   rows:
     name: Rows
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (contains(github.event.pull_request.labels.*.name, 'e2e') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'e2e') &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       matrix: ${{ steps.rows.outputs.matrix }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
 
     # test/e2e/provision/rows.json is the one list of rows, for CI and local runs.
     - name: Read rows
@@ -40,13 +53,23 @@ jobs:
 
   build:
     name: Build & Push (amd64)
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (contains(github.event.pull_request.labels.*.name, 'e2e') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'e2e') &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # The only job that may push: the images and the chart under test.
+    permissions:
+      contents: read
+      packages: write
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
 
     - name: Read Alpine version
       run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
@@ -56,17 +79,17 @@ jobs:
       run: echo "version=0.0.0-sha.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
     - name: Log in to GHCR
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-    - name: Build and push isoboot image
-      uses: docker/build-push-action@v6
+    - name: Build and push isoboot image (manager, httpd, nfsd)
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
       with:
         context: .
         platforms: linux/amd64
@@ -76,7 +99,7 @@ jobs:
         cache-to: type=gha,mode=max
 
     - name: Build and push dnsmasq image
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
       with:
         context: .
         file: Dockerfile.dnsmasq
@@ -87,19 +110,8 @@ jobs:
         cache-from: type=gha,scope=dnsmasq
         cache-to: type=gha,mode=max,scope=dnsmasq
 
-    - name: Build and push httpd image
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: Dockerfile.httpd
-        platforms: linux/amd64
-        push: true
-        tags: ${{ env.IMAGE }}-httpd:${{ steps.version.outputs.version }}
-        cache-from: type=gha,scope=httpd
-        cache-to: type=gha,mode=max,scope=httpd
-
     - name: Build and push squid image
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
       with:
         context: .
         file: Dockerfile.squid
@@ -110,18 +122,9 @@ jobs:
         cache-from: type=gha,scope=squid
         cache-to: type=gha,mode=max,scope=squid
 
-    - name: Build and push nfsd image
-      uses: docker/build-push-action@v6
+    - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
       with:
-        context: .
-        file: Dockerfile.nfsd
-        platforms: linux/amd64
-        push: true
-        tags: ${{ env.IMAGE }}-nfsd:${{ steps.version.outputs.version }}
-        cache-from: type=gha,scope=nfsd
-        cache-to: type=gha,mode=max,scope=nfsd
-
-    - uses: azure/setup-helm@v4
+        version: v3.22.0
 
     - name: Package and push Helm chart
       env:
@@ -133,13 +136,17 @@ jobs:
         helm push "/tmp/charts/isoboot-${VERSION}.tgz" "oci://${REGISTRY}/isoboot/charts"
 
   # Every step runs a phase script from test/e2e/provision/ (via run.sh), the
-  # same code hack/e2e-local.sh runs in a local VM. Only CI plumbing (GHCR
-  # login, caches, artifact upload) lives here.
+  # same code hack/e2e-local.sh runs in a local VM. Only CI plumbing (caches,
+  # artifact upload) lives here. These jobs run PR code and third-party
+  # downloads as root, so they get a read-only token and no registry login:
+  # the images and the chart are public and pulled anonymously.
   provision-test:
     name: Provision E2E — ${{ matrix.name }}
     needs: [rows, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 100
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.rows.outputs.matrix) }}
@@ -148,7 +155,9 @@ jobs:
       E2E_VERSION: ${{ needs.build.outputs.version }}
       ROW: ${{ matrix.id }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
 
     # The NFS rows keep the ISO and its unpacked tree on the runner's disk.
     - name: Free disk space
@@ -159,7 +168,7 @@ jobs:
 
     - name: Cache RTL8168 QEMU build
       if: matrix.nic == 'rtl8168'
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/qemu-cache
         key: qemu-rtl8168-${{ hashFiles('test/qemu/build-qemu.sh', 'test/qemu/rtl8168.c') }}
@@ -175,7 +184,7 @@ jobs:
 
     - name: Restore squid cache
       id: squid-cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: /tmp/squid-cache
         key: squid-${{ matrix.id }}-
@@ -188,13 +197,6 @@ jobs:
         sudo tar xf /tmp/squid-cache/squid-cache.tar.gz -C /data/isoboot/squid/cache
         sudo chown -R 31:31 /data/isoboot/squid/cache
         echo "Restored squid cache ($(sudo du -sm /data/isoboot/squid/cache | awk '{print $1}')MB)"
-
-    - name: Log in to GHCR
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Images
       run: test/e2e/provision/run.sh "$ROW" images
@@ -221,7 +223,7 @@ jobs:
 
     - name: Upload logs
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: e2e-logs-${{ matrix.id }}
         path: /tmp/isoboot-e2e/${{ matrix.id }}/logs
@@ -251,7 +253,7 @@ jobs:
 
     - name: Upload squid cache
       if: always() && env.SAVE_SQUID == 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: /tmp/squid-cache
         key: squid-${{ matrix.id }}-${{ github.run_id }}

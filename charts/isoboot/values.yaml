@@ -8,6 +8,8 @@ nameOverride: ""
 nodeName: ""
 
 alpineImage: alpine:3.24.2
+# The one isoboot image: it holds /manager (the controller), /httpd and /nfsd,
+# and each Deployment runs its own program from it.
 image:
   repository: ghcr.io/isoboot/isoboot
   # tag defaults to .Chart.AppVersion if omitted
@@ -44,10 +46,6 @@ resources:
     memory: 64Mi
 
 httpd:
-  image:
-    repository: ghcr.io/isoboot/isoboot-httpd
-    # tag defaults to .Chart.AppVersion if omitted
-    tag: ""
   # No conflict with nginx.port — httpd uses ClusterIP networking, nginx uses hostNetwork.
   port: 8080
   resources:
@@ -64,6 +62,13 @@ squid:
     # tag defaults to .Chart.AppVersion if omitted
     tag: ""
   port: 3128
+  # Destinations squid refuses besides the node itself (127.0.0.0/8) and
+  # link-local addresses: the cluster's pod and service networks, so PXE
+  # clients cannot reach in-cluster services through the proxy. The defaults
+  # are k3s's; set your cluster's.
+  blockedDestinationCIDRs:
+  - 10.42.0.0/16
+  - 10.43.0.0/16
   maxObjectSize: "1024 MB"
   # 0 uses squid's compiled-in default (typically 256 MB).
   cacheMemMB: 0
@@ -79,7 +84,8 @@ squid:
       memory: 128Mi
 
 dnsmasq:
-  # subnet is required (e.g. "192.168.101.0/24").
+  # subnet is required (e.g. "192.168.101.0/24"): the PXE subnet. Only it (and
+  # the node itself) may use nginx, squid and nfsd.
   subnet: ""
   ipxe:
     url: "https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz"
@@ -99,20 +105,21 @@ dnsmasq:
 # nfsd exports the unpacked tree of every iso-mode BootConfig read-only over
 # NFSv3/TCP as /<bootconfig-name> (Ubuntu live-server installers boot with
 # netboot=nfs nfsroot={{.NFSRoot}}). It runs on the host network as UID 0 with
-# only the NET_BIND_SERVICE capability.
+# only the NET_BIND_SERVICE capability. Its port mapper always listens on TCP
+# 111, the only port the installer's NFS client asks.
 # Nothing else on the node may listen on TCP 111 or on nfsd.port: stop and
 # mask rpcbind (pulled in by nfs-common) and any kernel NFS server first, e.g.
 #   sudo systemctl disable --now rpcbind.socket rpcbind.service nfs-server
 nfsd:
+  # false disables Ubuntu installs: Ubuntu BootConfigs (iso mode) need nfsd,
+  # and with it off the controller puts them in Error instead of unpacking
+  # their ISOs. Netboot BootConfigs (Debian, Rocky) do not use nfsd.
   enabled: true
-  image:
-    repository: ghcr.io/isoboot/isoboot-nfsd
-    # tag defaults to .Chart.AppVersion if omitted
-    tag: ""
   # NFS and MOUNT share this port.
   port: 2049
-  # The installer's NFS client always asks the port mapper on TCP 111.
-  portmapPort: 111
+  # Client networks (CIDRs) allowed to use NFS, MOUNT and the port mapper;
+  # connections from anywhere else are closed. Empty means dnsmasq.subnet.
+  allowedCIDRs: []
   # info, debug, or trace (logs every request)
   logLevel: info
   resources:

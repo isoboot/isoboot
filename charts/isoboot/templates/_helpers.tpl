@@ -28,6 +28,19 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 {{- end -}}
 
+{{/*
+isoboot.subnet: dnsmasq.subnet, the PXE subnet, checked to be an IPv4 CIDR. It
+is written into the dnsmasq, nginx and squid configuration and limits who may
+use nginx, squid and nfsd, so anything else fails the render.
+*/}}
+{{- define "isoboot.subnet" -}}
+{{- $subnet := required "dnsmasq.subnet is required (the PXE subnet, e.g. 192.168.101.0/24)" .Values.dnsmasq.subnet -}}
+{{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$" $subnet) -}}
+{{- fail (printf "dnsmasq.subnet must be an IPv4 CIDR such as 192.168.101.0/24, got %q" $subnet) -}}
+{{- end -}}
+{{- $subnet -}}
+{{- end -}}
+
 {{- define "isoboot.affinity" -}}
 affinity:
   nodeAffinity:

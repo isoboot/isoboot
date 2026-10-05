@@ -46,8 +46,10 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@# The chart ships the generated CRDs unchanged in crds/, which Helm installs
-	@# (and waits for) before any template. verify-manifests catches drift.
+	@# (and waits for) before any template, and takes the controller's RBAC rules
+	@# from the generated role. verify-manifests catches drift.
 	mkdir -p charts/isoboot/crds && rm -f charts/isoboot/crds/*.yaml && cp config/crd/bases/*.yaml charts/isoboot/crds/
+	cp config/rbac/role.yaml charts/isoboot/files/manager-role.yaml
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -106,11 +108,25 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
 
+.PHONY: chart-test
+chart-test: helm yq ## Lint the Helm chart and check what it renders.
+	HELM="$(HELM)" YQ="$(YQ)" hack/chart-test.sh
+
+.PHONY: check-workflows
+check-workflows: actionlint yq ## Lint the GitHub workflows and check their permissions and pins.
+	ACTIONLINT="$(ACTIONLINT)" YQ="$(YQ)" hack/check-workflows.sh
+
+.PHONY: subnet-access-test
+subnet-access-test: helm yq ## Run the chart's squid and nginx in Docker and check who they serve.
+	HELM="$(HELM)" YQ="$(YQ)" hack/subnet-access-test.sh
+
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+build: manifests generate fmt vet ## Build the manager, httpd and nfsd binaries.
+	go build -o bin/manager ./cmd/
+	go build -o bin/httpd ./cmd/httpd/
+	go build -o bin/nfsd ./cmd/nfsd/
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -120,49 +136,19 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-docker-build: ## Build docker image with the manager.
+docker-build: ## Build the docker image with the manager, httpd and nfsd.
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push
-docker-push: ## Push docker image with the manager.
+docker-push: ## Push the docker image with the manager, httpd and nfsd.
 	$(CONTAINER_TOOL) push ${IMG}
 
 PLATFORMS ?= linux/amd64,linux/arm64
 .PHONY: docker-buildx
-docker-buildx: ## Build and push docker image for the manager for cross-platform support
+docker-buildx: ## Build and push the manager, httpd and nfsd image for cross-platform support
 	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
 	$(CONTAINER_TOOL) buildx use isoboot-builder
 	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} .
-	- $(CONTAINER_TOOL) buildx rm isoboot-builder
-
-.PHONY: build-httpd
-build-httpd: ## Build httpd binary.
-	go build -o bin/httpd ./cmd/httpd/
-
-.PHONY: docker-build-httpd
-docker-build-httpd: ## Build docker image with httpd.
-	$(CONTAINER_TOOL) build -t ${IMG}-httpd -f Dockerfile.httpd .
-
-.PHONY: docker-buildx-httpd
-docker-buildx-httpd: ## Build and push docker image for httpd for cross-platform support
-	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
-	$(CONTAINER_TOOL) buildx use isoboot-builder
-	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG}-httpd -f Dockerfile.httpd .
-	- $(CONTAINER_TOOL) buildx rm isoboot-builder
-
-.PHONY: build-nfsd
-build-nfsd: ## Build nfsd binary.
-	go build -o bin/nfsd ./cmd/nfsd/
-
-.PHONY: docker-build-nfsd
-docker-build-nfsd: ## Build docker image with nfsd.
-	$(CONTAINER_TOOL) build -t ${IMG}-nfsd -f Dockerfile.nfsd .
-
-.PHONY: docker-buildx-nfsd
-docker-buildx-nfsd: ## Build and push docker image for nfsd for cross-platform support
-	- $(CONTAINER_TOOL) buildx create --name isoboot-builder
-	$(CONTAINER_TOOL) buildx use isoboot-builder
-	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG}-nfsd -f Dockerfile.nfsd .
 	- $(CONTAINER_TOOL) buildx rm isoboot-builder
 
 .PHONY: docker-build-dnsmasq
@@ -232,6 +218,9 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+HELM ?= $(LOCALBIN)/helm
+YQ ?= $(LOCALBIN)/yq
+ACTIONLINT ?= $(LOCALBIN)/actionlint
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
@@ -248,6 +237,11 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.14.0
+# Same Helm as the provision E2E (HELM_VERSION in test/e2e/provision/lib.sh)
+# and the workflows; hack/check-workflows.sh fails when they differ.
+HELM_VERSION ?= v3.22.0
+YQ_VERSION ?= v4.54.1
+ACTIONLINT_VERSION ?= v1.7.12
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
@@ -270,6 +264,21 @@ setup-envtest: envtest ## Download the binaries required for ENVTEST in the loca
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+
+.PHONY: helm
+helm: $(HELM) ## Download helm locally if necessary.
+$(HELM): $(LOCALBIN)
+	$(call go-install-tool,$(HELM),helm.sh/helm/v3/cmd/helm,$(HELM_VERSION))
+
+.PHONY: yq
+yq: $(YQ) ## Download yq locally if necessary.
+$(YQ): $(LOCALBIN)
+	$(call go-install-tool,$(YQ),github.com/mikefarah/yq/v4,$(YQ_VERSION))
+
+.PHONY: actionlint
+actionlint: $(ACTIONLINT) ## Download actionlint locally if necessary.
+$(ACTIONLINT): $(LOCALBIN)
+	$(call go-install-tool,$(ACTIONLINT),github.com/rhysd/actionlint/cmd/actionlint,$(ACTIONLINT_VERSION))
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.

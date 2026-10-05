@@ -8,6 +8,11 @@ metadata:
     {{- include "isoboot.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  # One pod pinned to one node, kept apart from its own replacement by
+  # anti-affinity (and host ports): a rolling update's extra pod could never
+  # be scheduled, so stop the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "isoboot.selectorLabels" . | nindent 6 }}
@@ -31,7 +36,7 @@ spec:
         args:
         - |
           set -e
-          SUBNET="{{ .Values.dnsmasq.subnet }}"
+          SUBNET="{{ include "isoboot.subnet" . }}"
           IFACE=$(ip -4 route show "$SUBNET" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
           [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; ip -4 route show; exit 1; }
           HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -1)
@@ -98,7 +103,7 @@ spec:
           [ -n "$HOST_IP" ] || { echo "FAIL: host-ip not set"; exit 1; }
           IFACE=$(cat /config/iface)
           [ -n "$IFACE" ] || { echo "FAIL: iface not set"; exit 1; }
-          NETWORK=$(echo "{{ .Values.dnsmasq.subnet }}" | cut -d/ -f1)
+          NETWORK=$(echo "{{ include "isoboot.subnet" . }}" | cut -d/ -f1)
           echo "Using interface=$IFACE host_ip=$HOST_IP network=$NETWORK"
 
           exec dnsmasq \
