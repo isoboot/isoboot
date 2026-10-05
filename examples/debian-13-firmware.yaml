@@ -5,8 +5,8 @@ metadata:
   labels:
     app.kubernetes.io/name: isoboot
 spec:
-  url: https://cdimage.debian.org/cdimage/firmware/trixie/13.5.0/firmware.cpio.gz
-  sha256: "4de6d044f1587a91cf4cc834042c19a4e51701165881b0f1ef943e640532fbca"
+  url: https://cdimage.debian.org/cdimage/firmware/trixie/13.7.0/firmware.cpio.gz
+  sha256: "f890965e254944dc149236b3d46f88daab40d83dfec54d60dda3aa0ffd442d56"
 ---
 # Firmware-enabled BootConfig for Debian 13.
 # Apply together with debian-13.yaml (provides the kernel and initrd artifacts).

@@ -1,3 +1,6 @@
+# Debian 13.7 netboot installer. The URLs name the dated installer build
+# (20250803+deb13u7 = 13.7) instead of "current", whose files change with
+# every point release; hashes from that directory's images/SHA256SUMS.
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
 metadata:
@@ -5,8 +8,8 @@ metadata:
   labels:
     app.kubernetes.io/name: isoboot
 spec:
-  url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux
-  sha256: "4cc864b8e34c86c281f66b36157a52945a95a1b290762245c608b7c7e3934a11"
+  url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/20250803+deb13u7/images/netboot/debian-installer/amd64/linux
+  sha256: "2b2358b37674d2505350528875bb17afae2a36522a9e8a9417eaca65a7da0e08"
 ---
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootArtifact
@@ -15,8 +18,8 @@ metadata:
   labels:
     app.kubernetes.io/name: isoboot
 spec:
-  url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz
-  sha256: "53376f70d695276c5d9c903589348a966d0f57dc0bbd6a701d4a97300761ba40"
+  url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/20250803+deb13u7/images/netboot/debian-installer/amd64/initrd.gz
+  sha256: "57303d157cffce3fa402301667fbc9b2280aa7372082b081e777375ae49da5f2"
 ---
 apiVersion: isoboot.github.io/v1alpha1
 kind: BootConfig
