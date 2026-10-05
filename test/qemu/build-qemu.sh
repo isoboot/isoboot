@@ -1,14 +1,32 @@
 #!/usr/bin/env bash
 # Build QEMU from source with the custom RTL8168 device and an iPXE EFI
-# ROM so OVMF can PXE-boot through it.
-# Usage: ./build-qemu.sh [qemu-version]
+# ROM so OVMF can PXE-boot through it. Both sources are pinned and checked
+# before anything is built: QEMU by version and the sha256 of its release
+# tarball (taken from a tarball whose GPG signature checked out against
+# QEMU's release key CEACC9E15534EBABB82D3FA03353C9CEF108B584), iPXE by tag
+# and commit. The E2E cache key and stamp hash this file, so a new pin
+# rebuilds. Usage: ./build-qemu.sh
 set -euo pipefail
 
-QEMU_VERSION="${1:-8.2.2}"
+QEMU_VERSION=8.2.2
+QEMU_SHA256=847346c1b82c1a54b2c38f6edbd85549edeb17430b7d4d3da12620e2962bc4f3
+# The iPXE release the chart ships (dnsmasq.ipxe.url in values.yaml).
+IPXE_TAG=v2.0.0
+IPXE_COMMIT=12798ec29aa8a64d8675c4378b99f5fe28447afb
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="/tmp/qemu-build"
+BUILD_DIR=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR"' EXIT
 
-echo "=== Building QEMU ${QEMU_VERSION} + iPXE ROM for RTL8168 ==="
+echo "=== Building QEMU ${QEMU_VERSION} + iPXE ${IPXE_TAG} ROM for RTL8168 ==="
+
+# ── Fetch and check the sources ─────────────────────────────────
+curl -fsSLo "$BUILD_DIR/qemu.tar.xz" "https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz"
+echo "$QEMU_SHA256  $BUILD_DIR/qemu.tar.xz" | sha256sum -c --quiet - \
+  || { echo "FAIL: checksum mismatch for qemu-${QEMU_VERSION}.tar.xz" >&2; exit 1; }
+git -c advice.detachedHead=false clone -q --depth=1 --branch "$IPXE_TAG" https://github.com/ipxe/ipxe.git "$BUILD_DIR/ipxe"
+ipxe_commit=$(git -C "$BUILD_DIR/ipxe" rev-parse HEAD)
+[ "$ipxe_commit" = "$IPXE_COMMIT" ] \
+  || { echo "FAIL: iPXE $IPXE_TAG is commit $ipxe_commit, expected $IPXE_COMMIT" >&2; exit 1; }
 
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
@@ -17,24 +35,15 @@ sudo apt-get install -y -qq \
   liblzma-dev
 
 # ── Build iPXE EFI ROM for PCI 10ec:8168 ────────────────────────
-if [ ! -f /usr/local/share/qemu/efi-rtl8168.rom ]; then
-  echo "--- Building iPXE EFI ROM ---"
-  git clone --depth=1 https://github.com/ipxe/ipxe.git /tmp/ipxe
-  make -C /tmp/ipxe/src -j"$(nproc)" bin-x86_64-efi/10ec8168.efirom \
-    DEBUG=realtek,netdevice
-  sudo mkdir -p /usr/local/share/qemu
-  sudo cp /tmp/ipxe/src/bin-x86_64-efi/10ec8168.efirom \
-    /usr/local/share/qemu/efi-rtl8168.rom
-  rm -rf /tmp/ipxe
-fi
+make -C "$BUILD_DIR/ipxe/src" -j"$(nproc)" bin-x86_64-efi/10ec8168.efirom \
+  DEBUG=realtek,netdevice
+sudo mkdir -p /usr/local/share/qemu
+sudo cp "$BUILD_DIR/ipxe/src/bin-x86_64-efi/10ec8168.efirom" \
+  /usr/local/share/qemu/efi-rtl8168.rom
 
 # ── Build QEMU with RTL8168 device ──────────────────────────────
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-if [ ! -d "qemu-${QEMU_VERSION}" ]; then
-  curl -sL "https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz" | tar xJ
-fi
-cd "qemu-${QEMU_VERSION}"
+tar -xJf "$BUILD_DIR/qemu.tar.xz" -C "$BUILD_DIR"
+cd "$BUILD_DIR/qemu-${QEMU_VERSION}"
 
 cp "$SCRIPT_DIR/rtl8168.c" hw/net/rtl8168.c
 

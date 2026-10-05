@@ -63,6 +63,8 @@ PROVISION="qemu-vm1-provision"
 # Tool versions, pinned so every run installs the same ones; bump on purpose.
 # Keep KUBECTL_VERSION in .devcontainer/post-install.sh on the same minor.
 K3S_VERSION="v1.36.5+k3s1"
+# sha256 of install.sh at the K3S_VERSION tag; it changes with the version.
+K3S_INSTALL_SHA256="46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad"
 HELM_VERSION="v3.22.0"
 }
 

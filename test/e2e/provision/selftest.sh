@@ -317,6 +317,62 @@ expect fail "local: a failed launch fails the run" "" \
 expect pass "local: ... and removes the half-made VM" "" calls_have "^delete --purge isoboot-e2e-local$"
 rm "$tmp/bin/multipass"
 
+# ── Pinned and checked build sources (e2e-08) ──────────────────────
+# Stubs for build-qemu.sh and k3s.sh: curl saves "tampered" (its -o file is
+# the second argument in both scripts), git clones an empty directory whose
+# HEAD is $STUB_GIT_HEAD, and the build tools only log that they ran.
+mkdir -p "$tmp/build-bin"
+cat > "$tmp/build-bin/curl" <<'STUB'
+#!/bin/sh
+echo tampered > "$2"
+STUB
+cat > "$tmp/build-bin/git" <<STUB
+#!/bin/sh
+echo "git \$*" >> "$tmp/build-calls"
+case "\$*" in
+  *" clone "*) for last; do :; done; mkdir -p "\$last" ;;
+  *"rev-parse HEAD"*) echo "\$STUB_GIT_HEAD" ;;
+esac
+STUB
+for tool in apt-get make tar ninja sh; do
+  printf '#!/bin/sh\necho "%s $*" >> "%s"\n' "$tool" "$tmp/build-calls" > "$tmp/build-bin/$tool"
+done
+printf '#!/bin/sh\necho "sudo $*" >> "%s"\n' "$tmp/build-calls" > "$tmp/build-bin/sudo-ok"
+chmod +x "$tmp/build-bin"/*
+# build_case <real|pass> <git HEAD>: run build-qemu.sh with the stubs; with
+# "pass", sha256sum is stubbed to accept the tarball so the iPXE pin is reached.
+build_case() {
+  : > "$tmp/build-calls"
+  mkdir -p "$tmp/build-bin-$1"
+  cp "$tmp/build-bin"/* "$tmp/build-bin-$1/"
+  mv "$tmp/build-bin-$1/sudo-ok" "$tmp/build-bin-$1/sudo"
+  [ "$1" = real ] || printf '#!/bin/sh\ncat >/dev/null\n' > "$tmp/build-bin-$1/sha256sum"
+  chmod +x "$tmp/build-bin-$1"/*
+  PATH="$tmp/build-bin-$1:$PATH" STUB_GIT_HEAD=$2 "$repo/test/qemu/build-qemu.sh"
+}
+ipxe_commit=$(sed -n 's/^IPXE_COMMIT=//p' "$repo/test/qemu/build-qemu.sh")
+expect fail "build-qemu.sh rejects a QEMU tarball with the wrong checksum" "checksum mismatch for qemu-8.2.2.tar.xz" \
+  build_case real "$ipxe_commit"
+expect pass "... before it clones, installs or builds anything" "" \
+  bash -c "! grep -E '^(git|sudo|make|tar|ninja) ' '$tmp/build-calls'"
+expect fail "build-qemu.sh rejects an iPXE tag that moved to another commit" "iPXE v2.0.0 is commit 0123abc, expected $ipxe_commit" \
+  build_case pass 0123abc
+expect pass "... before it installs or builds anything" "" \
+  bash -c "! grep -E '^(sudo|make|tar|ninja) ' '$tmp/build-calls'"
+
+# k3s_case: run the k3s phase with no k3s installed and a tampered installer.
+k3s_case() {
+  : > "$tmp/build-calls"
+  PATH="$tmp/build-bin:$PATH" GITHUB_ACTIONS=true E2E_WORK_ROOT=$tmp/work "$here/k3s.sh" alma-10.2
+}
+if command -v k3s >/dev/null; then
+  echo "skip - k3s installer checksum: k3s is installed here, so k3s.sh does not download it"
+else
+  expect fail "k3s.sh rejects an install script with the wrong checksum" "checksum mismatch for the k3s v1.36.5\+k3s1 install script" \
+    k3s_case
+  expect pass "... and never runs it" "" bash -c "! grep '^sh ' '$tmp/build-calls'"
+fi
+
 echo
 if [ "$failures" -gt 0 ]; then
   echo "selftest: $failures check(s) failed"
