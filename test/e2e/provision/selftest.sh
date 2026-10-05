@@ -81,6 +81,13 @@ expect pass "E2E_ALLOW_THIS_HOST=1 allows any host" "^allowed$" \
   env -u GITHUB_ACTIONS E2E_ALLOW_THIS_HOST=1 bash -c "source '$here/lib.sh'; echo allowed"
 expect pass "KUBECONFIG is always the k3s one" "^/etc/rancher/k3s/k3s.yaml$" \
   env GITHUB_ACTIONS=true KUBECONFIG=/tmp/some-other-cluster bash -c "source '$here/lib.sh'; echo \"\$KUBECONFIG\""
+# run.sh --help prints its whole header comment (it exits 2, as without a row).
+run_help_ends_with_environment() {
+  local help
+  help=$("$here/run.sh" --help) && return 1
+  [ "$(tail -n 2 <<<"$help" | head -n 1)" = "Environment: see lib.sh (E2E_IMAGES, E2E_VERSION, E2E_WORK_ROOT, E2E_QEMU_CACHE)." ]
+}
+expect pass "run.sh --help prints the whole header" "" run_help_ends_with_environment
 
 # ── verify.sh: password login (e2e-02) and host keys ───────────────
 # sshd_case <sshd_config lines...>: start a real sshd with that configuration

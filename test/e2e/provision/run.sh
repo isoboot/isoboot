@@ -18,7 +18,8 @@ phases=(host-setup k3s network images helm-install apply-row boot-install verify
 
 row_id=${1:-}
 if [ -z "$row_id" ] || [ "$row_id" = -h ] || [ "$row_id" = --help ]; then
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+  # The comment block at the top of this file.
+  awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
   echo "Rows: $(jq -r '[.[].id] | join(" ")' "$dir/rows.json")"
   exit 2
 fi
