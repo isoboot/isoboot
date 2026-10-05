@@ -304,8 +304,7 @@ func (x *isoTreeExtractor) copyFile(rel string, size int64) error {
 	if err != nil {
 		return fmt.Errorf("creating %q: %w", rel, err)
 	}
-	// The struct hides dst's ReadFrom so CopyBuffer uses our large buffer.
-	n, err := io.CopyBuffer(struct{ io.Writer }{dst}, io.LimitReader(src, size+1), x.buf)
+	n, err := io.CopyBuffer(&syncWriter{f: dst}, io.LimitReader(src, size+1), x.buf)
 	if err != nil {
 		_ = dst.Close()
 		return fmt.Errorf("copying %q: %w", rel, err)
@@ -322,6 +321,31 @@ func (x *isoTreeExtractor) copyFile(rel string, size int64) error {
 		return fmt.Errorf("closing %q: %w", rel, err)
 	}
 	return nil
+}
+
+// syncEvery is how many bytes syncWriter writes between two fsyncs.
+const syncEvery = 32 << 20
+
+// syncWriter writes to f and flushes it to disk every syncEvery bytes.
+// Page cache dirtied by a write is charged to the container's memory cgroup
+// until it is written back. Unpacking an ISO copies from disk to disk faster
+// than writeback, so without the fsyncs a 1-2 GB squashfs left that much dirty
+// cache and got the controller OOM-killed at its 128Mi limit. Written-back
+// pages are clean and the kernel reclaims them under the limit.
+// It has no ReadFrom, so io.CopyBuffer uses the caller's buffer.
+type syncWriter struct {
+	f       *os.File
+	pending int64
+}
+
+func (w *syncWriter) Write(p []byte) (int, error) {
+	n, err := w.f.Write(p)
+	w.pending += int64(n)
+	if err == nil && w.pending >= syncEvery {
+		w.pending = 0
+		err = w.f.Sync()
+	}
+	return n, err
 }
 
 // isSafeEntryName reports whether name is a single, plain path element.
@@ -381,7 +405,7 @@ func copyFromTree(treeDir, rel, dst string) error {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
 	}()
-	if _, err := io.Copy(tmp, src); err != nil {
+	if _, err := io.Copy(&syncWriter{f: tmp}, src); err != nil {
 		return fmt.Errorf("copying %q: %w", rel, err)
 	}
 	if err := tmp.Chmod(0o444); err != nil {

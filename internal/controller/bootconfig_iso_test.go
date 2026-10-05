@@ -480,3 +480,23 @@ var _ = Describe("ISO tree helpers", func() {
 		Expect(strings.Contains(err.Error(), "creating")).To(BeTrue())
 	})
 })
+
+var _ = Describe("syncWriter", func() {
+	It("writes everything and syncs every syncEvery bytes", func() {
+		f, err := os.Create(filepath.Join(GinkgoT().TempDir(), "out"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = f.Close() }()
+		w := &syncWriter{f: f}
+		chunk := make([]byte, 1<<20)
+		total := 0
+		for total < syncEvery+3<<20 {
+			n, err := w.Write(chunk)
+			Expect(err).NotTo(HaveOccurred())
+			total += n
+		}
+		Expect(w.pending).To(Equal(int64(total - syncEvery)))
+		fi, err := f.Stat()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(fi.Size()).To(Equal(int64(total)))
+	})
+})
