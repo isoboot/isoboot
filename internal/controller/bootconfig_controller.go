@@ -208,7 +208,7 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 	if err != nil {
 		return r.setError(ctx, bc, err.Error())
 	}
-	if err := ensureISOTree(log, isoPath, source, r.NFSDir, bc.Name); err != nil {
+	if err := ensureISOTree(log, isoPath, source, r.NFSDir, bc.Name, []string{iso.KernelPath, iso.InitrdPath}); err != nil {
 		return r.setError(ctx, bc, fmt.Sprintf("extracting iso tree: %v", err))
 	}
 

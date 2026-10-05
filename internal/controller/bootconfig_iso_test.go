@@ -358,6 +358,41 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(nfsEntries()).To(ConsistOf("iso-bc-chg", ".source_iso-bc-chg"))
 	})
 
+	It("keeps the old tree, kernel and initrd when the new ISO lacks the kernel", func() {
+		defer readyISOArtifact("iso-nokernel", ubuntuLike, ubuntuLinks)()
+		defer makeISOConfig("iso-bc-nokernel", "iso-nokernel", "casper/vmlinuz", "casper/initrd")()
+
+		_, err := doReconcile("iso-bc-nokernel")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-nokernel").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		// A point release that renamed the kernel.
+		Expect(writeTestISO(isoPathFor("iso-nokernel"), map[string]string{
+			"casper/hwe-vmlinuz":                    "KERNEL-V2",
+			"casper/initrd":                         "INITRD-V2",
+			"casper/ubuntu-server-minimal.squashfs": "SQUASHFS-V2",
+		}, nil)).To(Succeed())
+		later := time.Now().Add(time.Minute)
+		Expect(os.Chtimes(isoPathFor("iso-nokernel"), later, later)).To(Succeed())
+
+		_, _ = doReconcile("iso-bc-nokernel")
+		status := getStatus("iso-bc-nokernel")
+		Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+		Expect(status.Message).To(ContainSubstring("casper/vmlinuz"))
+
+		// Tree, kernel and initrd all still come from the first build.
+		squashfs, err := os.ReadFile(filepath.Join(nfsDir, "iso-bc-nokernel", "casper", "ubuntu-server-minimal.squashfs"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(squashfs)).To(Equal("SQUASHFS"))
+		kernel, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-nokernel", "vmlinuz"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(kernel)).To(Equal("KERNEL-BYTES"))
+		initrd, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-nokernel", "initrd"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(initrd)).To(Equal("INITRD-BYTES"))
+		Expect(nfsEntries()).To(ConsistOf("iso-bc-nokernel", ".source_iso-bc-nokernel"))
+	})
+
 	It("cleans up stale temporary directories and the old ISO symlink", func() {
 		defer readyISOArtifact("iso-stale", contents, nil)()
 		defer makeISOConfig("iso-bc-stale", "iso-stale", "casper/vmlinuz", "casper/initrd")()
@@ -565,7 +600,7 @@ var _ = Describe("ISO tree helpers", func() {
 		Expect(writeTestISO(isoPath, map[string]string{"a": "x"}, nil)).To(Succeed())
 		nfs := filepath.Join(dir, "nfs")
 
-		Expect(ensureISOTree(GinkgoLogr, isoPath, "source", nfs, "t")).To(Succeed())
+		Expect(ensureISOTree(GinkgoLogr, isoPath, "source", nfs, "t", []string{"a"})).To(Succeed())
 
 		// The marker vouches for the tree, so it is written only after the
 		// tree's renames are on disk, and is itself made durable.

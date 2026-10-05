@@ -71,8 +71,10 @@ func isoSource(isoPath string) (string, error) {
 // ensureISOTree makes nfsDir/name hold the whole tree of the ISO at isoPath.
 // It extracts only when the marker does not match source or the tree is
 // missing: replacing the tree breaks the open files of every machine that is
-// installing from it.
-func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string) error {
+// installing from it. A new tree replaces the old one only if each of
+// requiredFiles is a regular file in it, so a failed update keeps the old
+// tree and the kernel and initrd copied from it.
+func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string, requiredFiles []string) error {
 	if err := os.MkdirAll(nfsDir, 0o755); err != nil {
 		return fmt.Errorf("creating nfs dir: %w", err)
 	}
@@ -99,6 +101,11 @@ func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string) error 
 	}
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		return fmt.Errorf("chmod tree: %w", err)
+	}
+	for _, rel := range requiredFiles {
+		if err := checkTreeFile(tmp, rel); err != nil {
+			return err
+		}
 	}
 
 	// Drop the marker first: if we stop before writing the new one, the next
@@ -466,6 +473,24 @@ func copyFromTree(treeDir, rel, dst string) error {
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
 	return syncDir(filepath.Dir(dst))
+}
+
+// checkTreeFile returns an error unless rel is a regular file inside treeDir
+// (following symlinks only within the tree).
+func checkTreeFile(treeDir, rel string) error {
+	root, err := os.OpenRoot(treeDir)
+	if err != nil {
+		return fmt.Errorf("opening tree: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	fi, err := root.Stat(strings.TrimPrefix(rel, "/"))
+	if err != nil {
+		return fmt.Errorf("%q in iso: %w", rel, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("%q in iso is not a regular file", rel)
+	}
+	return nil
 }
 
 // treeFileMatches reports whether dst already holds the same bytes as rel in
