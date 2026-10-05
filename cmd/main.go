@@ -209,8 +209,8 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.BootConfigReconciler{
-		Client:  mgr.GetClient(),
-		Scheme:  mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
 		DataDir:   dataDir,
 		NFSDir:    nfsDir,
 		Namespace: namespace,
