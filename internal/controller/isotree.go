@@ -158,6 +158,22 @@ func removeISOTree(nfsDir, name string) error {
 	return os.RemoveAll(filepath.Join(nfsDir, name))
 }
 
+// isoTreeOwner returns the BootConfig name that an entry of the NFS
+// directory belongs to, or "" for an entry the controller does not create.
+func isoTreeOwner(entry string) string {
+	if !strings.HasPrefix(entry, ".") {
+		return entry // a tree
+	}
+	for _, prefix := range []string{
+		tempFilePrefix + isoTreeMarkerPrefix, isoTreeMarkerPrefix, isoTreeExtractPrefix, isoTreeOldPrefix,
+	} {
+		if name, ok := strings.CutPrefix(entry, prefix); ok && name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
 // removeStaleISOTemps removes what an interrupted extraction left behind for
 // name.
 func removeStaleISOTemps(nfsDir, name string) {

@@ -617,6 +617,35 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		expectZzATree()
 	})
 
+	It("removes the files of BootConfigs deleted while it was not running", func() {
+		reconciler.Namespace = "default"
+		defer readyISOArtifact("iso-live", contents, nil)()
+		defer makeISOConfig("iso-bc-live", "iso-live", "casper/vmlinuz", "casper/initrd")()
+		_, err := doReconcile("iso-bc-live")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-live").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		// Left behind by a BootConfig "gone" that no longer exists.
+		Expect(os.MkdirAll(filepath.Join(nfsDir, "gone", "casper"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(nfsDir, ".extract_gone"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(nfsDir, ".old_gone"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(nfsDir, ".source_gone"), nil, 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(nfsDir, ".tmp_.source_gone"), nil, 0o644)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(dataDir, "boot", "gone"), 0o755)).To(Succeed())
+		// Not the controller's: kept.
+		Expect(os.WriteFile(filepath.Join(nfsDir, ".unknown"), nil, 0o644)).To(Succeed())
+
+		Expect(reconciler.removeOrphans(ctx)).To(Succeed())
+
+		Expect(nfsEntries()).To(ConsistOf("iso-bc-live", ".source_iso-bc-live", ".unknown"))
+		bootEntries, err := os.ReadDir(filepath.Join(dataDir, "boot"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(bootEntries).To(HaveLen(1))
+		Expect(bootEntries[0].Name()).To(Equal("iso-bc-live"))
+		_, err = os.Stat(filepath.Join(nfsDir, "iso-bc-live", "casper", "vmlinuz"))
+		Expect(err).NotTo(HaveOccurred())
+	})
+
 	It("writes the same status message when the same failure repeats", func() {
 		if os.Geteuid() == 0 {
 			Skip("root ignores directory permissions")

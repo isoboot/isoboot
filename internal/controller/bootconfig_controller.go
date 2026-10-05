@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -57,6 +58,10 @@ type BootConfigReconciler struct {
 
 	// now returns the current time; nil means time.Now. Tests set it.
 	now func() time.Time
+
+	// filesMu is held by each reconcile and by removeOrphans, so the sweep
+	// never runs in the middle of an extraction.
+	filesMu sync.Mutex
 
 	mu sync.Mutex
 	// extractionFailures remembers, per BootConfig, the ISO whose extraction
@@ -149,6 +154,8 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		log.V(1).Info("Ignoring BootConfig outside the controller's namespace")
 		return ctrl.Result{}, nil
 	}
+	r.filesMu.Lock()
+	defer r.filesMu.Unlock()
 
 	var bc isobootgithubiov1alpha1.BootConfig
 	if err := r.Get(ctx, req.NamespacedName, &bc); err != nil {
@@ -526,8 +533,67 @@ func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, o
 	return requests
 }
 
+// removeOrphans deletes the boot directories and ISO trees (with their
+// markers and leftovers) of BootConfigs that no longer exist. A BootConfig
+// deleted while the controller was not running is never reconciled again,
+// and nfsd would keep exporting its tree. Entries of the NFS directory that
+// the controller does not create are left alone.
+func (r *BootConfigReconciler) removeOrphans(ctx context.Context) error {
+	log := logf.FromContext(ctx)
+	r.filesMu.Lock()
+	defer r.filesMu.Unlock()
+
+	var configs isobootgithubiov1alpha1.BootConfigList
+	if err := r.List(ctx, &configs, client.InNamespace(r.Namespace)); err != nil {
+		return fmt.Errorf("listing boot configs: %w", err)
+	}
+	exists := make(map[string]bool, len(configs.Items))
+	for _, bc := range configs.Items {
+		exists[bc.Name] = true
+	}
+
+	remove := func(dir, entry, owner string) {
+		if exists[owner] {
+			return
+		}
+		p := filepath.Join(dir, entry)
+		log.Info("Removing files of a BootConfig that no longer exists", "name", owner, "path", p)
+		if err := os.RemoveAll(p); err != nil {
+			log.Error(err, "Failed to remove", "path", p)
+		}
+	}
+	bootDir := filepath.Join(r.DataDir, "boot")
+	if entries, err := os.ReadDir(bootDir); err == nil {
+		for _, e := range entries {
+			remove(bootDir, e.Name(), e.Name())
+		}
+	}
+	if r.NFSDir != "" {
+		if entries, err := os.ReadDir(r.NFSDir); err == nil {
+			for _, e := range entries {
+				if owner := isoTreeOwner(e.Name()); owner != "" {
+					remove(r.NFSDir, e.Name(), owner)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *BootConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Once the cache holds every BootConfig, remove what deleted ones left.
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		if !mgr.GetCache().WaitForCacheSync(ctx) {
+			return nil // stopping
+		}
+		if err := r.removeOrphans(ctx); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to remove files of deleted BootConfigs")
+		}
+		return nil
+	})); err != nil {
+		return err
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		// Only spec changes (and creates and deletes): the controller's own
 		// status writes must not trigger another reconcile at once.

@@ -65,7 +65,7 @@ var _ = Describe("BootConfig controller in a manager", func() {
 		Expect(err).NotTo(HaveOccurred())
 		counter := &bootConfigGetCounter{Client: mgr.GetClient(), name: "bc-loop"}
 		Expect((&BootConfigReconciler{
-			Client: counter, Scheme: mgr.GetScheme(), DataDir: GinkgoT().TempDir(),
+			Client: counter, Scheme: mgr.GetScheme(), DataDir: GinkgoT().TempDir(), Namespace: ns,
 		}).SetupWithManager(mgr)).To(Succeed())
 		mgrCtx, stop := context.WithCancel(ctx)
 		DeferCleanup(stop)
