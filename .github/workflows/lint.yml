@@ -59,3 +59,10 @@ jobs:
         run: make check-workflows
       - name: Check the E2E rows
         run: test/e2e/provision/check-rows.sh
+      - name: Self-test the E2E scripts
+        run: test/e2e/provision/selftest.sh
+      - name: Shellcheck the scripts
+        run: >-
+          docker run --rm -v "$PWD":/w -w /w
+          koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+          -x test/e2e/provision/*.sh test/e2e/*.sh hack/*.sh test/qemu/*.sh
