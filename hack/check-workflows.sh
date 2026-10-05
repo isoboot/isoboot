@@ -24,7 +24,7 @@ expect_none() {
     pass "$1"
   else
     fail "$1"
-    sed 's/^/       /' <<<"$2" >&2
+    while IFS= read -r line; do echo "       $line"; done <<<"$2" >&2
   fi
 }
 # jobs_where <yq filter>: "<workflow>: <job>" for each job the filter keeps.

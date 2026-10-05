@@ -3,6 +3,8 @@
 # behaviour it guards. Every check runs; the script exits non-zero if any
 # fails. Run it with `make chart-test`, which installs the pinned helm and yq.
 # Usage: HELM=<helm> YQ=<yq> hack/chart-test.sh
+# The yq expressions are single-quoted on purpose: their $names are yq's.
+# shellcheck disable=SC2016
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
