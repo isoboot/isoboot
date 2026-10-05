@@ -26,8 +26,6 @@ import (
 	"strings"
 	"time"
 
-	diskfs "github.com/diskfs/go-diskfs"
-	"github.com/diskfs/go-diskfs/filesystem"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,6 +42,9 @@ type BootConfigReconciler struct {
 	client.Client
 	Scheme  *runtime.Scheme
 	DataDir string
+	// NFSDir holds one extracted ISO tree per ISO-mode BootConfig; nfsd
+	// exports each of its subdirectories.
+	NFSDir string
 }
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootconfigs,verbs=get;list;watch
@@ -63,6 +64,9 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if err := os.RemoveAll(bootDir); err != nil {
 			log.Error(err, "Failed to clean up boot directory", "path", bootDir)
 		}
+		if err := removeISOTree(r.NFSDir, req.Name); err != nil {
+			log.Error(err, "Failed to clean up NFS tree", "name", req.Name)
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -77,6 +81,11 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 	nb := bc.Spec.Netboot
+
+	// A BootConfig switched from iso to netboot no longer needs its tree.
+	if err := removeISOTree(r.NFSDir, bc.Name); err != nil {
+		log.Error(err, "Failed to clean up NFS tree", "name", bc.Name)
+	}
 
 	// Look up referenced BootArtifacts
 	kernelArtifact, err := r.getArtifact(ctx, nb.KernelRef, bc.Namespace)
@@ -165,8 +174,9 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return r.setReady(ctx, &bc)
 }
 
-// reconcileISO handles Mode B: extract kernel and initrd from an ISO artifact
-// into the boot directory as real files.
+// reconcileISO handles Mode B: the whole ISO tree is unpacked into
+// <NFSDir>/<name>/ for nfsd to export, and the kernel and initrd are copied
+// from that tree into the boot directory, which nginx serves over HTTP.
 func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	iso := bc.Spec.ISO
@@ -176,6 +186,9 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 	}
 	if !isSafeISOPath(iso.InitrdPath) {
 		return r.setError(ctx, bc, fmt.Sprintf("invalid initrdPath %q: path traversal not allowed", iso.InitrdPath))
+	}
+	if r.NFSDir == "" {
+		return r.setError(ctx, bc, "iso mode needs the controller's --nfs-dir")
 	}
 
 	isoArtifact, err := r.getArtifact(ctx, iso.ArtifactRef, bc.Namespace)
@@ -191,126 +204,52 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 
 	isoFilename := urlutil.FilenameFromURL(isoArtifact.Spec.URL)
 	isoPath := filepath.Join(r.DataDir, "artifacts", isoArtifact.Name, isoFilename)
-	bootDir := filepath.Join(r.DataDir, "boot", bc.Name)
+	source, err := isoSource(isoPath, expectedHash(isoArtifact))
+	if err != nil {
+		return r.setError(ctx, bc, err.Error())
+	}
+	treeTime, err := ensureISOTree(log, isoPath, source, r.NFSDir, bc.Name)
+	if err != nil {
+		return r.setError(ctx, bc, fmt.Sprintf("extracting iso tree: %v", err))
+	}
 
+	bootDir := filepath.Join(r.DataDir, "boot", bc.Name)
 	if err := os.MkdirAll(bootDir, 0o755); err != nil {
 		return r.setError(ctx, bc, fmt.Sprintf("creating boot dir: %v", err))
 	}
-
-	if err := extractFromISO(isoPath, iso.KernelPath, iso.InitrdPath, bootDir); err != nil {
-		return r.setError(ctx, bc, fmt.Sprintf("extracting from iso: %v", err))
+	// Only vmlinuz and initrd belong here; this also removes the ISO symlink
+	// that older versions served over HTTP.
+	if entries, err := os.ReadDir(bootDir); err == nil {
+		for _, e := range entries {
+			if e.Name() != "vmlinuz" && e.Name() != "initrd" {
+				_ = os.RemoveAll(filepath.Join(bootDir, e.Name()))
+			}
+		}
 	}
-
-	// Serve the ISO itself (under its own filename) so installers can fetch
-	// their root filesystem over HTTP. Sibling-safe so it doesn't disturb
-	// the extracted vmlinuz/initrd.
-	isoTarget := filepath.Join("..", "..", "artifacts", isoArtifact.Name, isoFilename)
-	if err := ensureFileSymlink(filepath.Join(bootDir, isoFilename), isoTarget); err != nil {
-		return r.setError(ctx, bc, fmt.Sprintf("creating iso symlink: %v", err))
+	treeDir := filepath.Join(r.NFSDir, bc.Name)
+	for _, f := range []struct{ src, dst string }{
+		{iso.KernelPath, filepath.Join(bootDir, "vmlinuz")},
+		{iso.InitrdPath, filepath.Join(bootDir, "initrd")},
+	} {
+		// Copy again whenever the tree was replaced after the copy was made,
+		// so kernel, initrd and tree always come from the same ISO build.
+		if info, err := os.Stat(f.dst); err == nil && info.ModTime().After(treeTime) {
+			continue
+		}
+		if err := copyFromTree(treeDir, f.src, f.dst); err != nil {
+			return r.setError(ctx, bc, fmt.Sprintf("extracting from iso: %v", err))
+		}
 	}
 
 	if bc.Status.Phase != isobootgithubiov1alpha1.BootConfigPhaseReady {
-		log.Info("BootConfig assembled from ISO", "name", bc.Name, "bootDir", bootDir)
+		log.Info("BootConfig assembled from ISO", "name", bc.Name, "bootDir", bootDir, "nfsTree", treeDir)
 	}
 	return r.setReady(ctx, bc)
 }
 
-// ensureFileSymlink idempotently points link at target without disturbing
-// sibling entries (unlike ensureSymlink, which manages a whole directory).
-func ensureFileSymlink(link, target string) error {
-	if existing, err := os.Readlink(link); err == nil && existing == target {
-		return nil
-	}
-	_ = os.Remove(link)
-	return os.Symlink(target, link)
-}
-
-// maxExtractedFileSize caps an individual file extracted from an ISO, guarding
-// against an oversized entry from a malicious ISO.
-const maxExtractedFileSize = 1 << 30 // 1 GiB
-
 // isSafeISOPath reports whether p is a non-empty in-ISO path with no ".." segment.
 func isSafeISOPath(p string) bool {
 	return p != "" && !slices.Contains(strings.Split(p, "/"), "..")
-}
-
-// extractFromISO opens the ISO9660 image at isoPath and writes the files at
-// kernelPath and initrdPath to outputDir/vmlinuz and outputDir/initrd. It skips
-// the work when both outputs already exist and are newer than the ISO.
-func extractFromISO(isoPath, kernelPath, initrdPath, outputDir string) error {
-	isoInfo, err := os.Stat(isoPath)
-	if err != nil {
-		return fmt.Errorf("stat iso %q: %w", isoPath, err)
-	}
-
-	targets := []struct{ src, dst string }{
-		{kernelPath, filepath.Join(outputDir, "vmlinuz")},
-		{initrdPath, filepath.Join(outputDir, "initrd")},
-	}
-	if upToDate(targets[0].dst, isoInfo.ModTime()) && upToDate(targets[1].dst, isoInfo.ModTime()) {
-		return nil // already extracted and current
-	}
-
-	disk, err := diskfs.Open(isoPath, diskfs.WithOpenMode(diskfs.ReadOnly))
-	if err != nil {
-		return fmt.Errorf("opening iso %q: %w", isoPath, err)
-	}
-	defer func() { _ = disk.Close() }()
-
-	fsys, err := disk.GetFilesystem(0)
-	if err != nil {
-		return fmt.Errorf("reading iso filesystem: %w", err)
-	}
-
-	for _, e := range targets {
-		if err := extractFile(fsys, e.src, e.dst); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// upToDate reports whether dst exists and was modified after srcModTime.
-func upToDate(dst string, srcModTime time.Time) bool {
-	info, err := os.Stat(dst)
-	return err == nil && info.ModTime().After(srcModTime)
-}
-
-// extractFile copies src from the ISO filesystem to dst on disk atomically.
-func extractFile(fsys filesystem.FileSystem, src, dst string) error {
-	f, err := fsys.OpenFile("/"+strings.TrimPrefix(src, "/"), os.O_RDONLY)
-	if err != nil {
-		return fmt.Errorf("opening %q in iso: %w", src, err)
-	}
-	defer func() { _ = f.Close() }()
-
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".extract-*")
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	defer func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-	}()
-
-	n, err := io.Copy(tmp, io.LimitReader(f, maxExtractedFileSize+1))
-	if err != nil {
-		return fmt.Errorf("copying %q: %w", src, err)
-	}
-	if n > maxExtractedFileSize {
-		return fmt.Errorf("file %q exceeds max extract size %d bytes", src, int64(maxExtractedFileSize))
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temp file: %w", err)
-	}
-	if err := os.Chmod(tmpPath, 0o444); err != nil {
-		return fmt.Errorf("setting permissions: %w", err)
-	}
-	if err := os.Rename(tmpPath, dst); err != nil {
-		return fmt.Errorf("renaming temp file: %w", err)
-	}
-	return nil
 }
 
 // concatenateFiles writes the concatenation of srcA and srcB to dst atomically.

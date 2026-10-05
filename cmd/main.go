@@ -58,6 +58,7 @@ func init() {
 // nolint:gocyclo
 func main() {
 	var dataDir string
+	var nfsDir string
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -67,6 +68,8 @@ func main() {
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&dataDir, "data-dir", "/data/isoboot", "Base directory for storing artifacts and boot configs.")
+	flag.StringVar(&nfsDir, "nfs-dir", "/data/isoboot/nfs",
+		"Directory holding the extracted tree of each ISO-mode BootConfig, exported by nfsd.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -204,6 +207,7 @@ func main() {
 		Client:  mgr.GetClient(),
 		Scheme:  mgr.GetScheme(),
 		DataDir: dataDir,
+		NFSDir:  nfsDir,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "BootConfig")
 		os.Exit(1)
