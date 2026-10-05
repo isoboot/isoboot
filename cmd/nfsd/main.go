@@ -47,7 +47,10 @@ func main() {
 	slog.SetDefault(logger)
 	nfsd.UseLogger(logger)
 
-	if err := run(logger, *root, *listenAddr, *portmapAddr, *concurrency, allow); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	err = run(ctx, logger, *root, *listenAddr, *portmapAddr, *concurrency, allow)
+	stop()
+	if err != nil {
 		slog.Error("nfsd failed", "error", err)
 		os.Exit(1)
 	}
@@ -81,7 +84,10 @@ func (l *cidrList) Set(s string) error {
 	return nil
 }
 
-func run(logger *slog.Logger, root, listenAddr, portmapAddr string, concurrency int, allow []netip.Prefix) error {
+// run serves until ctx is done or a listener fails.
+func run(
+	ctx context.Context, logger *slog.Logger, root, listenAddr, portmapAddr string, concurrency int, allow []netip.Prefix,
+) error {
 	if root == "" {
 		return errors.New("--root is required")
 	}
@@ -91,7 +97,7 @@ func run(logger *slog.Logger, root, listenAddr, portmapAddr string, concurrency 
 	}
 	defer func() { _ = handler.Close() }()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errCh := make(chan error, 2)
 
@@ -124,12 +130,10 @@ func run(logger *slog.Logger, root, listenAddr, portmapAddr string, concurrency 
 		slog.Info("serving port mapper", "addr", pmListener.Addr().String(), "nfsPort", port)
 	}
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	select {
 	case err := <-errCh:
 		return err
-	case <-quit:
+	case <-ctx.Done():
 		slog.Info("shutting down")
 		return nil
 	}
