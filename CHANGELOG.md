@@ -22,6 +22,15 @@
   default; needs TCP 111 and 2049 free on the node)
 - Add Ubuntu 26.04.1 and 26.10 (beta) live-server autoinstall examples over NFS;
   drop the Ubuntu 24.04 example
+- Drop the AlmaLinux 9.8 and Rocky 9.8 examples (examples mirror the E2E matrix)
+- Pin the Debian 13 netboot installer to the dated 13.7 build
+  (`20250803+deb13u7`) instead of `current`; firmware bundle 13.7.0
+- Provision E2E: steps moved into `test/e2e/provision/` scripts shared with the
+  new local runner `hack/e2e-local.sh`; rows in `rows.json`; matrix is
+  AlmaLinux 10.2, Rocky 10.2, Debian 13.7 (with and without firmware), Ubuntu
+  26.04.1 and 26.10 over NFS at 2 GiB; the guest reboots by itself after the
+  install instead of being powered off; the RTL8168 QEMU is built only for the
+  Debian rows
 
 ## v0.0.2-rc3
 
