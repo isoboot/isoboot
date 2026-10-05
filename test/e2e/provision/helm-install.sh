@@ -48,5 +48,17 @@ wait_ready bootartifact isoboot-ipxe
 wait_pods dnsmasq 180
 wait_pods nfsd 120
 wait_pods squid 180
+
+# An upgrade must be able to replace every pod. The node-pinned ones hold host
+# ports or repel their own replacement, so a rolling update would hang: roll
+# each Deployment once and wait for it.
+mapfile -t deployments < <(kc get deployments -o name)
+for deployment in "${deployments[@]}"; do
+  kc rollout restart "$deployment" >/dev/null
+done
+for deployment in "${deployments[@]}"; do
+  kc rollout status "$deployment" --timeout=300s
+done
+pass "every Deployment rolled out a replacement pod"
 kc get pods -o wide
 pass "isoboot $E2E_VERSION installed"

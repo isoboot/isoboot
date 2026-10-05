@@ -97,6 +97,13 @@ expect "image.tag sets the tag of all three Go programs" \
 expect "no isoboot-httpd or isoboot-nfsd image" "" \
   "$(grep -oE 'isoboot-(httpd|nfsd):[^"]*' <<<"$default" || true)"
 
+# chart-01: a single pod pinned to one node with self anti-affinity or host
+# ports can only be replaced after the old one stops; RollingUpdate deadlocks.
+expect "every pinned Deployment uses the Recreate strategy" \
+  "controller-manager=Recreate dnsmasq=Recreate nfsd=Recreate nginx=Recreate squid=Recreate" \
+  "$(query "$default" 'select(.kind == "Deployment" and .spec.template.spec.affinity.podAntiAffinity != null)
+    | (.metadata.name | sub("^rel-isoboot-", "")) + "=" + (.spec.strategy.type // "RollingUpdate")' | sort | xargs)"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures chart check(s) failed" >&2
   exit 1

@@ -8,6 +8,11 @@ metadata:
     {{- include "isoboot.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  # One pod pinned to one node, kept apart from its own replacement by
+  # anti-affinity (and host ports): a rolling update's extra pod could never
+  # be scheduled, so stop the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "isoboot.selectorLabels" . | nindent 6 }}
