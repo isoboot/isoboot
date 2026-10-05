@@ -121,6 +121,11 @@ func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string) error 
 			log.Error(err, "Failed to remove old ISO tree", "path", old)
 		}
 	}
+	// The marker vouches for the tree, so the tree's data (flushed during
+	// extraction) and its rename must be on disk before the marker is.
+	if err := syncDir(nfsDir); err != nil {
+		return fmt.Errorf("flushing nfs dir: %w", err)
+	}
 	if err := writeFileAtomic(marker, []byte(source)); err != nil {
 		return fmt.Errorf("writing marker: %w", err)
 	}
@@ -155,7 +160,8 @@ func removeStaleISOTemps(nfsDir, name string) {
 	}
 }
 
-// writeFileAtomic writes data to p (mode 0644) through a temporary file.
+// writeFileAtomic writes data to p (mode 0644) through a temporary file and
+// flushes it to disk.
 func writeFileAtomic(p string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(p), ".tmp-*")
 	if err != nil {
@@ -171,10 +177,17 @@ func writeFileAtomic(p string, data []byte) error {
 		_ = tmp.Close()
 		return err
 	}
+	if err := syncFile(tmp); err != nil {
+		_ = tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, p)
+	if err := os.Rename(tmpPath, p); err != nil {
+		return err
+	}
+	return syncDir(filepath.Dir(p))
 }
 
 // isoSymlink is a Rock Ridge symlink found during extraction.
@@ -217,6 +230,7 @@ func extractISOTree(log logr.Logger, isoPath, dest string) error {
 	if err := x.walk(".", 0); err != nil {
 		return err
 	}
+	linkDirs := map[string]bool{}
 	for _, l := range x.links {
 		if !symlinkStaysInside(l.path, l.target) {
 			log.Info("Skipping ISO symlink that leaves the tree", "path", l.path, "target", l.target)
@@ -224,6 +238,12 @@ func extractISOTree(log logr.Logger, isoPath, dest string) error {
 		}
 		if err := root.Symlink(l.target, l.path); err != nil {
 			return fmt.Errorf("creating symlink %q: %w", l.path, err)
+		}
+		linkDirs[path.Dir(l.path)] = true
+	}
+	for dir := range linkDirs {
+		if err := x.syncDir(dir); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -283,6 +303,19 @@ func (x *isoTreeExtractor) walk(dir string, depth int) error {
 			x.log.Info("Skipping special file in ISO", "path", rel, "mode", mode.String())
 		}
 	}
+	return x.syncDir(dir)
+}
+
+// syncDir flushes the entries of dir, inside the tree, to disk.
+func (x *isoTreeExtractor) syncDir(dir string) error {
+	d, err := x.root.Open(dir)
+	if err != nil {
+		return fmt.Errorf("opening directory %q: %w", dir, err)
+	}
+	defer func() { _ = d.Close() }()
+	if err := syncFile(d); err != nil {
+		return fmt.Errorf("flushing directory %q: %w", dir, err)
+	}
 	return nil
 }
 
@@ -313,11 +346,20 @@ func (x *isoTreeExtractor) copyFile(rel string, size int64) error {
 		_ = dst.Close()
 		return fmt.Errorf("chmod %q: %w", rel, err)
 	}
+	// Flush every file, not only large ones: the marker written after
+	// extraction promises a complete tree, even after a power loss.
+	if err := syncFile(dst); err != nil {
+		_ = dst.Close()
+		return fmt.Errorf("flushing %q: %w", rel, err)
+	}
 	if err := dst.Close(); err != nil {
 		return fmt.Errorf("closing %q: %w", rel, err)
 	}
 	return nil
 }
+
+// syncFile flushes f to disk. Tests replace it to see what gets flushed.
+var syncFile = (*os.File).Sync
 
 // syncEvery is how many bytes syncWriter writes between two fsyncs.
 const syncEvery = 32 << 20
@@ -414,13 +456,16 @@ func copyFromTree(treeDir, rel, dst string) error {
 	if err := tmp.Chmod(0o444); err != nil {
 		return fmt.Errorf("setting permissions: %w", err)
 	}
+	if err := syncFile(tmp); err != nil {
+		return fmt.Errorf("flushing temp file: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing temp file: %w", err)
 	}
 	if err := os.Rename(tmpPath, dst); err != nil {
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
-	return nil
+	return syncDir(filepath.Dir(dst))
 }
 
 // treeFileMatches reports whether dst already holds the same bytes as rel in

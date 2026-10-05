@@ -523,6 +523,58 @@ var _ = Describe("ISO tree helpers", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(strings.Contains(err.Error(), "creating")).To(BeTrue())
 	})
+
+	// recordSyncs makes syncFile record the name of every file or directory
+	// it flushes, for the rest of the spec.
+	recordSyncs := func() *[]string {
+		synced := []string{}
+		previous := syncFile
+		DeferCleanup(func() { syncFile = previous })
+		syncFile = func(f *os.File) error {
+			synced = append(synced, filepath.Clean(f.Name()))
+			return previous(f)
+		}
+		return &synced
+	}
+
+	It("flushes every extracted file and directory to disk", func() {
+		synced := recordSyncs()
+		dir := GinkgoT().TempDir()
+		isoPath := filepath.Join(dir, "t.iso")
+		files := map[string]string{"dists/x/Release": "r"}
+		for i := range 40 {
+			files[fmt.Sprintf("pool/f%02d", i)] = strings.Repeat("x", 1<<10)
+		}
+		Expect(writeTestISO(isoPath, files, nil)).To(Succeed())
+		dest := filepath.Join(dir, "dest")
+		Expect(os.Mkdir(dest, 0o755)).To(Succeed())
+
+		Expect(extractISOTree(GinkgoLogr, isoPath, dest)).To(Succeed())
+
+		want := []string{dest, filepath.Join(dest, "pool"), filepath.Join(dest, "dists"), filepath.Join(dest, "dists", "x")}
+		for p := range files {
+			want = append(want, filepath.Join(dest, p))
+		}
+		Expect(*synced).To(ContainElements(want))
+	})
+
+	It("flushes the renamed tree and the marker to disk", func() {
+		synced := recordSyncs()
+		dir := GinkgoT().TempDir()
+		isoPath := filepath.Join(dir, "t.iso")
+		Expect(writeTestISO(isoPath, map[string]string{"a": "x"}, nil)).To(Succeed())
+		nfs := filepath.Join(dir, "nfs")
+
+		Expect(ensureISOTree(GinkgoLogr, isoPath, "source", nfs, "t")).To(Succeed())
+
+		// The marker vouches for the tree, so it is written only after the
+		// tree's renames are on disk, and is itself made durable.
+		Expect(len(*synced)).To(BeNumerically(">=", 3))
+		last := (*synced)[len(*synced)-3:]
+		Expect(last[0]).To(Equal(nfs), "nfs dir after the tree rename")
+		Expect(filepath.Dir(last[1])).To(Equal(nfs), "the marker's temporary file")
+		Expect(last[2]).To(Equal(nfs), "nfs dir after the marker rename")
+	})
 })
 
 // countingFile is a writeSyncer that counts its bytes and Sync calls.
