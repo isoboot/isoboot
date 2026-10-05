@@ -57,8 +57,11 @@ rendered=$("$HELM" template rel charts/isoboot --kube-version "$kube_version" \
   --set "squid.blockedDestinationCIDRs={$other_subnet}" --set nginx.port=8080 --set squid.port=3128)
 config() { "$YQ" eval --no-doc "select(.kind == \"ConfigMap\" and .metadata.name == \"rel-isoboot-$1\") | .data[\"$2\"]" - <<<"$rendered"; }
 config squid squid.conf >"$work/squid.conf"
-config nginx-config nginx.conf \
-  | sed 's|__DNS_RESOLVER__|127.0.0.11|; s|__CLUSTER_DOMAIN__|cluster.local|' >"$work/nginx.conf"
+# nginx's configuration is filled in by the chart's own render script at
+# container start, as the init container does on a node.
+mkdir -p "$work/nginx-template"
+config nginx-config nginx.conf >"$work/nginx-template/nginx.conf"
+config nginx-config render-config.sh >"$work/nginx-template/render-config.sh"
 nginx_image=$("$YQ" eval '.nginx.image.repository + ":" + .nginx.image.tag' charts/isoboot/values.yaml)
 mkdir -p "$work/static"
 echo '#!ipxe' >"$work/static/boot.ipxe"
@@ -97,9 +100,16 @@ docker network connect --ip "$squid_other" "$other_net" "$prefix-squid"
 # node-local service (the kubelet, say) is to the host-network squid.
 docker run -d --name "$prefix-web-squid-host" --network "container:$prefix-squid" "$nginx_image" >/dev/null
 
-start "$prefix-nginx" "$pxe_net" "$nginx_pxe" -v "$work/nginx.conf:/etc/nginx/nginx.conf:ro" \
-  -v "$work/static:/data/isoboot/nginx/static/boot:ro" --tmpfs /var/run:mode=1777 "$nginx_image"
+# Both networks are attached before nginx starts, so the render script sees
+# every address, as it sees every node address on the host network.
+docker create --name "$prefix-nginx" --network "$pxe_net" --ip "$nginx_pxe" \
+  -v "$work/nginx-template:/config-template:ro" \
+  -v "$work/static:/data/isoboot/nginx/static/boot:ro" --tmpfs /var/run:mode=1777 \
+  --entrypoint /bin/sh "$nginx_image" -c '
+    sh /config-template/render-config.sh /config-template/nginx.conf /tmp/nginx.conf \
+      && exec nginx -c /tmp/nginx.conf -g "daemon off;"' >/dev/null
 docker network connect --ip "$nginx_other" "$other_net" "$prefix-nginx"
+docker start "$prefix-nginx" >/dev/null
 
 start "$prefix-client-pxe" "$pxe_net" 172.31.250.100 "$prefix-client" sleep infinity
 start "$prefix-client-other" "$other_net" 172.31.251.100 "$prefix-client" sleep infinity
@@ -154,6 +164,13 @@ expect "client outside the PXE subnet is refused /static/" 403 \
   "$(status other "http://$nginx_other:8080/static/boot.ipxe")"
 expect "client outside the PXE subnet is refused /dynamic/" 403 \
   "$(status other "http://$nginx_other:8080/dynamic/healthz")"
+# squid runs on the node and relays installers' requests (install files,
+# status calls) to nginx from one of the node's own addresses, which need not
+# be in the PXE subnet.
+expect "the node itself is served from an address outside the PXE subnet" 200 \
+  "$(docker run --rm --network "container:$prefix-nginx" "$prefix-client" \
+    curl -s -o /dev/null -w '%{http_code}' --max-time 10 --interface "$nginx_other" \
+    "http://$nginx_other:8080/static/boot.ipxe" || true)"
 
 if [ "$failures" -gt 0 ]; then
   echo "--- squid cache.log" >&2

@@ -6,6 +6,24 @@ metadata:
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
 data:
+  # Fills in nginx.conf for the node it runs on: the cluster DNS resolver and
+  # domain, and an allow line per node address. The init container runs it,
+  # and so does hack/subnet-access-test.sh.
+  render-config.sh: |
+    #!/bin/sh
+    # Usage: render-config.sh <template> <output>
+    set -e
+    DNS_IP=$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)
+    [ -n "$DNS_IP" ] || { echo "FAIL: could not determine DNS resolver from /etc/resolv.conf"; exit 1; }
+    echo "Using DNS resolver: $DNS_IP"
+    CLUSTER_DOMAIN=$(awk '/^search/ {for(i=2;i<=NF;i++) if($i ~ /^svc\./) {sub(/^svc\./, "", $i); print $i; exit}}' /etc/resolv.conf)
+    [ -n "$CLUSTER_DOMAIN" ] || CLUSTER_DOMAIN="cluster.local"
+    echo "Using cluster domain: $CLUSTER_DOMAIN"
+    # On the host network these are the node's own addresses.
+    NODE_ALLOW=$(ip -4 -o addr show | awk '{split($4, a, "/"); printf "allow %s; ", a[1]}')
+    [ -n "$NODE_ALLOW" ] || { echo "FAIL: could not list this node's addresses"; exit 1; }
+    echo "Allowing the node's own addresses: $NODE_ALLOW"
+    sed "s|__DNS_RESOLVER__|$DNS_IP|g; s|__CLUSTER_DOMAIN__|$CLUSTER_DOMAIN|g; s|__NODE_ALLOW__|$NODE_ALLOW|" "$1" > "$2"
   nginx.conf: |
     pid /var/run/nginx.pid;
     worker_processes 1;
@@ -22,6 +40,10 @@ data:
             # files and automation files (rendered Secrets) or post status.
             allow {{ include "isoboot.subnet" . }};
             allow 127.0.0.1;
+            # The node's own addresses (filled in at pod start): installers
+            # send their HTTP through squid, which runs on this node and
+            # relays requests to nginx from one of them.
+            __NODE_ALLOW__
             deny all;
             location /static/ {
                 alias "{{ .Values.dataDir }}/nginx/static/boot/";
