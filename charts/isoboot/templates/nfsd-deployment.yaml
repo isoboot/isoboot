@@ -66,8 +66,14 @@ spec:
         {{- range (.Values.nfsd.allowedCIDRs | default (list (include "isoboot.subnet" .))) }}
         - "--allow-cidr={{ . }}"
         {{- end }}
+        # The node itself: the kubelet's TCP probes come from its address.
+        - "--allow-cidr=$(NODE_IP)/32"
         - "--log-level={{ .Values.nfsd.logLevel }}"
         env:
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         - name: GOMEMLIMIT
           value: "{{ .Values.nfsd.goMemLimit }}"
         ports:

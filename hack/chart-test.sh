@@ -155,21 +155,24 @@ expect "controller Role has exactly the rules controller-gen generated" \
   "$(query "$default" -o=json -I=0 'select(.kind == "Role" and .metadata.name == "rel-isoboot-manager-role") | .rules')"
 
 # nfsd client allow-list: by default only the PXE subnet may use NFS, MOUNT
-# and the port mapper; nfsd.allowedCIDRs replaces it.
+# and the port mapper; nfsd.allowedCIDRs replaces it. The node's own address
+# (from the downward API) is always allowed, for the kubelet's TCP probes.
 nfsd_flags() {
   container "$1" nfsd nfsd 'args[] | select(test("^--(allow-cidr|portmap-listen)"))' | xargs
 }
-expect "nfsd allows only dnsmasq.subnet by default" \
-  "--portmap-listen=:111 --allow-cidr=$subnet" "$(nfsd_flags "$default")"
+expect "nfsd allows only dnsmasq.subnet and the node by default" \
+  "--portmap-listen=:111 --allow-cidr=$subnet --allow-cidr=\$(NODE_IP)/32" "$(nfsd_flags "$default")"
+expect "nfsd's NODE_IP is the node's address" '"status.hostIP"' \
+  "$(container "$default" nfsd nfsd 'env[] | select(.name == "NODE_IP") | .valueFrom.fieldRef.fieldPath')"
 expect "nfsd.allowedCIDRs replaces the default allow-list" \
-  "--portmap-listen=:111 --allow-cidr=10.1.0.0/16 --allow-cidr=fd00::/64" \
+  "--portmap-listen=:111 --allow-cidr=10.1.0.0/16 --allow-cidr=fd00::/64 --allow-cidr=\$(NODE_IP)/32" \
   "$(nfsd_flags "$(render --set 'nfsd.allowedCIDRs={10.1.0.0/16,fd00::/64}')")"
 
 # chart-05: the installer always asks the port mapper on TCP 111, so it is not
 # a value; with nfsd off the controller must not unpack ISOs nobody serves.
 expect "values have no nfsd.portmapPort" false \
   "$("$YQ" eval '.nfsd | has("portmapPort")' "$chart/values.yaml")"
-expect "nfsd.portmapPort cannot move the port mapper off 111" "--portmap-listen=:111 --allow-cidr=$subnet" \
+expect "nfsd.portmapPort cannot move the port mapper off 111" "--portmap-listen=:111 --allow-cidr=$subnet --allow-cidr=\$(NODE_IP)/32" \
   "$(nfsd_flags "$(render --set nfsd.portmapPort=1111)")"
 expect "controller gets --nfs-dir under dataDir with nfsd on" '"--nfs-dir=/data/isoboot/nfs"' \
   "$(container "$default" controller-manager manager 'args[] | select(test("^--nfs-dir"))')"
