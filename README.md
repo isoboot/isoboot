@@ -9,8 +9,8 @@ installer its kernel, initrd and install files, and tracks each install from
 disk.
 
 Tested end to end on every pull request labelled `e2e`: AlmaLinux 10.2,
-Rocky 10.2, Debian 13 (with and without NIC firmware) and Ubuntu 26.04.1 and
-26.10 (installed over NFS with 2 GiB of RAM).
+Rocky 10.2, Debian 13 (with and without NIC firmware) and Ubuntu 24.04.5,
+26.04.1 and 26.10 (installed over NFS with 2 GiB of RAM).
 
 ## How a machine is installed
 
