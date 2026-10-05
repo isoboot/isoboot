@@ -17,87 +17,193 @@ package nfsd
 
 import (
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strings"
 	"time"
 
 	nfs "github.com/willscott/go-nfs"
 )
 
-// Timeouts for NFS connections. The Linux client closes a connection it
-// has not used for five minutes and reconnects by itself, so an idle
-// timeout above that only ever hits dead peers.
+// Defaults for the limits of a Server. The Linux client closes a
+// connection it has not used for five minutes and reconnects by itself,
+// so an idle timeout above that only ever hits dead peers. A client sends
+// its first request as soon as it has connected, and a request is under
+// 1 KiB, so DefaultRequestTimeout only ever hits peers that stall.
+//
+// One installing machine holds one connection for the kernel's mount and
+// briefly a second one for klibc's MOUNT call; DefaultMaxConnectionsPerHost
+// leaves room for a few left behind by a machine that rebooted.
 const (
-	DefaultIdleTimeout  = 10 * time.Minute
-	DefaultWriteTimeout = time.Minute
+	DefaultIdleTimeout           = 10 * time.Minute
+	DefaultRequestTimeout        = 10 * time.Second
+	DefaultWriteTimeout          = time.Minute
+	DefaultMaxConnections        = 512
+	DefaultMaxConnectionsPerHost = 8
 )
 
 // Server serves NFS version 3 and MOUNT version 3 on one listener.
+//
+// Zero values of the limits mean their defaults.
 type Server struct {
 	Handler *Handler
 	// ConcurrentHandlers is how many requests of one connection are
 	// handled at the same time.
 	ConcurrentHandlers int
-	IdleTimeout        time.Duration
-	WriteTimeout       time.Duration
+	// IdleTimeout is how long a connection may go without a request.
+	IdleTimeout time.Duration
+	// RequestTimeout is how long a client may take to send one request,
+	// and to start its first one after connecting.
+	RequestTimeout time.Duration
+	// WriteTimeout bounds each write of a reply.
+	WriteTimeout time.Duration
+	// MaxConnections and MaxConnectionsPerHost bound the connections
+	// served at once, in total and from one IP address. Connections
+	// beyond them are closed at once.
+	MaxConnections        int
+	MaxConnectionsPerHost int
+	// Allow lists the networks clients may connect from. Connections from
+	// anywhere else are closed at once. Empty allows every address.
+	Allow []netip.Prefix
+	// Log receives refused connections and rejected requests, at most
+	// one warning per few seconds. Nil means slog.Default().
+	Log *slog.Logger
 }
 
 // Serve accepts connections until the listener is closed.
 func (s *Server) Serve(ctx context.Context, l net.Listener) error {
+	warnings := &throttledLog{log: orDefault(s.Log, slog.Default()), interval: warningInterval}
 	srv := &nfs.Server{
 		Handler:            s.Handler,
 		ConcurrentHandlers: s.ConcurrentHandlers,
 		Context:            ctx,
 	}
-	return srv.Serve(&deadlineListener{Listener: l, idle: s.IdleTimeout, write: s.WriteTimeout})
+	return srv.Serve(&guardedListener{
+		Listener: l,
+		gate: newConnectionGate("nfs", s.Allow,
+			orDefault(s.MaxConnections, DefaultMaxConnections),
+			orDefault(s.MaxConnectionsPerHost, DefaultMaxConnectionsPerHost), warnings),
+		idleTimeout:    orDefault(s.IdleTimeout, DefaultIdleTimeout),
+		requestTimeout: orDefault(s.RequestTimeout, DefaultRequestTimeout),
+		writeTimeout:   orDefault(s.WriteTimeout, DefaultWriteTimeout),
+		warnings:       warnings,
+	})
 }
 
-// deadlineListener gives every accepted connection read and write
-// deadlines, so that a stuck peer cannot hold a connection for ever.
-type deadlineListener struct {
+// guardedListener hands go-nfs only the connections the gate admits, and
+// wraps each in a guardedConn.
+type guardedListener struct {
 	net.Listener
-	idle, write time.Duration
+	gate                                      *connectionGate
+	idleTimeout, requestTimeout, writeTimeout time.Duration
+	warnings                                  *throttledLog
 }
 
-func (l *deadlineListener) Accept() (net.Conn, error) {
-	conn, err := l.Listener.Accept()
-	if err != nil {
+func (l *guardedListener) Accept() (net.Conn, error) {
+	for {
+		conn, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		release, ok := l.gate.admit(conn)
+		if !ok {
+			_ = conn.Close()
+			continue
+		}
+		return &guardedConn{Conn: conn, listener: l, release: release}, nil
+	}
+}
+
+// guardedConn stands between a client and go-nfs. It reads one whole
+// request record at a time, checks it (see checkCall) and only then lets
+// go-nfs read it, and it gives every read and write a deadline, so that
+// a stuck peer cannot hold a connection for ever. Replies pass through
+// unchanged, one Write each as go-nfs makes them.
+type guardedConn struct {
+	net.Conn
+	listener *guardedListener
+	release  func()
+	pending  []byte // the checked record go-nfs is reading
+	started  bool   // a request has arrived
+}
+
+func (c *guardedConn) Read(p []byte) (int, error) {
+	if len(c.pending) == 0 {
+		record, err := c.nextRecord()
+		if err != nil {
+			_ = c.Close()
+			return 0, err
+		}
+		c.pending = record
+	}
+	n := copy(p, c.pending)
+	c.pending = c.pending[n:]
+	return n, nil
+}
+
+var errRejectedRequest = errors.New("request rejected")
+
+// nextRecord reads and checks the next request record: its record mark
+// and its body.
+func (c *guardedConn) nextRecord() ([]byte, error) {
+	wait := c.listener.idleTimeout
+	if !c.started {
+		wait = c.listener.requestTimeout
+	}
+	if err := c.SetReadDeadline(time.Now().Add(wait)); err != nil {
 		return nil, err
 	}
-	return &deadlineConn{Conn: conn, idle: l.idle, write: l.write}, nil
-}
-
-type deadlineConn struct {
-	net.Conn
-	idle, write time.Duration
-}
-
-func (c *deadlineConn) Read(p []byte) (int, error) {
-	if c.idle > 0 {
-		if err := c.SetReadDeadline(time.Now().Add(c.idle)); err != nil {
-			return 0, err
-		}
+	var mark [4]byte
+	if _, err := io.ReadFull(c.Conn, mark[:]); err != nil {
+		return nil, err
 	}
-	n, err := c.Conn.Read(p)
+	c.started = true
+	fragment := binary.BigEndian.Uint32(mark[:])
+	size := fragment &^ lastFragment
+	if fragment&lastFragment == 0 || size < minRPCCall || size > maxRequestBytes {
+		return nil, c.reject("bad record mark")
+	}
+
+	if err := c.SetReadDeadline(time.Now().Add(c.listener.requestTimeout)); err != nil {
+		return nil, err
+	}
+	record := make([]byte, 4+size)
+	if _, err := io.ReadFull(c.Conn, record[4:]); err != nil {
+		return nil, err
+	}
+	body, err := checkCall(record[4:])
 	if err != nil {
-		_ = c.Close()
+		return nil, c.reject(err.Error())
 	}
-	return n, err
+	binary.BigEndian.PutUint32(record, lastFragment|uint32(len(body)))
+	return record[:4+len(body)], nil
 }
 
-func (c *deadlineConn) Write(p []byte) (int, error) {
-	if c.write > 0 {
-		if err := c.SetWriteDeadline(time.Now().Add(c.write)); err != nil {
-			return 0, err
-		}
+func (c *guardedConn) reject(reason string) error {
+	c.listener.warnings.warn("request rejected", "server", "nfs",
+		"client", c.RemoteAddr().String(), "reason", reason)
+	return errRejectedRequest
+}
+
+func (c *guardedConn) Write(p []byte) (int, error) {
+	if err := c.SetWriteDeadline(time.Now().Add(c.listener.writeTimeout)); err != nil {
+		return 0, err
 	}
 	n, err := c.Conn.Write(p)
 	if err != nil {
 		_ = c.Close()
 	}
 	return n, err
+}
+
+func (c *guardedConn) Close() error {
+	c.release()
+	return c.Conn.Close()
 }
 
 // UseLogger sends the log output of the go-nfs library to log.

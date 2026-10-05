@@ -86,8 +86,7 @@ func run(logger *slog.Logger, root, listenAddr, portmapAddr string, concurrency 
 	server := &nfsd.Server{
 		Handler:            handler,
 		ConcurrentHandlers: concurrency,
-		IdleTimeout:        nfsd.DefaultIdleTimeout,
-		WriteTimeout:       nfsd.DefaultWriteTimeout,
+		Log:                logger,
 	}
 	go func() { errCh <- fmt.Errorf("NFS server: %w", server.Serve(ctx, nfsListener)) }()
 	slog.Info("serving NFS and MOUNT", "addr", nfsListener.Addr().String(),
