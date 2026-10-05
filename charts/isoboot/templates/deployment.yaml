@@ -39,6 +39,7 @@ spec:
         args:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=:8443
+        - "--namespace={{ .Release.Namespace }}"
         - "--data-dir={{ .Values.dataDir }}/nginx/static"
         - "--nfs-dir={{ .Values.dataDir }}/nfs"
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"

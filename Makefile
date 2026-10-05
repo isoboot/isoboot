@@ -46,8 +46,10 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	@# The chart ships the generated CRDs unchanged in crds/, which Helm installs
-	@# (and waits for) before any template. verify-manifests catches drift.
+	@# (and waits for) before any template, and takes the controller's RBAC rules
+	@# from the generated role. verify-manifests catches drift.
 	mkdir -p charts/isoboot/crds && rm -f charts/isoboot/crds/*.yaml && cp config/crd/bases/*.yaml charts/isoboot/crds/
+	cp config/rbac/role.yaml charts/isoboot/files/manager-role.yaml
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

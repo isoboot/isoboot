@@ -1,85 +1,36 @@
 ---
+# The controller (started with --namespace) and httpd only work in the release
+# namespace, so their permissions are a Role there, not a ClusterRole.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: "{{ include "isoboot.fullname" . }}-manager-role"
+  namespace: "{{ .Release.Namespace }}"
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
+# The rules of controller-gen's manager-role (config/rbac/role.yaml), copied
+# to files/ by `make manifests`.
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - configmaps
-  - secrets
-  verbs:
-  - get
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
-- apiGroups:
-  - isoboot.github.io
-  resources:
-  - bootartifacts
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - isoboot.github.io
-  resources:
-  - bootartifacts/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - isoboot.github.io
-  resources:
-  - bootartifacts/status
-  - bootconfigs/status
-  - provisions/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - isoboot.github.io
-  resources:
-  - bootconfigs
-  - machines
-  - provisions
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - isoboot.github.io
-  resources:
-  - provisionautomations
-  verbs:
-  - get
+{{- (.Files.Get "files/manager-role.yaml" | fromYaml).rules | toYaml | nindent 0 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: "{{ include "isoboot.fullname" . }}-manager-rolebinding"
+  namespace: "{{ .Release.Namespace }}"
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: "{{ include "isoboot.fullname" . }}-manager-role"
 subjects:
 - kind: ServiceAccount
   name: "{{ include "isoboot.fullname" . }}-controller-manager"
   namespace: "{{ .Release.Namespace }}"
 ---
+# Token and access reviews are cluster-scoped APIs: the metrics endpoint's
+# authentication needs a ClusterRole for them, and nothing else.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -116,9 +67,10 @@ subjects:
   namespace: "{{ .Release.Namespace }}"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: "{{ include "isoboot.fullname" . }}-httpd-role"
+  namespace: "{{ .Release.Namespace }}"
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
 rules:
@@ -155,14 +107,15 @@ rules:
   - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: "{{ include "isoboot.fullname" . }}-httpd-rolebinding"
+  namespace: "{{ .Release.Namespace }}"
   labels:
     {{- include "isoboot.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: "{{ include "isoboot.fullname" . }}-httpd-role"
 subjects:
 - kind: ServiceAccount

@@ -128,6 +128,30 @@ else
   fail "nginx pod template changes when its ConfigMap changes ($checksum_default / $checksum_changed)"
 fi
 
+# chart-03 / namespaced controller: httpd faces the PXE LAN and the controller
+# unpacks downloaded ISOs; neither may read Secrets, ConfigMaps or isoboot
+# resources outside the release namespace.
+expect "controller watches only the release namespace" '"--namespace=isoboot-test"' \
+  "$(container "$default" controller-manager manager 'args[] | select(test("^--namespace"))')"
+expect "httpd queries only the release namespace" '"--namespace=isoboot-test"' \
+  "$(container "$default" httpd httpd 'args[] | select(test("^--namespace"))')"
+expect "no ClusterRole grants access to namespaced resources" "" \
+  "$(query "$default" 'select(.kind == "ClusterRole") | .metadata.name as $role | .rules[]
+    | select(.resources != null and ([.resources[] | test("^(tokenreviews|subjectaccessreviews)$") | not] | any))
+    | $role + ": " + (.resources | join(","))')"
+expect "controller and httpd roles are Roles in the release namespace" \
+  "Role/rel-isoboot-httpd-role@isoboot-test Role/rel-isoboot-manager-role@isoboot-test" \
+  "$(query "$default" 'select(.kind == "Role" or .kind == "ClusterRole") | select(.metadata.name | test("-(manager|httpd)-role$"))
+    | .kind + "/" + .metadata.name + "@" + (.metadata.namespace // "cluster")' | sort | xargs)"
+expect "their bindings are RoleBindings to those Roles" \
+  "RoleBinding/rel-isoboot-httpd-rolebinding@isoboot-test->Role/rel-isoboot-httpd-role RoleBinding/rel-isoboot-manager-rolebinding@isoboot-test->Role/rel-isoboot-manager-role" \
+  "$(query "$default" 'select(.kind == "RoleBinding" or .kind == "ClusterRoleBinding") | select(.metadata.name | test("-(manager|httpd)-rolebinding$"))
+    | .kind + "/" + .metadata.name + "@" + (.metadata.namespace // "cluster") + "->" + .roleRef.kind + "/" + .roleRef.name' | sort | xargs)"
+# ci-04: the controller's rules are controller-gen's, not a hand-kept copy.
+expect "controller Role has exactly the rules controller-gen generated" \
+  "$("$YQ" eval -o=json -I=0 '.rules' config/rbac/role.yaml)" \
+  "$(query "$default" -o=json -I=0 'select(.kind == "Role" and .metadata.name == "rel-isoboot-manager-role") | .rules')"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures chart check(s) failed" >&2
   exit 1
