@@ -155,7 +155,7 @@ jobs:
 
         # Link container netns so ip-netns can manage it
         SRV_PID=$(docker inspect -f '{{.State.Pid}}' dhcp-srv)
-        sudo ln -sf /proc/$SRV_PID/ns/net /var/run/netns/ns1
+        sudo ln -sf "/proc/$SRV_PID/ns/net" /var/run/netns/ns1
 
         # Attach to bridge with static IP 192.168.101.1/24
         sudo ip link add veth-ns1 type veth peer name veth-ns1-br
@@ -177,7 +177,7 @@ jobs:
           --log-facility=/tmp/dnsmasq.log
 
         # Wait for dnsmasq to be ready
-        for i in 1 2 3 4 5; do
+        for _ in 1 2 3 4 5; do
           docker exec dhcp-srv pgrep dnsmasq 2>/dev/null && break
           sleep 1
         done
@@ -261,7 +261,7 @@ jobs:
           --create-namespace \
           --set nodeName="${NODE_NAME}" \
           --set dnsmasq.subnet=192.168.101.0/24 \
-          --set alpineImage=alpine:${ALPINE_VERSION}
+          --set alpineImage="alpine:${ALPINE_VERSION}"
 
     - name: Wait for controller and nginx
       run: |
@@ -342,7 +342,7 @@ jobs:
           alpine:${{ env.ALPINE_VERSION }} sh -c "sleep infinity"
 
         CLIENT_PID=$(docker inspect -f '{{.State.Pid}}' wget-client)
-        sudo ln -sf /proc/$CLIENT_PID/ns/net /var/run/netns/ns3
+        sudo ln -sf "/proc/$CLIENT_PID/ns/net" /var/run/netns/ns3
 
         sudo ip link add veth-ns3 type veth peer name veth-ns3-br
         sudo ip link set veth-ns3-br master br-pxe
