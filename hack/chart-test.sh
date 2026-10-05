@@ -152,6 +152,31 @@ expect "controller Role has exactly the rules controller-gen generated" \
   "$("$YQ" eval -o=json -I=0 '.rules' config/rbac/role.yaml)" \
   "$(query "$default" -o=json -I=0 'select(.kind == "Role" and .metadata.name == "rel-isoboot-manager-role") | .rules')"
 
+# nfsd client allow-list: by default only the PXE subnet may use NFS, MOUNT
+# and the port mapper; nfsd.allowedCIDRs replaces it.
+nfsd_flags() {
+  container "$1" nfsd nfsd 'args[] | select(test("^--(allow-cidr|portmap-listen)"))' | xargs
+}
+expect "nfsd allows only dnsmasq.subnet by default" \
+  "--portmap-listen=:111 --allow-cidr=$subnet" "$(nfsd_flags "$default")"
+expect "nfsd.allowedCIDRs replaces the default allow-list" \
+  "--portmap-listen=:111 --allow-cidr=10.1.0.0/16 --allow-cidr=fd00::/64" \
+  "$(nfsd_flags "$(render --set 'nfsd.allowedCIDRs={10.1.0.0/16,fd00::/64}')")"
+
+# chart-05: the installer always asks the port mapper on TCP 111, so it is not
+# a value; with nfsd off the controller must not unpack ISOs nobody serves.
+expect "values have no nfsd.portmapPort" false \
+  "$("$YQ" eval '.nfsd | has("portmapPort")' "$chart/values.yaml")"
+expect "nfsd.portmapPort cannot move the port mapper off 111" "--portmap-listen=:111 --allow-cidr=$subnet" \
+  "$(nfsd_flags "$(render --set nfsd.portmapPort=1111)")"
+expect "controller gets --nfs-dir under dataDir with nfsd on" '"--nfs-dir=/data/isoboot/nfs"' \
+  "$(container "$default" controller-manager manager 'args[] | select(test("^--nfs-dir"))')"
+without_nfsd=$(render --set nfsd.enabled=false)
+expect "controller gets an empty --nfs-dir with nfsd off" '"--nfs-dir="' \
+  "$(container "$without_nfsd" controller-manager manager 'args[] | select(test("^--nfs-dir"))')"
+expect "no nfsd Deployment with nfsd off" "" \
+  "$(query "$without_nfsd" 'select(.kind == "Deployment" and .metadata.name == "rel-isoboot-nfsd") | .metadata.name')"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures chart check(s) failed" >&2
   exit 1

@@ -41,7 +41,8 @@ spec:
         - --metrics-bind-address=:8443
         - "--namespace={{ .Release.Namespace }}"
         - "--data-dir={{ .Values.dataDir }}/nginx/static"
-        - "--nfs-dir={{ .Values.dataDir }}/nfs"
+        # Empty without nfsd: iso-mode BootConfigs then go to Error.
+        - "--nfs-dir={{ if .Values.nfsd.enabled }}{{ .Values.dataDir }}/nfs{{ end }}"
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: "{{ .Values.image.pullPolicy }}"
         {{- include "isoboot.restrictedSecurityContext" . | nindent 8 }}

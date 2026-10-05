@@ -61,14 +61,18 @@ spec:
         args:
         - "--root={{ .Values.dataDir }}/nfs"
         - "--listen=:{{ .Values.nfsd.port }}"
-        - "--portmap-listen=:{{ .Values.nfsd.portmapPort }}"
+        # The installer's NFS client (klibc nfsmount) always asks TCP 111.
+        - "--portmap-listen=:111"
+        {{- range (.Values.nfsd.allowedCIDRs | default (list .Values.dnsmasq.subnet)) }}
+        - "--allow-cidr={{ . }}"
+        {{- end }}
         - "--log-level={{ .Values.nfsd.logLevel }}"
         ports:
         - name: nfs
           containerPort: {{ .Values.nfsd.port }}
           protocol: TCP
         - name: portmap
-          containerPort: {{ .Values.nfsd.portmapPort }}
+          containerPort: 111
           protocol: TCP
         # UID 0 only to bind ports below 1024: every capability is dropped
         # except NET_BIND_SERVICE, so files are read through their "other"
