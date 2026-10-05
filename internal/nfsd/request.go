@@ -41,6 +41,12 @@ const (
 	maxReadBytes = 1 << 20
 )
 
+// NFS version 3 procedures nfsd looks at more closely.
+const (
+	procRead   = 6
+	procFSInfo = 19
+)
+
 var (
 	errNotACall     = errors.New("not an RPC call")
 	errBadAuthLen   = errors.New("credentials or verifier too long")
@@ -94,8 +100,19 @@ var callArguments = map[uint32]map[uint32][]argument{
 	},
 }
 
+// checkedCall is a request that checkCall let through.
+type checkedCall struct {
+	body      []byte // the call to hand to go-nfs, without its record mark
+	xid       uint32
+	program   uint32
+	procedure uint32
+	// readCountOffset is where the count of a READ is in body, or 0 if
+	// the call is not a READ that has one.
+	readCountOffset int
+}
+
 // checkCall checks the body of one request record (the call without its
-// record mark) and returns the body to hand to go-nfs.
+// record mark).
 //
 // A body whose RPC header is malformed is an error: the connection is
 // closed, as go-nfs itself does. If an argument declares more bytes than
@@ -103,43 +120,49 @@ var callArguments = map[uint32]map[uint32][]argument{
 // call with its usual error for unreadable arguments without allocating
 // anything. A READ that asks for more than maxReadBytes is lowered to
 // that, in place.
-func checkCall(body []byte) ([]byte, error) {
+func checkCall(body []byte) (checkedCall, error) {
 	r := &xdrReader{data: body}
-	r.uint32() // xid
+	call := checkedCall{body: body, xid: r.uint32()}
 	if r.uint32() != rpcCall {
-		return nil, errNotACall
+		return checkedCall{}, errNotACall
 	}
 	r.uint32() // RPC version: go-nfs does not check it
-	prog, _, proc := r.uint32(), r.uint32(), r.uint32()
+	call.program = r.uint32()
+	r.uint32() // program version
+	call.procedure = r.uint32()
 	for range 2 { // credentials and verifier
 		r.uint32() // flavor
 		length := r.uint32()
 		if length > maxAuthLength {
-			return nil, errBadAuthLen
+			return checkedCall{}, errBadAuthLen
 		}
 		r.skip(padded(length))
 	}
 	if r.short {
-		return nil, errShortRequest
+		return checkedCall{}, errShortRequest
 	}
 
 	header := r.offset
-	if !r.argumentsFit(callArguments[prog][proc]) {
-		return body[:header], nil
+	fit, readCountOffset := r.argumentsFit(callArguments[call.program][call.procedure])
+	if !fit {
+		call.body = body[:header]
+		return call, nil
 	}
-	return body, nil
+	call.readCountOffset = readCountOffset
+	return call, nil
 }
 
 // argumentsFit walks the arguments and reports whether every declared
-// length fits in what is left of the request. Arguments that stop short
-// are fine: go-nfs fails to read them without a large allocation.
-func (r *xdrReader) argumentsFit(arguments []argument) bool {
+// length fits in what is left of the request, and where the count of a
+// READ is (0 if there is none). Arguments that stop short are fine:
+// go-nfs fails to read them without a large allocation.
+func (r *xdrReader) argumentsFit(arguments []argument) (fit bool, readCountOffset int) {
 	for _, arg := range arguments {
 		switch arg {
 		case opaqueArgument:
 			length := r.uint32()
 			if !r.short && uint64(length) > uint64(r.remaining()) {
-				return false
+				return false, 0
 			}
 			r.skip(padded(length))
 		case uint32Argument:
@@ -149,16 +172,19 @@ func (r *xdrReader) argumentsFit(arguments []argument) bool {
 		case attributesArgument:
 			r.skipAttributes()
 		case readCountArgument:
-			if r.remaining() >= 4 && r.peekUint32() > maxReadBytes {
-				binary.BigEndian.PutUint32(r.data[r.offset:], maxReadBytes)
+			if r.remaining() >= 4 {
+				readCountOffset = r.offset
+				if r.peekUint32() > maxReadBytes {
+					binary.BigEndian.PutUint32(r.data[r.offset:], maxReadBytes)
+				}
 			}
 			r.skip(4)
 		}
 		if r.short {
-			return true
+			break
 		}
 	}
-	return true
+	return true, readCountOffset
 }
 
 // skipAttributes skips a sattr3 the way go-nfs reads it: mode, uid, gid

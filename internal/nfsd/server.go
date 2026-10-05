@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
 	nfs "github.com/willscott/go-nfs"
@@ -67,6 +68,11 @@ type Server struct {
 	// beyond them are closed at once.
 	MaxConnections        int
 	MaxConnectionsPerHost int
+	// MaxReadBytesInFlight bounds the data of the READs, on all
+	// connections together, that have been asked for and whose replies
+	// have not been sent yet. Once it is spent, READs return little data
+	// each until replies have gone out.
+	MaxReadBytesInFlight int
 	// Allow lists the networks clients may connect from. Connections from
 	// anywhere else are closed at once. Empty allows every address.
 	Allow []netip.Prefix
@@ -91,6 +97,7 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 		idleTimeout:    orDefault(s.IdleTimeout, DefaultIdleTimeout),
 		requestTimeout: orDefault(s.RequestTimeout, DefaultRequestTimeout),
 		writeTimeout:   orDefault(s.WriteTimeout, DefaultWriteTimeout),
+		readBudget:     &readBudget{available: int64(orDefault(s.MaxReadBytesInFlight, DefaultMaxReadBytesInFlight))},
 		warnings:       warnings,
 	})
 }
@@ -101,6 +108,7 @@ type guardedListener struct {
 	net.Listener
 	gate                                      *connectionGate
 	idleTimeout, requestTimeout, writeTimeout time.Duration
+	readBudget                                *readBudget
 	warnings                                  *throttledLog
 }
 
@@ -115,21 +123,42 @@ func (l *guardedListener) Accept() (net.Conn, error) {
 			_ = conn.Close()
 			continue
 		}
-		return &guardedConn{Conn: conn, listener: l, release: release}, nil
+		return &guardedConn{Conn: conn, listener: l, release: release, awaiting: map[uint32]awaitedReply{}}, nil
 	}
 }
 
+// maxCallsAwaitingReply bounds the calls of one connection that go-nfs
+// has read and not answered. go-nfs reads no further ahead than twice its
+// ConcurrentHandlers; the bound only keeps the bookkeeping finite should
+// go-nfs ever leave a call unanswered.
+const maxCallsAwaitingReply = 1024
+
 // guardedConn stands between a client and go-nfs. It reads one whole
-// request record at a time, checks it (see checkCall) and only then lets
-// go-nfs read it, and it gives every read and write a deadline, so that
-// a stuck peer cannot hold a connection for ever. Replies pass through
-// unchanged, one Write each as go-nfs makes them.
+// request record at a time, checks it (see checkCall), takes the data of
+// a READ out of the read budget and only then lets go-nfs read it. It
+// follows the replies go-nfs writes, to give the budget back once a
+// reply has been sent, and rewrites FSINFO replies to the limits nfsd
+// serves; every other reply passes through unchanged, in the Writes
+// go-nfs makes. Every read and write has a deadline, so that a stuck peer
+// cannot hold a connection for ever.
 type guardedConn struct {
 	net.Conn
 	listener *guardedListener
 	release  func()
 	pending  []byte // the checked record go-nfs is reading
 	started  bool   // a request has arrived
+	replies  replyStream
+
+	mu       sync.Mutex
+	closed   bool
+	awaiting map[uint32]awaitedReply // calls go-nfs has not answered, by xid
+}
+
+// awaitedReply is what a connection remembers about a call until go-nfs
+// has sent its reply.
+type awaitedReply struct {
+	readBytes uint32 // taken from the read budget
+	fsinfo    bool
 }
 
 func (c *guardedConn) Read(p []byte) (int, error) {
@@ -176,12 +205,67 @@ func (c *guardedConn) nextRecord() ([]byte, error) {
 	if _, err := io.ReadFull(c.Conn, record[4:]); err != nil {
 		return nil, err
 	}
-	body, err := checkCall(record[4:])
+	call, err := checkCall(record[4:])
 	if err != nil {
 		return nil, c.reject(err.Error())
 	}
-	binary.BigEndian.PutUint32(record, lastFragment|uint32(len(body)))
-	return record[:4+len(body)], nil
+	if err := c.await(call); err != nil {
+		if errors.Is(err, net.ErrClosed) {
+			return nil, err
+		}
+		return nil, c.reject(err.Error())
+	}
+	binary.BigEndian.PutUint32(record, lastFragment|uint32(len(call.body)))
+	return record[:4+len(call.body)], nil
+}
+
+var (
+	errReusedXid       = errors.New("xid of a call still awaiting its reply")
+	errTooManyAwaiting = errors.New("too many calls awaiting their replies")
+)
+
+// await records a call that go-nfs is about to read. A READ gets its data
+// from the read budget, and its count is lowered to what it got.
+//
+// Replies are matched to calls by xid, so a call may not reuse the xid
+// of one still awaiting its reply: a client never does that, short of
+// retransmitting a call it has waited a minute for.
+func (c *guardedConn) await(call checkedCall) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch _, reused := c.awaiting[call.xid]; {
+	case c.closed:
+		return net.ErrClosed
+	case reused:
+		return errReusedXid
+	case len(c.awaiting) >= maxCallsAwaitingReply:
+		return errTooManyAwaiting
+	}
+	reply := awaitedReply{fsinfo: call.program == progNFS && call.procedure == procFSInfo}
+	if call.readCountOffset > 0 {
+		count := call.body[call.readCountOffset:]
+		reply.readBytes = c.listener.readBudget.take(binary.BigEndian.Uint32(count))
+		binary.BigEndian.PutUint32(count, reply.readBytes)
+	}
+	c.awaiting[call.xid] = reply
+	return nil
+}
+
+// answered forgets a call whose reply has been sent.
+func (c *guardedConn) answered(xid uint32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if reply, ok := c.awaiting[xid]; ok {
+		delete(c.awaiting, xid)
+		c.listener.readBudget.give(reply.readBytes)
+	}
+}
+
+// isFSInfo reports whether xid is that of an FSINFO call awaiting its reply.
+func (c *guardedConn) isFSInfo(xid uint32) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.awaiting[xid].fsinfo
 }
 
 func (c *guardedConn) reject(reason string) error {
@@ -194,14 +278,30 @@ func (c *guardedConn) Write(p []byte) (int, error) {
 	if err := c.SetWriteDeadline(time.Now().Add(c.listener.writeTimeout)); err != nil {
 		return 0, err
 	}
-	n, err := c.Conn.Write(p)
+	out := p
+	if xid, ok := c.replies.atReplyStart(p); ok && c.isFSInfo(xid) {
+		out = advertiseLimits(p) // same length
+	}
+	n, err := c.Conn.Write(out)
+	c.replies.written(out[:n], c.answered)
 	if err != nil {
 		_ = c.Close()
 	}
 	return n, err
 }
 
+// Close closes the connection and gives back its share of the read
+// budget: the replies it still owed will not be sent.
 func (c *guardedConn) Close() error {
+	c.mu.Lock()
+	if !c.closed {
+		c.closed = true
+		for _, reply := range c.awaiting {
+			c.listener.readBudget.give(reply.readBytes)
+		}
+		clear(c.awaiting)
+	}
+	c.mu.Unlock()
 	c.release()
 	return c.Conn.Close()
 }

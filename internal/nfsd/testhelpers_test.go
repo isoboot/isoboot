@@ -96,11 +96,17 @@ func startServer(t *testing.T, root string) (addr string, stop func()) {
 // startServerWith is startServer with the limits and timeouts of server.
 func startServerWith(t *testing.T, root string, server *Server) (addr string, stop func()) {
 	t.Helper()
-	handler, err := NewHandler(root, testLogger())
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	return listener.Addr().String(), serveOn(t, root, server, listener)
+}
+
+// serveOn serves root on listener until the test ends or stop is called.
+func serveOn(t *testing.T, root string, server *Server, listener net.Listener) (stop func()) {
+	t.Helper()
+	handler, err := NewHandler(root, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +133,7 @@ func startServerWith(t *testing.T, root string, server *Server) (addr string, st
 		_ = handler.Close()
 	}
 	t.Cleanup(stop)
-	return listener.Addr().String(), stop
+	return stop
 }
 
 // mount mounts an export with the NFS client library.

@@ -31,7 +31,6 @@ import (
 const (
 	procGetAttr  = 1
 	procLookup   = 3
-	procRead     = 6
 	procWrite    = 7
 	procSymlink  = 10
 	procRename   = 14
@@ -71,11 +70,11 @@ func TestCheckCallPassesWellFormedCalls(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := checkCall(slices.Clone(tt.body))
+			call, err := checkCall(slices.Clone(tt.body))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.Equal(got, tt.body) {
+			if got := call.body; !bytes.Equal(got, tt.body) {
 				t.Errorf("call changed:\n got %x\nwant %x", got, tt.body)
 			}
 		})
@@ -108,11 +107,11 @@ func TestCheckCallDropsArgumentsThatDoNotFit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := checkCall(slices.Clone(tt.body))
+			call, err := checkCall(slices.Clone(tt.body))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if want := tt.body[:headerLength]; !bytes.Equal(got, want) {
+			if got, want := call.body, tt.body[:headerLength]; !bytes.Equal(got, want) {
 				t.Errorf("call:\n got %x\nwant the header alone %x", got, want)
 			}
 		})
@@ -147,13 +146,26 @@ func TestCheckCallRejectsBadHeaders(t *testing.T) {
 func TestCheckCallLowersReadCount(t *testing.T) {
 	handle := bytes.Repeat([]byte{1}, HandleLen)
 	body := callBody(1, progNFS, procRead, xdrOpaque(handle), xdrWords(0, 4096, 16<<20))
-	got, err := checkCall(body)
+	call, err := checkCall(body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := callBody(1, progNFS, procRead, xdrOpaque(handle), xdrWords(0, 4096, maxReadBytes))
-	if !bytes.Equal(got, want) {
-		t.Errorf("call:\n got %x\nwant %x", got, want)
+	if !bytes.Equal(call.body, want) {
+		t.Errorf("call:\n got %x\nwant %x", call.body, want)
+	}
+	// The connection lowers the count further when the read budget is
+	// spent: it must find the count where it is.
+	if call.xid != 1 || call.program != progNFS || call.procedure != procRead {
+		t.Errorf("call %d to %d.%d, want 1 to %d.%d", call.xid, call.program, call.procedure, progNFS, procRead)
+	}
+	if want := len(want) - 4; call.readCountOffset != want {
+		t.Errorf("readCountOffset = %d, want %d", call.readCountOffset, want)
+	}
+
+	call, err = checkCall(callBody(1, progNFS, procRead, xdrOpaque(handle), xdrWords(0)))
+	if err != nil || call.readCountOffset != 0 {
+		t.Errorf("READ without a count: readCountOffset = %d, %v; want 0", call.readCountOffset, err)
 	}
 }
 
@@ -261,12 +273,15 @@ func FuzzCheckCall(f *testing.F) {
 		xdrWords(1, 0o644, 0, 0, 1, 0, 1, 2, 1, 0, 2, 1, 0), xdrWords(hugeLength)))
 	f.Add(callBody(1, progMount, procMount, xdrWords(0xffffffff)))
 	f.Fuzz(func(t *testing.T, body []byte) {
-		got, err := checkCall(slices.Clone(body))
+		call, err := checkCall(slices.Clone(body))
 		if err != nil {
 			return
 		}
-		if len(got) != len(body) && len(got) < headerLength {
-			t.Errorf("passed on %d of %d bytes", len(got), len(body))
+		if len(call.body) != len(body) && len(call.body) < headerLength {
+			t.Errorf("passed on %d of %d bytes", len(call.body), len(body))
+		}
+		if call.readCountOffset != 0 && call.readCountOffset+4 > len(call.body) {
+			t.Errorf("READ count at %d of a %d-byte call", call.readCountOffset, len(call.body))
 		}
 	})
 }
