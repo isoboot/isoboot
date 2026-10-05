@@ -91,12 +91,14 @@ type Portmap struct {
 	// Allow lists the networks clients may connect from. Connections from
 	// anywhere else are closed at once. Empty allows every address.
 	Allow []netip.Prefix
-	Log   *slog.Logger
+	// Log receives lookups, and refused connections and rejected calls at
+	// most one warning per few seconds. Nil means slog.Default().
+	Log *slog.Logger
 }
 
 // Serve accepts connections until the listener is closed.
 func (p *Portmap) Serve(l net.Listener) error {
-	warnings := &throttledLog{log: p.Log, interval: warningInterval}
+	warnings := &throttledLog{log: p.logger(), interval: warningInterval}
 	gate := newConnectionGate("portmap", p.Allow,
 		orDefault(p.MaxConnections, DefaultPortmapMaxConnections),
 		orDefault(p.MaxConnectionsPerHost, DefaultPortmapMaxConnectionsPerHost),
@@ -213,9 +215,13 @@ func (p *Portmap) reply(call []byte, client string) []byte {
 	wantVers := binary.BigEndian.Uint32(args[4:])
 	wantProto := binary.BigEndian.Uint32(args[8:])
 	port := p.lookup(wantProg, wantVers, wantProto)
-	p.Log.Info("portmap getport", "client", client,
+	p.logger().Info("portmap getport", "client", client,
 		"program", wantProg, "version", wantVers, "protocol", wantProto, "port", port)
 	return accepted(xid, acceptSuccess, port)
+}
+
+func (p *Portmap) logger() *slog.Logger {
+	return orDefault(p.Log, slog.Default())
 }
 
 // lookup returns the port for a program, or 0 if it is not served.

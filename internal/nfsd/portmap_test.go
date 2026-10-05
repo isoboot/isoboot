@@ -348,3 +348,14 @@ func TestPortmapRejectionsAreRateLimited(t *testing.T) {
 		t.Errorf("%d warnings for a burst of bad calls, want 1:\n%s", lines, out.String())
 	}
 }
+
+// Log is optional, as it is for Server: refusing a connection or a call
+// must not need one.
+func TestPortmapWithoutLog(t *testing.T) {
+	p := &Portmap{Port: 2049, Timeout: 5 * time.Second, MaxConnectionsPerHost: 1}
+	addr := listenPortmap(t, p)
+	first := dialRaw(t, addr)
+	expectOpen(t, first, 100*time.Millisecond)
+	expectClosed(t, dialRaw(t, addr), time.Second)
+	getport(t, first)
+}
