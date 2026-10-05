@@ -38,6 +38,15 @@
   The `crds.enabled` value is removed: use `helm install --skip-crds` instead,
   and on upgrade apply `charts/isoboot/crds/` with kubectl first (Helm never
   upgrades CRDs).
+- Build with Go 1.27 (was 1.26; the devcontainer was still on 1.25) and
+  golangci-lint v2.14.0 (was v2.11.3, which cannot read Go 1.27 code).
+  goconst keeps skipping test files, as the older linter did.
+- Pin every tool version so builds are repeatable, and check each download
+  against its project's published checksum. Devcontainer: image golang:1.27.1,
+  pinned features, no package upgrade at build time, kind v0.33.0,
+  kubebuilder v4.13.0 (the `PROJECT` scaffold version), kubectl v1.36.5. E2E:
+  k3s v1.36.5+k3s1 and Helm v3.22.0 (`test/e2e/provision/lib.sh`). Lint plugin
+  logtools v0.10.1. CI runners: ubuntu-24.04 instead of ubuntu-latest.
 - Fix the controller being OOM-killed at its 128Mi limit while downloading or
   unpacking a multi-GB ISO: large writes are flushed to disk every 32 MiB, so
   dirty page cache no longer counts against the pod
