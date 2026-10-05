@@ -280,7 +280,8 @@ var _ = Describe("Manager", Ordered, func() {
 	})
 
 	Context("BootArtifact", func() {
-		const testURL = "https://raw.githubusercontent.com/isoboot/isoboot/main/LICENSE"
+		// A tagged file, so the test does not depend on what main holds.
+		const testURL = "https://raw.githubusercontent.com/isoboot/isoboot/v0.0.1/LICENSE"
 		const wrongSHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 		ctx := context.TODO()
