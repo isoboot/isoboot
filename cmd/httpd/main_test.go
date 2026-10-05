@@ -348,3 +348,155 @@ func TestHealthz(t *testing.T) {
 		t.Errorf("expected 200, got: %d", w.Result().StatusCode)
 	}
 }
+
+func isoDirective(args string) bootDirectiveFunc {
+	return func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return &httpd.BootDirective{
+			KernelPath:    "ubuntu-26.04/vmlinuz",
+			KernelArgs:    args,
+			InitrdPath:    "ubuntu-26.04/initrd",
+			NFSExport:     "/ubuntu-26.04",
+			ProvisionName: "my-provision",
+		}, nil
+	}
+}
+
+func TestConditionalBoot_NFSRoot(t *testing.T) {
+	args := "ip=dhcp netboot=nfs nfsroot={{.NFSRoot}} fsck.mode=skip " +
+		"autoinstall ds=nocloud;s={{.ProvisionAutomationBaseURL}}/ ---"
+	tests := []struct {
+		name       string
+		host       string // Host header
+		fwdHost    string // X-Forwarded-Host
+		fwdPort    string // X-Forwarded-Port
+		wantStatus int
+		want       string
+	}{
+		{"forwarded ipv4", "", "10.0.0.1", "8080", http.StatusOK,
+			"nfsroot=10.0.0.1:/ubuntu-26.04 fsck.mode=skip " +
+				"autoinstall ds=nocloud;s=http://10.0.0.1:8080/dynamic/automation/my-provision/ ---"},
+		{"host header ipv4", "192.168.1.5:8080", "", "", http.StatusOK, "nfsroot=192.168.1.5:/ubuntu-26.04 "},
+		{"ipv4 without port", "192.168.1.5", "", "", http.StatusOK, "nfsroot=192.168.1.5:/ubuntu-26.04 "},
+		{"hostname", "isoboot.example:8080", "", "", http.StatusInternalServerError, ""},
+		{"ipv6", "[fd00::1]:8080", "", "", http.StatusInternalServerError, ""},
+		{"ipv4-mapped ipv6", "[::ffff:10.0.0.1]:8080", "", "", http.StatusInternalServerError, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := conditionalBootHandler(isoDirective(args), "")
+			req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+			if tt.host != "" {
+				req.Host = tt.host
+			}
+			if tt.fwdHost != "" {
+				req.Header.Set("X-Forwarded-Host", tt.fwdHost)
+				req.Header.Set("X-Forwarded-Port", tt.fwdPort)
+			}
+			w := httptest.NewRecorder()
+
+			handler(w, req)
+
+			if w.Result().StatusCode != tt.wantStatus {
+				t.Fatalf("expected %d, got: %d", tt.wantStatus, w.Result().StatusCode)
+			}
+			body, _ := io.ReadAll(w.Result().Body)
+			if tt.wantStatus == http.StatusOK && !strings.Contains(string(body), tt.want) {
+				t.Errorf("expected body to contain:\n%s\ngot:\n%s", tt.want, body)
+			}
+			if tt.wantStatus != http.StatusOK && strings.Contains(string(body), "nfsroot=") {
+				t.Errorf("error body must not carry a command line: %s", body)
+			}
+		})
+	}
+}
+
+func TestConditionalBoot_NFSRootEmptyInNetbootMode(t *testing.T) {
+	handler := conditionalBootHandler(func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+		return &httpd.BootDirective{
+			KernelPath:    "config/kernel/vmlinuz",
+			KernelArgs:    "ip=dhcp root=[{{.NFSRoot}}]",
+			InitrdPath:    "config/initrd/initrd.img",
+			ProvisionName: "my-provision",
+		}, nil
+	}, "")
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	req.Host = "isoboot.example:8080" // a hostname is fine without NFS
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got: %d", w.Result().StatusCode)
+	}
+	body, _ := io.ReadAll(w.Result().Body)
+	if !strings.Contains(string(body), "root=[]") {
+		t.Errorf("expected empty NFSRoot, got:\n%s", body)
+	}
+}
+
+func TestConditionalBoot_ISOURLRemoved(t *testing.T) {
+	handler := conditionalBootHandler(isoDirective("url={{.ISOURL}}"), "")
+	req := httptest.NewRequest(http.MethodGet, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", nil)
+	req.Host = "10.0.0.1:8080"
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Result().StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected 500 for removed {{.ISOURL}}, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestAutomationFile_URLs(t *testing.T) {
+	tests := []struct {
+		name      string
+		proxyPort string
+		wantProxy string
+	}{
+		{"squid on", "3128", "http://10.0.0.1:3128"},
+		{"squid off", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotStatus, gotProxy string
+			render := func(_ context.Context, _, _, statusURL, proxyURL string) (string, error) {
+				gotStatus, gotProxy = statusURL, proxyURL
+				return "ok", nil
+			}
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /automation/{provisionName}/{fileName}", automationFileHandler(render, tt.proxyPort))
+			req := httptest.NewRequest(http.MethodGet, "/automation/my-provision/user-data", nil)
+			req.Header.Set("X-Forwarded-Host", "10.0.0.1")
+			req.Header.Set("X-Forwarded-Port", "8080")
+			w := httptest.NewRecorder()
+
+			mux.ServeHTTP(w, req)
+
+			if w.Result().StatusCode != http.StatusOK {
+				t.Fatalf("expected 200, got: %d", w.Result().StatusCode)
+			}
+			if gotStatus != "http://10.0.0.1:8080/dynamic/status" {
+				t.Errorf("status URL: got %q", gotStatus)
+			}
+			if gotProxy != tt.wantProxy {
+				t.Errorf("proxy URL: got %q, want %q", gotProxy, tt.wantProxy)
+			}
+		})
+	}
+}
+
+func TestAutomationFile_NotFound(t *testing.T) {
+	render := func(_ context.Context, _, _, _, _ string) (string, error) {
+		return "", httpd.ErrFileNotFound
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /automation/{provisionName}/{fileName}", automationFileHandler(render, ""))
+	req := httptest.NewRequest(http.MethodGet, "/automation/my-provision/nope", nil)
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	if w.Result().StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got: %d", w.Result().StatusCode)
+	}
+}

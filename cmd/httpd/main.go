@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"regexp"
@@ -32,7 +33,7 @@ import (
 var macRegexp = regexp.MustCompile(`^([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$`)
 
 type bootDirectiveFunc func(ctx context.Context, mac string) (*httpd.BootDirective, error)
-type renderAutomationFunc func(ctx context.Context, provisionName, fileName, statusURL string) (string, error)
+type renderAutomationFunc func(ctx context.Context, provisionName, fileName, statusURL, proxyURL string) (string, error)
 type updatePhaseFunc func(
 	ctx context.Context, provisionName string,
 	phase isobootgithubiov1alpha1.ProvisionPhase, message string,
@@ -98,11 +99,11 @@ func main() {
 	}, proxyPort)
 
 	renderFile := func(
-		reqCtx context.Context, provisionName, fileName, statusURL string,
+		reqCtx context.Context, provisionName, fileName, statusURL, proxyURL string,
 	) (string, error) {
-		return httpd.RenderAutomationFile(reqCtx, c, ns, provisionName, fileName, statusURL)
+		return httpd.RenderAutomationFile(reqCtx, c, ns, provisionName, fileName, statusURL, proxyURL)
 	}
-	automationHandler := automationFileHandler(renderFile)
+	automationHandler := automationFileHandler(renderFile, proxyPort)
 
 	updatePhase := func(
 		reqCtx context.Context, provisionName string,
@@ -191,28 +192,30 @@ func conditionalBootHandler(
 
 		if directive.KernelArgs != "" {
 			host := resolveHost(r)
-			nodeIP := host
-			if h, _, err := net.SplitHostPort(nodeIP); err == nil {
-				nodeIP = h
-			}
+			nodeIP := hostOnly(host)
 			baseURL := fmt.Sprintf("http://%s/dynamic/automation/%s",
 				host, directive.ProvisionName)
 			statusURL := fmt.Sprintf("http://%s/dynamic/status", host)
-			proxyURL := ""
-			if proxyPort != "" {
-				proxyURL = fmt.Sprintf("http://%s:%s", nodeIP, proxyPort)
-			}
-			isoURL := ""
-			if directive.ISOPath != "" {
-				isoURL = fmt.Sprintf("http://%s/static/%s", host, directive.ISOPath)
+			nfsRoot := ""
+			if directive.NFSExport != "" {
+				// The installer's NFS client (klibc nfsmount) takes an IPv4
+				// literal only; anything else gives an unbootable command line.
+				addr, err := netip.ParseAddr(nodeIP)
+				if err != nil || !addr.Is4() {
+					slog.Error("nfsroot needs an IPv4 address, but the machine reached isoboot through another host",
+						"mac", mac, "host", nodeIP, "export", directive.NFSExport)
+					http.Error(w, "nfsroot needs an IPv4 address", http.StatusInternalServerError)
+					return
+				}
+				nfsRoot = addr.String() + ":" + directive.NFSExport
 			}
 			rendered, err := httpd.RenderKernelArgs(
 				directive.KernelArgs, httpd.KernelArgsData{
 					ProvisionAutomationBaseURL: baseURL,
-					ProxyURL:                   proxyURL,
+					ProxyURL:                   proxyURLFor(nodeIP, proxyPort),
 					UpdatePhaseURL:             statusURL,
 					ProvisionName:              directive.ProvisionName,
-					ISOURL:                     isoURL,
+					NFSRoot:                    nfsRoot,
 				})
 			if err != nil {
 				slog.Error("kernel args template failed",
@@ -255,9 +258,26 @@ func resolveHost(r *http.Request) string {
 	return host
 }
 
+// hostOnly strips the port, if any, from a host[:port] value.
+func hostOnly(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
+
+// proxyURLFor returns the squid proxy URL on nodeIP, or "" when squid is off
+// (no proxy port configured).
+func proxyURLFor(nodeIP, proxyPort string) string {
+	if proxyPort == "" {
+		return ""
+	}
+	return "http://" + net.JoinHostPort(nodeIP, proxyPort)
+}
+
 var nameRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 
-func automationFileHandler(render renderAutomationFunc) http.HandlerFunc {
+func automationFileHandler(render renderAutomationFunc, proxyPort string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		provisionName := r.PathValue("provisionName")
 		fileName := r.PathValue("fileName")
@@ -271,10 +291,11 @@ func automationFileHandler(render renderAutomationFunc) http.HandlerFunc {
 			return
 		}
 
-		statusURL := fmt.Sprintf(
-			"http://%s/dynamic/status", resolveHost(r))
+		host := resolveHost(r)
+		statusURL := fmt.Sprintf("http://%s/dynamic/status", host)
+		proxyURL := proxyURLFor(hostOnly(host), proxyPort)
 
-		body, err := render(r.Context(), provisionName, fileName, statusURL)
+		body, err := render(r.Context(), provisionName, fileName, statusURL, proxyURL)
 		if err != nil {
 			if httpd.IsAutomationNotFound(err) {
 				http.Error(w, "not found", http.StatusNotFound)

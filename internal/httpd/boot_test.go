@@ -97,6 +97,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 		Expect(result.KernelPath).To(Equal("bd-bc1/kernel/vmlinuz"))
 		Expect(result.KernelArgs).To(Equal("console=ttyS0"))
 		Expect(result.InitrdPath).To(Equal("bd-bc1/initrd/initrd.img"))
+		Expect(result.NFSExport).To(BeEmpty())
 		Expect(result.ProvisionName).To(Equal("bd-p1"))
 	})
 
@@ -130,7 +131,6 @@ var _ = Describe("BootDirectiveForMAC", func() {
 
 	It("returns ISO-mode directive with kernel args", func() {
 		m := createMachine("bd-m4", "bb-00-00-00-00-05")
-		ia := createArtifact("bd-iso-1", "https://example.com/ubuntu.iso")
 		bc := &isobootgithubiov1alpha1.BootConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "bd-bc3", Namespace: ns},
 			Spec: isobootgithubiov1alpha1.BootConfigSpec{
@@ -148,7 +148,6 @@ var _ = Describe("BootDirectiveForMAC", func() {
 		defer func() {
 			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, bc)).To(Succeed())
-			Expect(k8sClient.Delete(ctx, ia)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
 		}()
 
@@ -161,7 +160,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 
 		Expect(result.KernelPath).To(Equal("bd-bc3/vmlinuz"))
 		Expect(result.InitrdPath).To(Equal("bd-bc3/initrd"))
-		Expect(result.ISOPath).To(Equal("bd-bc3/ubuntu.iso"))
+		Expect(result.NFSExport).To(Equal("/bd-bc3"))
 		Expect(result.KernelArgs).To(Equal("autoinstall ds=nocloud-net"))
 		Expect(result.ProvisionName).To(Equal("bd-p4"))
 	})
@@ -255,16 +254,21 @@ var _ = Describe("RenderKernelArgs", func() {
 		Expect(result).To(ContainSubstring("inst.provname=my-provision"))
 	})
 
-	It("renders ISOURL for ISO-mode autoinstall", func() {
+	It("renders NFSRoot for ISO-mode autoinstall", func() {
 		result, err := RenderKernelArgs(
-			"ip=dhcp url={{.ISOURL}} autoinstall ds=nocloud-net;s={{.ProvisionAutomationBaseURL}}/",
+			"ip=dhcp netboot=nfs nfsroot={{.NFSRoot}} fsck.mode=skip autoinstall ds=nocloud;s={{.ProvisionAutomationBaseURL}}/ ---",
 			KernelArgsData{
 				ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
-				ISOURL:                     "http://10.0.0.1:8080/static/ubuntu-26.04/ubuntu-26.04-live-server-amd64.iso",
+				NFSRoot:                    "10.0.0.1:/ubuntu-26.04",
 			})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal(
-			"ip=dhcp url=http://10.0.0.1:8080/static/ubuntu-26.04/ubuntu-26.04-live-server-amd64.iso autoinstall ds=nocloud-net;s=http://10.0.0.1:8080/dynamic/automation/my-provision/"))
+			"ip=dhcp netboot=nfs nfsroot=10.0.0.1:/ubuntu-26.04 fsck.mode=skip autoinstall ds=nocloud;s=http://10.0.0.1:8080/dynamic/automation/my-provision/ ---"))
+	})
+
+	It("no longer knows ISOURL", func() {
+		_, err := RenderKernelArgs("url={{.ISOURL}}", data)
+		Expect(err).To(HaveOccurred())
 	})
 })
 

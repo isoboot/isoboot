@@ -79,7 +79,7 @@ var _ = Describe("RenderAutomationFile", func() {
 
 	It("returns error when provision not found", func() {
 		_, err := RenderAutomationFile(
-			ctx, k8sClient, ns, "nonexistent", "kickstart.cfg", "")
+			ctx, k8sClient, ns, "nonexistent", "kickstart.cfg", "", "")
 		Expect(err).To(MatchError(ContainSubstring("getting provision")))
 	})
 
@@ -91,7 +91,7 @@ var _ = Describe("RenderAutomationFile", func() {
 		}()
 
 		_, err := RenderAutomationFile(
-			ctx, k8sClient, ns, "ra-p1", "kickstart.cfg", "")
+			ctx, k8sClient, ns, "ra-p1", "kickstart.cfg", "", "")
 		Expect(err).To(MatchError(
 			ContainSubstring("getting provision automation")))
 	})
@@ -108,7 +108,7 @@ var _ = Describe("RenderAutomationFile", func() {
 		}()
 
 		_, err := RenderAutomationFile(
-			ctx, k8sClient, ns, "ra-p2", "missing.cfg", "")
+			ctx, k8sClient, ns, "ra-p2", "missing.cfg", "", "")
 		Expect(err).To(MatchError(ContainSubstring("missing.cfg")))
 		Expect(IsAutomationNotFound(err)).To(BeTrue())
 	})
@@ -125,7 +125,7 @@ var _ = Describe("RenderAutomationFile", func() {
 		}()
 
 		result, err := RenderAutomationFile(
-			ctx, k8sClient, ns, "ra-p3", "kickstart.cfg", "")
+			ctx, k8sClient, ns, "ra-p3", "kickstart.cfg", "", "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal("lang en_US.UTF-8\nkeyboard us\n"))
 	})
@@ -148,7 +148,7 @@ var _ = Describe("RenderAutomationFile", func() {
 		}()
 
 		result, err := RenderAutomationFile(
-			ctx, k8sClient, ns, "ra-p4", "kickstart.cfg", "")
+			ctx, k8sClient, ns, "ra-p4", "kickstart.cfg", "", "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal(
 			"network --hostname=my-server\ntimezone UTC\n"))
@@ -171,7 +171,7 @@ var _ = Describe("RenderAutomationFile", func() {
 		}()
 
 		result, err := RenderAutomationFile(
-			ctx, k8sClient, ns, "ra-p5", "kickstart.cfg", "")
+			ctx, k8sClient, ns, "ra-p5", "kickstart.cfg", "", "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal("rootpw s3cret\n"))
 	})
@@ -198,7 +198,7 @@ var _ = Describe("RenderAutomationFile", func() {
 		}()
 
 		result, err := RenderAutomationFile(
-			ctx, k8sClient, ns, "ra-p6", "kickstart.cfg", "")
+			ctx, k8sClient, ns, "ra-p6", "kickstart.cfg", "", "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal("my-server UTC"))
 	})
@@ -225,7 +225,7 @@ var _ = Describe("RenderAutomationFile", func() {
 		}()
 
 		result, err := RenderAutomationFile(
-			ctx, k8sClient, ns, "ra-p7", "kickstart.cfg", "")
+			ctx, k8sClient, ns, "ra-p7", "kickstart.cfg", "", "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal("specific-pw general-token"))
 	})
@@ -243,9 +243,31 @@ var _ = Describe("RenderAutomationFile", func() {
 
 		result, err := RenderAutomationFile(
 			ctx, k8sClient, ns, "ra-p8", "post.sh",
-			"http://10.0.0.1:8080/dynamic/status")
+			"http://10.0.0.1:8080/dynamic/status", "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal(
 			`curl -X POST -d "provisionName=ra-p8&phase=Complete" http://10.0.0.1:8080/dynamic/status`))
+	})
+
+	It("renders ProxyURL, empty when squid is off", func() {
+		pa := createProvisionAutomation("ra-pa8", map[string]string{
+			"user-data": "{{if .ProxyURL}}proxy: {{.ProxyURL}}\n{{end}}version: 1\n",
+		})
+		p := createProvisionWithRefs(
+			"ra-p9", "ra-m9", "ra-bc9", "ra-pa8", nil, nil)
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, pa)).To(Succeed())
+		}()
+
+		result, err := RenderAutomationFile(
+			ctx, k8sClient, ns, "ra-p9", "user-data", "", "http://10.0.0.1:3128")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal("proxy: http://10.0.0.1:3128\nversion: 1\n"))
+
+		result, err = RenderAutomationFile(
+			ctx, k8sClient, ns, "ra-p9", "user-data", "", "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal("version: 1\n"))
 	})
 })

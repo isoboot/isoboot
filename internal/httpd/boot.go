@@ -32,10 +32,12 @@ import (
 
 // BootDirective holds the data needed to construct an iPXE boot script.
 type BootDirective struct {
-	KernelPath    string
-	KernelArgs    string
-	InitrdPath    string
-	ISOPath       string
+	KernelPath string
+	KernelArgs string
+	InitrdPath string
+	// NFSExport is the nfsd export holding the ISO tree ("/<bootconfig>")
+	// for ISO-mode BootConfigs, and empty in netboot mode.
+	NFSExport     string
 	ProvisionName string
 }
 
@@ -45,7 +47,9 @@ type KernelArgsData struct {
 	ProxyURL                   string
 	UpdatePhaseURL             string
 	ProvisionName              string
-	ISOURL                     string
+	// NFSRoot is "<IPv4>:/<bootconfig>" for ISO-mode BootConfigs (the
+	// casper nfsroot= value) and empty in netboot mode.
+	NFSRoot string
 }
 
 // RenderKernelArgs renders kernel args as a Go template with the given data.
@@ -92,22 +96,14 @@ func BootDirectiveForMAC(
 			provision.Spec.BootConfigRef, err)
 	}
 
-	// Mode B (ISO): kernel and initrd are extracted to fixed filenames.
+	// Mode B (ISO): kernel and initrd are extracted to fixed filenames; the
+	// rest of the ISO is exported by nfsd under the BootConfig's name.
 	if bc.Spec.ISO != nil {
-		var isoArtifact isobootgithubiov1alpha1.BootArtifact
-		if err := c.Get(ctx, client.ObjectKey{
-			Name:      bc.Spec.ISO.ArtifactRef,
-			Namespace: ns,
-		}, &isoArtifact); err != nil {
-			return nil, fmt.Errorf("getting iso artifact %q: %w",
-				bc.Spec.ISO.ArtifactRef, err)
-		}
-		isoFile := urlutil.FilenameFromURL(isoArtifact.Spec.URL)
 		return &BootDirective{
 			KernelPath:    path.Join(bc.Name, "vmlinuz"),
 			KernelArgs:    bc.Spec.KernelArgs,
 			InitrdPath:    path.Join(bc.Name, "initrd"),
-			ISOPath:       path.Join(bc.Name, isoFile),
+			NFSExport:     "/" + bc.Name,
 			ProvisionName: provision.Name,
 		}, nil
 	}
