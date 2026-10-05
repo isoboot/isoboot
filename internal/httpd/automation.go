@@ -100,7 +100,7 @@ func RenderAutomationFile(
 	data.ProxyURL = proxyURL
 
 	tmpl, err := template.New(fileName).
-		Option("missingkey=error").Parse(tmplContent)
+		Option("missingkey=error").Funcs(automationFuncs).Parse(tmplContent)
 	if err != nil {
 		return "", fmt.Errorf("parsing template %q: %w", fileName, err)
 	}
@@ -111,6 +111,23 @@ func RenderAutomationFile(
 	}
 
 	return buf.String(), nil
+}
+
+// automationFuncs are the functions automation templates can use besides
+// the built-in ones.
+var automationFuncs = template.FuncMap{
+	// required is index for keys that must exist: {{ required .Secrets
+	// "ssh_host_ed25519_key" }}. Keys with dots cannot be written as
+	// .Secrets.key, and index returns "" for a missing key, so a misspelt
+	// Secret or ConfigMap key would otherwise install an empty host key or
+	// password. A missing key fails the render (a 500 for the installer).
+	"required": func(values map[string]string, key string) (string, error) {
+		value, ok := values[key]
+		if !ok {
+			return "", fmt.Errorf("missing key %q", key)
+		}
+		return value, nil
+	},
 }
 
 func buildTemplateData(

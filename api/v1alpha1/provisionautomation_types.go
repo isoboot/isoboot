@@ -23,6 +23,11 @@ import (
 // ProvisionAutomationSpec defines the desired state of ProvisionAutomation.
 type ProvisionAutomationSpec struct {
 	// files is a map of filename to template content with Go template placeholders.
+	// Templates see .ConfigMaps and .Secrets (merged data of the Provision's
+	// ConfigMaps and Secrets), .UpdatePhaseURL, .ProvisionName and .ProxyURL.
+	// {{ required .Secrets "key" }} fails the render when the key is missing,
+	// where {{ index .Secrets "key" }} gives "". Files are served only while
+	// the Provision is Pending or InProgress.
 	// +required
 	// +kubebuilder:validation:MinProperties=1
 	// +kubebuilder:validation:XValidation:rule="self.all(k, k.matches('^[A-Za-z0-9][-A-Za-z0-9_.]*$'))",message="File names must be valid path components (no slashes or path traversal)"

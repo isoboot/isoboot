@@ -129,6 +129,36 @@ var _ = Describe("RenderAutomationFile", func() {
 		Entry("no phase yet", "ra-phase-none", isobootgithubiov1alpha1.ProvisionPhase(""), false),
 	)
 
+	It("fails the render when a required key is missing", func() {
+		s := createSecret("ra-req-s", map[string][]byte{"host_key": []byte("KEY")})
+		cm := createConfigMap("ra-req-cm", map[string]string{"user.password": "HASH"})
+		pa := createProvisionAutomation("ra-req-pa", map[string]string{
+			"present": `{{ required .Secrets "host_key" }} {{ required .ConfigMaps "user.password" }}`,
+			"missing": `key={{ required .Secrets "host_key_typo" }}`,
+			"index":   `key={{ index .Secrets "host_key_typo" }}`,
+		})
+		p := createProvisionWithRefs("ra-req-p", "m", "bc", "ra-req-pa",
+			[]string{"ra-req-cm"}, []string{"ra-req-s"})
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, pa)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, cm)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, s)).To(Succeed())
+		}()
+
+		result, err := RenderAutomationFile(ctx, k8sClient, ns, "ra-req-p", "present", "", "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal("KEY HASH"))
+
+		_, err = RenderAutomationFile(ctx, k8sClient, ns, "ra-req-p", "missing", "", "")
+		Expect(err).To(MatchError(ContainSubstring(`missing key "host_key_typo"`)))
+
+		// index stays lenient, for optional keys.
+		result, err = RenderAutomationFile(ctx, k8sClient, ns, "ra-req-p", "index", "", "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal("key="))
+	})
+
 	It("returns error when provision not found", func() {
 		_, err := RenderAutomationFile(
 			ctx, k8sClient, ns, "nonexistent", "kickstart.cfg", "", "")

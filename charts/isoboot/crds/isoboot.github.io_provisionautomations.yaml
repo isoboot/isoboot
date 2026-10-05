@@ -49,8 +49,13 @@ spec:
               files:
                 additionalProperties:
                   type: string
-                description: files is a map of filename to template content with Go
-                  template placeholders.
+                description: |-
+                  files is a map of filename to template content with Go template placeholders.
+                  Templates see .ConfigMaps and .Secrets (merged data of the Provision's
+                  ConfigMaps and Secrets), .UpdatePhaseURL, .ProvisionName and .ProxyURL.
+                  {{ required .Secrets "key" }} fails the render when the key is missing,
+                  where {{ index .Secrets "key" }} gives "". Files are served only while
+                  the Provision is Pending or InProgress.
                 minProperties: 1
                 type: object
                 x-kubernetes-validations:
