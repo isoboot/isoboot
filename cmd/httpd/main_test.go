@@ -548,3 +548,33 @@ func TestNoStore(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveHost(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string // Host header
+		fwdHost string // X-Forwarded-Host, as nginx sends $host
+		fwdPort string // X-Forwarded-Port
+		want    string
+	}{
+		{"host header only", "10.0.0.1:8080", "", "", "10.0.0.1:8080"},
+		{"forwarded ipv4", "x", "10.0.0.1", "8080", "10.0.0.1:8080"},
+		{"forwarded ipv4 with port", "x", "10.0.0.1:9999", "8080", "10.0.0.1:8080"},
+		{"forwarded hostname", "x", "isoboot.example", "8080", "isoboot.example:8080"},
+		{"forwarded ipv6 in brackets", "x", "[fd00::1]", "8080", "[fd00::1]:8080"},
+		{"forwarded ipv6 with port", "x", "[fd00::1]:9999", "8080", "[fd00::1]:8080"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/conditional-boot", nil)
+			req.Host = tt.host
+			if tt.fwdHost != "" {
+				req.Header.Set("X-Forwarded-Host", tt.fwdHost)
+				req.Header.Set("X-Forwarded-Port", tt.fwdPort)
+			}
+			if got := resolveHost(req); got != tt.want {
+				t.Errorf("resolveHost = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -266,9 +267,12 @@ func resolveHost(r *http.Request) string {
 		host = r.Host
 	}
 	if port := r.Header.Get("X-Forwarded-Port"); port != "" {
-		h, _, _ := net.SplitHostPort(host)
-		if h != "" {
+		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
+		} else {
+			// No port. nginx sends an IPv6 $host in brackets, which
+			// JoinHostPort would add again.
+			host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
 		}
 		host = net.JoinHostPort(host, port)
 	}
