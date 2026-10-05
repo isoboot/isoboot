@@ -170,6 +170,38 @@ else
   fail "verify-manifests passes a clean tree and fails on changed or untracked generated files (clean=$clean untracked=$untracked changed=$changed)"
 fi
 
+# ci-02: a release builds from a v* tag, or by hand from main only, and the
+# version (a tag name or a typed input) must look like a version before it
+# becomes an image tag: "1.0.0,<image>:latest" would push a second tag.
+release_build_if=$("$YQ" eval '.jobs.build.if' "$release")
+release_runs="tag=$(evaluate "$release_build_if" '{"event_name": "push", "ref": "refs/tags/v1.2.3"}')"
+release_runs+=" main=$(evaluate "$release_build_if" '{"event_name": "workflow_dispatch", "ref": "refs/heads/main"}')"
+release_runs+=" branch=$(evaluate "$release_build_if" '{"event_name": "workflow_dispatch", "ref": "refs/heads/feature"}')"
+if [ "$release_runs" = "tag=true main=true branch=false" ]; then
+  pass "release: runs for a v* tag, and by hand from main only"
+else
+  fail "release: runs for a v* tag, and by hand from main only ($release_runs)"
+fi
+parse_version=$("$YQ" eval '.jobs.build.steps[] | select(.name == "Parse version") | .run' "$release")
+# release_version <version input> <tag name>: the version the release would
+# use, or "rejected".
+release_version() {
+  : >"$scratch/github-output"
+  if INPUT_VERSION=$1 GITHUB_REF_NAME=$2 GITHUB_OUTPUT="$scratch/github-output" \
+    bash --noprofile --norc -eo pipefail -c "$parse_version" >/dev/null 2>&1; then
+    sed -n 's/^version=//p' "$scratch/github-output"
+  else
+    echo rejected
+  fi
+}
+versions="$(release_version '' v1.2.3) $(release_version 0.0.3-rc1 main)"
+versions+=" $(release_version '1.0.0,ghcr.io/isoboot/isoboot:latest' main) $(release_version '' vnext)"
+if [ "$versions" = "1.2.3 0.0.3-rc1 rejected rejected" ]; then
+  pass "release: the version comes from the tag or the input and must look like a version"
+else
+  fail "release: the version comes from the tag or the input and must look like a version (got $versions)"
+fi
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures workflow check(s) failed" >&2
   exit 1
