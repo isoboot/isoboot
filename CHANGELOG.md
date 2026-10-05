@@ -8,8 +8,20 @@
   `spec.initrd.ref` → `spec.netboot.initrdRef`, `spec.firmware.ref` →
   `spec.netboot.firmwareRef`, `spec.kernel.args` → `spec.kernelArgs`.
 - Add BootConfig Mode B: extract kernel and initrd from an ISO artifact
-- Serve the ISO over HTTP and add the `{{.ISOURL}}` kernel args template variable
-- Add Ubuntu 24.04 and 26.04 live-server autoinstall examples
+- **BREAKING**: Remove the `{{.ISOURL}}` kernel args template variable; the ISO
+  is no longer served over HTTP. Use `netboot=nfs nfsroot={{.NFSRoot}}` instead
+  of `url={{.ISOURL}}`.
+- ISO mode now unpacks the whole ISO tree into `<dataDir>/nfs/<bootconfig>/`
+  (new controller flag `--nfs-dir`) and exports it over NFS; kernel and initrd
+  are still served over HTTP. The tree is re-extracted only when the ISO changes.
+- Add the `{{.NFSRoot}}` kernel args template variable (`<IPv4>:/<bootconfig>`,
+  ISO mode only)
+- Add the `{{.ProxyURL}}` variable to install-file (automation) templates
+- Add the `nfsd` component: a read-only NFSv3 server with a TCP port mapper,
+  image `ghcr.io/isoboot/isoboot-nfsd`, Helm values `nfsd.*` (enabled by
+  default; needs TCP 111 and 2049 free on the node)
+- Add Ubuntu 26.04.1 and 26.10 (beta) live-server autoinstall examples over NFS;
+  drop the Ubuntu 24.04 example
 
 ## v0.0.2-rc3
 
