@@ -122,6 +122,11 @@ nfsd:
   allowedCIDRs: []
   # info, debug, or trace (logs every request)
   logLevel: info
+  # Go memory limit (GOMEMLIMIT). Keep it about 50 MiB under
+  # resources.limits.memory: under a connection flood nfsd's live heap stays
+  # near 90 MiB, but without a limit the Go GC lets the process grow to about
+  # 190 MiB first.
+  goMemLimit: 200MiB
   resources:
     limits:
       cpu: 1000m

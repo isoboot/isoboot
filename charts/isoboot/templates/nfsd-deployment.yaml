@@ -67,6 +67,9 @@ spec:
         - "--allow-cidr={{ . }}"
         {{- end }}
         - "--log-level={{ .Values.nfsd.logLevel }}"
+        env:
+        - name: GOMEMLIMIT
+          value: "{{ .Values.nfsd.goMemLimit }}"
         ports:
         - name: nfs
           containerPort: {{ .Values.nfsd.port }}
