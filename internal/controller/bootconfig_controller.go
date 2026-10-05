@@ -49,6 +49,11 @@ type BootConfigReconciler struct {
 	// NFSDir holds one extracted ISO tree per ISO-mode BootConfig; nfsd
 	// exports each of its subdirectories.
 	NFSDir string
+	// Namespace, when set, is the only namespace whose BootConfigs this
+	// reconciler acts on. Boot directories and ISO trees are named after
+	// the BootConfig alone, so BootConfigs of the same name in two
+	// namespaces would overwrite and delete each other's files.
+	Namespace string
 
 	// now returns the current time; nil means time.Now. Tests set it.
 	now func() time.Time
@@ -136,6 +141,14 @@ func (r *BootConfigReconciler) forgetExtractionFailure(key types.NamespacedName)
 
 func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+
+	if r.Namespace != "" && req.Namespace != r.Namespace {
+		// The manager's cache is limited to Namespace, so this is a
+		// safeguard: above all, the cleanup below must never run for a
+		// BootConfig of the same name in another namespace.
+		log.V(1).Info("Ignoring BootConfig outside the controller's namespace")
+		return ctrl.Result{}, nil
+	}
 
 	var bc isobootgithubiov1alpha1.BootConfig
 	if err := r.Get(ctx, req.NamespacedName, &bc); err != nil {

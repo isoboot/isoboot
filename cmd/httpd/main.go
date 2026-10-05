@@ -21,6 +21,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -50,9 +51,12 @@ func main() {
 	utilruntime.Must(clientgoscheme.AddToScheme(sch))
 	utilruntime.Must(isobootgithubiov1alpha1.AddToScheme(sch))
 
+	ns := *namespace
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:  sch,
 		Metrics: metricsserver.Options{BindAddress: "0"},
+		// Only the namespace httpd serves: its RBAC is a namespaced Role.
+		Cache: cacheOptions(ns),
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				DisableFor: []client.Object{
@@ -91,7 +95,6 @@ func main() {
 	}
 
 	c := mgr.GetClient()
-	ns := *namespace
 	proxyPort := os.Getenv("PROXY_PORT")
 
 	handler := conditionalBootHandler(func(reqCtx context.Context, mac string) (*httpd.BootDirective, error) {
@@ -154,6 +157,11 @@ func main() {
 	if err := srv.Shutdown(shutCtx); err != nil {
 		slog.Error("shutdown error", "error", err)
 	}
+}
+
+// cacheOptions limits the manager's cache to namespace.
+func cacheOptions(namespace string) cache.Options {
+	return cache.Options{DefaultNamespaces: map[string]cache.Config{namespace: {}}}
 }
 
 func conditionalBootHandler(

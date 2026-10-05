@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -498,5 +500,12 @@ func TestAutomationFile_NotFound(t *testing.T) {
 
 	if w.Result().StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestCacheOptions(t *testing.T) {
+	got := slices.Collect(maps.Keys(cacheOptions("isoboot-system").DefaultNamespaces))
+	if !slices.Equal(got, []string{"isoboot-system"}) {
+		t.Errorf("cache namespaces = %v, want only isoboot-system", got)
 	}
 }

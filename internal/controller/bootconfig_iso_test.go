@@ -31,8 +31,11 @@ import (
 	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -549,6 +552,69 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		err := k8sClient.Create(ctx, bc)
 		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "%v", err)
 		Expect(err.Error()).To(ContainSubstring("200 characters"))
+	})
+
+	It("leaves alone BootConfigs outside its namespace", func() {
+		// Trees and boot directories are named after the BootConfig only, so
+		// a same-named BootConfig in another namespace must not touch them.
+		for _, ns := range []string{"zz-a", "zz-b"} {
+			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}))).To(Succeed())
+		}
+		reconciler.Namespace = "zz-a"
+		createIn := func(ns, kernel string, spec isobootgithubiov1alpha1.BootConfigSpec) *isobootgithubiov1alpha1.BootConfig {
+			if spec.ISO != nil {
+				a := &isobootgithubiov1alpha1.BootArtifact{
+					Name: "ns-iso", Namespace: ns,
+					Spec: isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/" + ns + ".iso", SHA256: new(validSHA256)},
+				}
+				Expect(k8sClient.Create(ctx, a)).To(Succeed())
+				DeferCleanup(func() { _ = k8sClient.Delete(ctx, a) })
+				a.Status.Phase = isobootgithubiov1alpha1.BootArtifactPhaseReady
+				Expect(k8sClient.Status().Update(ctx, a)).To(Succeed())
+				isoPath := filepath.Join(dataDir, "artifacts", "ns-iso", ns+".iso")
+				Expect(os.MkdirAll(filepath.Dir(isoPath), 0o755)).To(Succeed())
+				Expect(writeTestISO(isoPath, map[string]string{"casper/vmlinuz": kernel, "casper/initrd": "I"}, nil)).To(Succeed())
+			}
+			bc := &isobootgithubiov1alpha1.BootConfig{Name: "ub", Namespace: ns, Spec: spec}
+			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, bc) })
+			return bc
+		}
+		reconcileIn := func(ns string) {
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "ub", Namespace: ns}})
+			Expect(err).NotTo(HaveOccurred())
+		}
+		isoSpec := isobootgithubiov1alpha1.BootConfigSpec{ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
+			ArtifactRef: "ns-iso", KernelPath: "casper/vmlinuz", InitrdPath: "casper/initrd",
+		}}
+		kernelPath := filepath.Join(dataDir, "boot", "ub", "vmlinuz")
+		expectZzATree := func() {
+			kernel, err := os.ReadFile(kernelPath)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			ExpectWithOffset(1, string(kernel)).To(Equal("KA"))
+			_, err = os.Stat(filepath.Join(nfsDir, "ub", "casper", "vmlinuz"))
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		}
+
+		createIn("zz-a", "KA", isoSpec)
+		reconcileIn("zz-a")
+		expectZzATree()
+
+		// A broken netboot BootConfig of the same name.
+		netboot := createIn("zz-b", "", isobootgithubiov1alpha1.BootConfigSpec{
+			Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "nope", InitrdRef: "nope"},
+		})
+		reconcileIn("zz-b")
+		expectZzATree()
+		Expect(k8sClient.Delete(ctx, netboot)).To(Succeed())
+
+		// An ISO BootConfig of the same name on another ISO, then deleted.
+		other := createIn("zz-b", "KB", isoSpec)
+		reconcileIn("zz-b")
+		expectZzATree()
+		Expect(k8sClient.Delete(ctx, other)).To(Succeed())
+		reconcileIn("zz-b")
+		expectZzATree()
 	})
 
 	It("writes the same status message when the same failure repeats", func() {
