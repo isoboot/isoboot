@@ -66,56 +66,51 @@ func isoSource(isoPath, expectedHash string) (string, error) {
 
 // ensureISOTree makes nfsDir/name hold the whole tree of the ISO at isoPath.
 // It extracts only when the marker does not match source or the tree is
-// missing: re-extracting changes inode numbers, and NFS clients that hold
-// handles into the old tree would get ESTALE. It returns the marker's
-// modification time, which changes exactly when the tree is replaced.
-func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string) (time.Time, error) {
+// missing: replacing the tree breaks the open files of every machine that is
+// installing from it.
+func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string) error {
 	if err := os.MkdirAll(nfsDir, 0o755); err != nil {
-		return time.Time{}, fmt.Errorf("creating nfs dir: %w", err)
+		return fmt.Errorf("creating nfs dir: %w", err)
 	}
 	dest := filepath.Join(nfsDir, name)
 	marker := isoTreeMarker(nfsDir, name)
 
 	if b, err := os.ReadFile(marker); err == nil && string(b) == source {
 		if fi, err := os.Lstat(dest); err == nil && fi.IsDir() {
-			mi, err := os.Stat(marker)
-			if err != nil {
-				return time.Time{}, fmt.Errorf("stat marker: %w", err)
-			}
-			return mi.ModTime(), nil
+			return nil
 		}
 	}
 
 	removeStaleISOTemps(nfsDir, name)
 	tmp, err := os.MkdirTemp(nfsDir, isoTreeExtractInfix+name+"_")
 	if err != nil {
-		return time.Time{}, fmt.Errorf("creating temp dir: %w", err)
+		return fmt.Errorf("creating temp dir: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tmp) }() // no-op after the rename
 
 	log.Info("Extracting ISO tree", "iso", isoPath, "dest", dest)
 	start := time.Now()
 	if err := extractISOTree(log, isoPath, tmp); err != nil {
-		return time.Time{}, err
+		return err
 	}
 	if err := os.Chmod(tmp, 0o755); err != nil {
-		return time.Time{}, fmt.Errorf("chmod tree: %w", err)
+		return fmt.Errorf("chmod tree: %w", err)
 	}
 
 	// Drop the marker first: if we stop before writing the new one, the next
 	// reconcile extracts again instead of trusting a half-replaced state.
 	if err := os.Remove(marker); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return time.Time{}, fmt.Errorf("removing marker: %w", err)
+		return fmt.Errorf("removing marker: %w", err)
 	}
 	var old string
 	if _, err := os.Lstat(dest); err == nil {
 		old = filepath.Join(nfsDir, isoTreeOldInfix+name+"_"+strings.TrimPrefix(filepath.Base(tmp), isoTreeExtractInfix+name+"_"))
 		if err := os.Rename(dest, old); err != nil {
-			return time.Time{}, fmt.Errorf("moving old tree aside: %w", err)
+			return fmt.Errorf("moving old tree aside: %w", err)
 		}
 	}
 	if err := os.Rename(tmp, dest); err != nil {
-		return time.Time{}, fmt.Errorf("renaming tree into place: %w", err)
+		return fmt.Errorf("renaming tree into place: %w", err)
 	}
 	if old != "" {
 		if err := os.RemoveAll(old); err != nil {
@@ -123,14 +118,10 @@ func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string) (time.
 		}
 	}
 	if err := writeFileAtomic(marker, []byte(source)); err != nil {
-		return time.Time{}, fmt.Errorf("writing marker: %w", err)
-	}
-	mi, err := os.Stat(marker)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("stat marker: %w", err)
+		return fmt.Errorf("writing marker: %w", err)
 	}
 	log.Info("ISO tree extracted", "dest", dest, "seconds", time.Since(start).Seconds())
-	return mi.ModTime(), nil
+	return nil
 }
 
 // removeISOTree deletes the tree, the marker and any leftovers for name.
