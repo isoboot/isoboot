@@ -43,7 +43,7 @@ const (
 	// maxWriteBytes is the largest WRITE nfsd advertises, so that one
 	// fits in a request of maxRequestBytes. Every WRITE is answered
 	// "read-only file system" anyway.
-	maxWriteBytes = 32 << 10
+	maxWriteBytes = 4 << 10
 )
 
 // readBudget is the READ data that may be in flight on all connections.

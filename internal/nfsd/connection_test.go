@@ -171,6 +171,44 @@ func TestServeWriteTimeout(t *testing.T) {
 	}
 }
 
+// go-nfs keeps the body of every request it has read and not yet answered:
+// twice ConcurrentHandlers of them on a connection whose replies wait to
+// be read. At the connection limit, with every request as large as nfsd
+// accepts, that must still be a small part of the pod's 256 MiB.
+func TestServeRequestMemoryIsBounded(t *testing.T) {
+	listener := newPipeListener()
+	serveOn(t, newTree(t), &Server{ConcurrentHandlers: 8, MaxConnectionsPerHost: DefaultMaxConnections}, listener)
+
+	// NULL calls padded with bytes go-nfs reads and ignores. Over pipes the
+	// first reply already blocks, so every connection holds what it read.
+	call := callBody(0, progNFS, 0)
+	call = append(call, make([]byte, maxRequestBytes-len(call))...)
+	const pipelined = 24
+	calls := make([]byte, 0, pipelined*(4+len(call)))
+	for xid := range uint32(pipelined) {
+		binary.BigEndian.PutUint32(call, xid)
+		calls = append(calls, withRecordMark(call)...)
+	}
+
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for range DefaultMaxConnections {
+		conn := listener.dial(t)
+		go func() { _, _ = conn.Write(calls) }()
+	}
+	time.Sleep(2 * time.Second)
+	runtime.GC()
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+
+	grown := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+	t.Logf("live heap grew by %d MiB", grown>>20)
+	if grown > 40<<20 {
+		t.Errorf("live heap grew by %d MiB for %d connections, want under 40 MiB", grown>>20, DefaultMaxConnections)
+	}
+}
+
 // A peer that stops reading is cut off at WriteTimeout, and everything
 // its connection held must go with it once it is gone: go-nfs left the
 // handlers whose replies it could no longer send waiting for ever, with

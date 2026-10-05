@@ -31,8 +31,10 @@ const (
 	// maxRequestBytes bounds one request record. The largest request a
 	// read-only client sends (a LOOKUP with a 64-byte handle, a 255-byte
 	// name and 400-byte AUTH_UNIX credentials) is under 1 KiB; the rest
-	// leaves room for small WRITEs, which are answered "read-only".
-	maxRequestBytes = 64 << 10
+	// leaves room for small WRITEs, which are answered "read-only". go-nfs
+	// holds up to twice ConcurrentHandlers requests per connection, so at
+	// the connection limit this bound is what their memory is made of.
+	maxRequestBytes = 8 << 10
 
 	// maxReadBytes is the most one READ returns. go-nfs allocates the
 	// count a READ asks for (up to 16 MiB) and keeps two more copies of
