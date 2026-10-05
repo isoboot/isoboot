@@ -113,8 +113,17 @@ if multipass info "$vm" >/dev/null 2>&1; then
   multipass start "$vm"
 else
   echo "== Creating VM $vm (Ubuntu 24.04, $cpus CPUs, $memory RAM, $disk disk)"
-  created=true
-  multipass launch 24.04 --name "$vm" --cpus "$cpus" --memory "$memory" --disk "$disk"
+  launch_log=$(mktemp)
+  if multipass launch 24.04 --name "$vm" --cpus "$cpus" --memory "$memory" --disk "$disk" 2>&1 | tee "$launch_log"; then
+    created=true
+  else
+    # A VM half-made by this launch is ours to remove. One that already
+    # existed (multipass info can fail transiently) is not.
+    grep -q 'already exists' "$launch_log" || created=true
+    rm -f "$launch_log"
+    die "multipass launch of $vm failed"
+  fi
+  rm -f "$launch_log"
 fi
 
 vm_exec cloud-init status --wait >/dev/null || true
