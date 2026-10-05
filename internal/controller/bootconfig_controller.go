@@ -417,11 +417,13 @@ func concatenateFiles(dst, srcA, srcB string) error {
 		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
 	}
 
-	tmp, err := os.CreateTemp(dir, ".concat-*")
+	// A fixed name, not CreateTemp: an error message must read the same on
+	// every attempt, or each status update triggers another reconcile.
+	tmpPath := filepath.Join(dir, ".concat.tmp")
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
-	tmpPath := tmp.Name()
 	defer func() {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath) // clean up on error
