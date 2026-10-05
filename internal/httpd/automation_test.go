@@ -40,6 +40,30 @@ var _ = Describe("RenderAutomationFile", func() {
 		return pa
 	}
 
+	// createProvisionInPhase creates a Provision and sets its phase (none
+	// when phase is empty).
+	createProvisionInPhase := func(
+		name, automationRef string, secrets []string, phase isobootgithubiov1alpha1.ProvisionPhase,
+	) *isobootgithubiov1alpha1.Provision {
+		p := &isobootgithubiov1alpha1.Provision{
+			Name: name, Namespace: ns,
+			Spec: isobootgithubiov1alpha1.ProvisionSpec{
+				MachineRef:             "m",
+				BootConfigRef:          "bc",
+				ProvisionAutomationRef: automationRef,
+				Secrets:                secrets,
+			},
+		}
+		ExpectWithOffset(1, k8sClient.Create(ctx, p)).To(Succeed())
+		if phase != "" {
+			p.Status.Phase = phase
+			ExpectWithOffset(1, k8sClient.Status().Update(ctx, p)).To(Succeed())
+		}
+		return p
+	}
+
+	// createProvisionWithRefs creates a Pending Provision, the phase in which
+	// installers fetch their files.
 	createProvisionWithRefs := func(
 		name, machineRef, bootConfigRef, automationRef string,
 		configMaps, secrets []string,
@@ -55,6 +79,8 @@ var _ = Describe("RenderAutomationFile", func() {
 			},
 		}
 		ExpectWithOffset(1, k8sClient.Create(ctx, p)).To(Succeed())
+		p.Status.Phase = isobootgithubiov1alpha1.ProvisionPhasePending
+		ExpectWithOffset(1, k8sClient.Status().Update(ctx, p)).To(Succeed())
 		return p
 	}
 
@@ -75,6 +101,33 @@ var _ = Describe("RenderAutomationFile", func() {
 		ExpectWithOffset(1, k8sClient.Create(ctx, s)).To(Succeed())
 		return s
 	}
+
+	DescribeTable("serves files only while the Provision is installing",
+		func(name string, phase isobootgithubiov1alpha1.ProvisionPhase, served bool) {
+			secret := createSecret(name+"-s", map[string][]byte{"host_key": []byte("PRIVATE-KEY")})
+			pa := createProvisionAutomation(name+"-pa", map[string]string{"user-data": `{{index .Secrets "host_key"}}`})
+			p := createProvisionInPhase(name, name+"-pa", []string{name + "-s"}, phase)
+			defer func() {
+				Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, pa)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
+			}()
+
+			result, err := RenderAutomationFile(ctx, k8sClient, ns, name, "user-data", "", "")
+			if served {
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(Equal("PRIVATE-KEY"))
+			} else {
+				Expect(IsAutomationNotFound(err)).To(BeTrue(), "%v", err)
+				Expect(result).To(BeEmpty())
+			}
+		},
+		Entry("Pending", "ra-phase-pending", isobootgithubiov1alpha1.ProvisionPhasePending, true),
+		Entry("InProgress", "ra-phase-inprogress", isobootgithubiov1alpha1.ProvisionPhaseInProgress, true),
+		Entry("Complete", "ra-phase-complete", isobootgithubiov1alpha1.ProvisionPhaseComplete, false),
+		Entry("Failed", "ra-phase-failed", isobootgithubiov1alpha1.ProvisionPhaseFailed, false),
+		Entry("no phase yet", "ra-phase-none", isobootgithubiov1alpha1.ProvisionPhase(""), false),
+	)
 
 	It("returns error when provision not found", func() {
 		_, err := RenderAutomationFile(

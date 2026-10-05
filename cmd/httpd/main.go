@@ -307,6 +307,8 @@ func automationFileHandler(render renderAutomationFunc, proxyPort string) http.H
 		body, err := render(r.Context(), provisionName, fileName, statusURL, proxyURL)
 		if err != nil {
 			if httpd.IsAutomationNotFound(err) {
+				slog.Info("automation file not served",
+					"provision", provisionName, "file", fileName, "reason", err)
 				http.Error(w, "not found", http.StatusNotFound)
 				return
 			}
