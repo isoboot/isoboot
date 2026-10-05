@@ -1,0 +1,101 @@
+{{- if .Values.nfsd.enabled }}
+{{- include "isoboot.requireNodeName" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-nfsd"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: nfsd
+  template:
+    metadata:
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: nfsd
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: true
+      terminationGracePeriodSeconds: 10
+      {{- include "isoboot.affinity" (dict "context" . "component" "nfsd") | nindent 6 }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      # The controller (UID 65532) writes the ISO trees here; nfsd only reads.
+      - name: create-nfs-dir
+        image: "{{ .Values.alpineImage }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          mkdir -p "{{ .Values.dataDir }}/nfs" || { echo "FAIL: cannot create {{ .Values.dataDir }}/nfs — ensure dataDir is writable by UID 65532"; exit 1; }
+        securityContext:
+          runAsUser: 65532
+          runAsGroup: 65532
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        volumeMounts:
+        - name: data
+          mountPath: "{{ .Values.dataDir }}"
+      containers:
+      - name: nfsd
+        image: "{{ .Values.nfsd.image.repository }}:{{ .Values.nfsd.image.tag | default .Chart.AppVersion }}"
+        args:
+        - "--root={{ .Values.dataDir }}/nfs"
+        - "--listen=:{{ .Values.nfsd.port }}"
+        - "--portmap-listen=:{{ .Values.nfsd.portmapPort }}"
+        - "--log-level={{ .Values.nfsd.logLevel }}"
+        ports:
+        - name: nfs
+          containerPort: {{ .Values.nfsd.port }}
+          protocol: TCP
+        - name: portmap
+          containerPort: {{ .Values.nfsd.portmapPort }}
+          protocol: TCP
+        # UID 0 only to bind ports below 1024: every capability is dropped
+        # except NET_BIND_SERVICE, so files are read through their "other"
+        # permission bits like any unprivileged user.
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          runAsNonRoot: false
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - "ALL"
+            add:
+            - "NET_BIND_SERVICE"
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.nfsd.port }}
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        livenessProbe:
+          tcpSocket:
+            port: {{ .Values.nfsd.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.nfsd.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: "{{ .Values.dataDir }}/nfs"
+          subPath: nfs
+          readOnly: true
+      volumes:
+      - name: data
+        hostPath:
+          path: "{{ .Values.dataDir }}"
+          type: Directory
+{{- end }}

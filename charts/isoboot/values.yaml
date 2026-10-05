@@ -95,3 +95,30 @@ dnsmasq:
     requests:
       cpu: 10m
       memory: 32Mi
+
+# nfsd exports the unpacked tree of every iso-mode BootConfig read-only over
+# NFSv3/TCP as /<bootconfig-name> (Ubuntu live-server installers boot with
+# netboot=nfs nfsroot={{.NFSRoot}}). It runs on the host network as UID 0 with
+# only the NET_BIND_SERVICE capability.
+# Nothing else on the node may listen on TCP 111 or on nfsd.port: stop and
+# mask rpcbind (pulled in by nfs-common) and any kernel NFS server first, e.g.
+#   sudo systemctl disable --now rpcbind.socket rpcbind.service nfs-server
+nfsd:
+  enabled: true
+  image:
+    repository: ghcr.io/isoboot/isoboot-nfsd
+    # tag defaults to .Chart.AppVersion if omitted
+    tag: ""
+  # NFS and MOUNT share this port.
+  port: 2049
+  # The installer's NFS client always asks the port mapper on TCP 111.
+  portmapPort: 111
+  # info, debug, or trace (logs every request)
+  logLevel: info
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
