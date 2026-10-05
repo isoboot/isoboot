@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	nfsc "github.com/willscott/go-nfs-client/nfs"
 	"github.com/willscott/go-nfs-client/nfs/rpc"
@@ -145,4 +146,46 @@ func mustMount(t *testing.T, addr, export string) *nfsc.Target {
 		t.Fatalf("mount %s: %v", export, err)
 	}
 	return target
+}
+
+// dialRaw opens a plain TCP connection to the server.
+func dialRaw(t *testing.T, addr string) net.Conn {
+	t.Helper()
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+// expectClosed fails the test unless the server closes conn, without
+// sending anything, within the given time.
+func expectClosed(t *testing.T, conn net.Conn, within time.Duration) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(within)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := conn.Read(make([]byte, 64))
+	var netErr net.Error
+	switch {
+	case err == nil:
+		t.Errorf("read %d bytes, want the connection closed", n)
+	case errors.As(err, &netErr) && netErr.Timeout():
+		t.Errorf("connection still open after %v", within)
+	}
+}
+
+// expectOpen fails the test if the server closes conn within the given
+// time.
+func expectOpen(t *testing.T, conn net.Conn, within time.Duration) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(within)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := conn.Read(make([]byte, 64))
+	var netErr net.Error
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Errorf("read = %v, want the connection left open", err)
+	}
 }

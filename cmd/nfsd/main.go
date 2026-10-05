@@ -21,7 +21,10 @@ import (
 	"github.com/isoboot/isoboot/internal/nfsd"
 )
 
-const portmapTimeout = 10 * time.Second
+// portmapTimeout bounds each port mapper call. klibc sends its 56-byte
+// GETPORT as soon as it has connected, so a peer that has not sent a call
+// within this time is not an installer and gives its slot back quickly.
+const portmapTimeout = 2 * time.Second
 
 func main() {
 	listenAddr := flag.String("listen", ":2049", "TCP address for NFS and MOUNT")
