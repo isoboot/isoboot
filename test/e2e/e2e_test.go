@@ -280,8 +280,12 @@ var _ = Describe("Manager", Ordered, func() {
 	})
 
 	Context("BootArtifact", func() {
-		// A tagged file, so the test does not depend on what main holds.
+		// A tagged file, so the test does not depend on what main holds. Its
+		// sha256 is pinned here (sha256sum of the file GitHub serves for the
+		// v0.0.1 tag), so the controller is checked against a hash known
+		// independently of the download under test.
 		const testURL = "https://raw.githubusercontent.com/isoboot/isoboot/v0.0.1/LICENSE"
+		const testSHA256 = "0d92cab349f076ade8b23daf785c93e8c7bfdb76e892a4bf4dd73ec25c74c29d"
 		const wrongSHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 		ctx := context.TODO()
@@ -296,7 +300,7 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		It("should download and reach Ready phase", func() {
-			By("computing sha256 of the test file")
+			By("checking that the test file is still served with its pinned hash")
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, testURL, nil)
 			Expect(err).NotTo(HaveOccurred())
 			resp, err := http.DefaultClient.Do(req)
@@ -304,15 +308,17 @@ var _ = Describe("Manager", Ordered, func() {
 			body, err := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
 			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "test file %s", testURL)
 			hash := sha256.Sum256(body)
-			sha := hex.EncodeToString(hash[:])
+			Expect(hex.EncodeToString(hash[:])).To(Equal(testSHA256),
+				"test file %s changed; it is pinned to the v0.0.1 tag", testURL)
 
-			By("creating a BootArtifact with valid hash")
+			By("creating a BootArtifact with the pinned hash")
 			artifact := &isobootgithubiov1alpha1.BootArtifact{
 				ObjectMeta: metav1.ObjectMeta{Name: "e2e-valid", Namespace: "default"},
 				Spec: isobootgithubiov1alpha1.BootArtifactSpec{
 					URL:    testURL,
-					SHA256: new(sha),
+					SHA256: new(testSHA256),
 				},
 			}
 			Expect(k8sClient.Create(ctx, artifact)).To(Succeed())
