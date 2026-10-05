@@ -21,6 +21,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -167,5 +168,38 @@ func TestServeWriteTimeout(t *testing.T) {
 	t.Logf("received %d MiB of %d", received>>20, reads)
 	if received >= reads*maxReadBytes {
 		t.Errorf("received all %d bytes: the server never gave up on the stalled peer", received)
+	}
+}
+
+// A peer that stops reading is cut off at WriteTimeout, and everything
+// its connection held must go with it once it is gone: go-nfs left the
+// handlers whose replies it could no longer send waiting for ever, with
+// the replies.
+func TestServeLetsGoOfStalledConnections(t *testing.T) {
+	addr, _ := startServerWith(t, newTree(t), &Server{ConcurrentHandlers: 8, WriteTimeout: 200 * time.Millisecond})
+	mustMount(t, addr, "/iso")
+	before := runtime.NumGoroutine()
+
+	conns := make([]net.Conn, DefaultMaxConnectionsPerHost)
+	for i := range conns {
+		conns[i] = dialRaw(t, addr)
+		if err := conns[i].(*net.TCPConn).SetReadBuffer(4096); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conns[i].Write(pipelinedReads(32, maxReadBytes)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(time.Second) // the server's writes time out
+	for _, conn := range conns {
+		_ = conn.Close()
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for runtime.NumGoroutine() > before {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d goroutines, %d before the stalled connections", runtime.NumGoroutine(), before)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

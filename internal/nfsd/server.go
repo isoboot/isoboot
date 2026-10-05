@@ -274,20 +274,38 @@ func (c *guardedConn) reject(reason string) error {
 	return errRejectedRequest
 }
 
+// Write sends what go-nfs writes, a reply or part of one.
+//
+// Once a write has failed, or the connection has been closed, Write drops
+// what it is given and reports success. go-nfs stops taking replies after
+// a failed write, and its handlers then wait for ever to hand over theirs,
+// holding them in memory: every peer that let a write time out would leak
+// them. Dropping them lets the handlers finish, and go-nfs lets go of the
+// connection when its next read fails.
 func (c *guardedConn) Write(p []byte) (int, error) {
+	if c.isClosed() {
+		return len(p), nil
+	}
 	if err := c.SetWriteDeadline(time.Now().Add(c.listener.writeTimeout)); err != nil {
-		return 0, err
+		_ = c.Close()
+		return len(p), nil
 	}
 	out := p
 	if xid, ok := c.replies.atReplyStart(p); ok && c.isFSInfo(xid) {
 		out = advertiseLimits(p) // same length
 	}
-	n, err := c.Conn.Write(out)
-	c.replies.written(out[:n], c.answered)
-	if err != nil {
+	if _, err := c.Conn.Write(out); err != nil {
 		_ = c.Close()
+		return len(p), nil
 	}
-	return n, err
+	c.replies.written(out, c.answered)
+	return len(p), nil
+}
+
+func (c *guardedConn) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
 }
 
 // Close closes the connection and gives back its share of the read
