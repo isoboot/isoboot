@@ -19,7 +19,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log/slog"
 	"net"
+	"net/netip"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -46,7 +50,7 @@ func exchange(t *testing.T, p *Portmap, call []byte) []byte {
 	t.Helper()
 	client, server := net.Pipe()
 	t.Cleanup(func() { _ = client.Close() })
-	go p.serveConn(server)
+	go p.serveConn(server, quietWarnings())
 	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +174,7 @@ func TestPortmapClosesBadConnections(t *testing.T) {
 			defer func() { _ = client.Close() }()
 			done := make(chan struct{})
 			go func() {
-				p.serveConn(server)
+				p.serveConn(server, quietWarnings())
 				close(done)
 			}()
 			go func() { _, _ = client.Write(tt.send) }()
@@ -220,4 +224,138 @@ func TestPortmapServe(t *testing.T) {
 	if err := <-served; err != nil {
 		t.Errorf("Serve after close = %v, want nil", err)
 	}
+}
+
+// listenPortmap serves p on a loopback port until the test ends.
+func listenPortmap(t *testing.T, p *Portmap) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- p.Serve(listener) }()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		<-served
+	})
+	return listener.Addr().String()
+}
+
+// getport asks for the NFS port over conn and checks the answer.
+func getport(t *testing.T, conn net.Conn) {
+	t.Helper()
+	if _, err := conn.Write(getportCall(5, 2, progPortmap, 2, procGetPort, progNFS, 3, protoTCP, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, 32)
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatalf("GETPORT: %v", err)
+	}
+	if want := accepted(5, acceptSuccess, 2049); !bytes.Equal(got, want) {
+		t.Errorf("GETPORT reply:\n got %x\nwant %x", got, want)
+	}
+}
+
+// One host holding connections open must not starve the lookups of the
+// installing machines.
+func TestPortmapLimitsConnectionsPerHost(t *testing.T) {
+	p := newPortmap()
+	p.MaxConnectionsPerHost = 2
+	addr := listenPortmap(t, p)
+
+	first := dialRaw(t, addr)
+	second := dialRaw(t, addr)
+	expectOpen(t, first, 100*time.Millisecond)
+	expectClosed(t, dialRaw(t, addr), time.Second)
+
+	// Another host is still answered (where 127.0.0.2 exists, as on Linux).
+	dialer := net.Dialer{LocalAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 2)}}
+	if other, err := dialer.Dial("tcp", addr); err != nil {
+		t.Logf("skipping the second host: %v", err)
+	} else {
+		t.Cleanup(func() { _ = other.Close() })
+		getport(t, other)
+	}
+
+	_ = first.Close()
+	_ = second.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		conn := dialRaw(t, addr)
+		if _, err := conn.Write(getportCall(5, 2, progPortmap, 2, procGetPort, progNFS, 3, protoTCP, 0)); err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.ReadFull(conn, make([]byte, 32)); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("GETPORT refused after the host's connections closed")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestPortmapAllowList(t *testing.T) {
+	p := newPortmap()
+	p.Allow = []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}
+	expectClosed(t, dialRaw(t, listenPortmap(t, p)), time.Second)
+
+	p = newPortmap()
+	p.Allow = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}
+	getport(t, dialRaw(t, listenPortmap(t, p)))
+}
+
+// lockedBuffer is a log destination that the server's goroutines and the
+// test may use at the same time.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// A host that keeps sending garbage must not flood the log.
+func TestPortmapRejectionsAreRateLimited(t *testing.T) {
+	var out lockedBuffer
+	p := newPortmap()
+	p.Log = slog.New(slog.NewTextHandler(&out, nil))
+	addr := listenPortmap(t, p)
+	for range 20 {
+		conn := dialRaw(t, addr)
+		if _, err := conn.Write([]byte{0x80, 0xff, 0xff, 0xff}); err != nil {
+			t.Fatal(err)
+		}
+		expectClosed(t, conn, time.Second)
+	}
+	if lines := strings.Count(out.String(), "portmap call rejected"); lines != 1 {
+		t.Errorf("%d warnings for a burst of bad calls, want 1:\n%s", lines, out.String())
+	}
+}
+
+// Log is optional, as it is for Server: refusing a connection or a call
+// must not need one.
+func TestPortmapWithoutLog(t *testing.T) {
+	p := &Portmap{Port: 2049, Timeout: 5 * time.Second, MaxConnectionsPerHost: 1}
+	addr := listenPortmap(t, p)
+	first := dialRaw(t, addr)
+	expectOpen(t, first, 100*time.Millisecond)
+	expectClosed(t, dialRaw(t, addr), time.Second)
+	getport(t, first)
 }

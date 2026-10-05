@@ -21,6 +21,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"time"
 )
 
@@ -56,8 +57,16 @@ const (
 	// responder understands comes close to this limit.
 	maxPortmapCall = 1024
 	minRPCCall     = 40
+)
 
-	maxPortmapConns = 256
+// Defaults for the connection limits of a Portmap. A connection costs a
+// goroutine and at most maxPortmapCall bytes, and klibc makes one short
+// connection per lookup. The cap per address is what keeps the table
+// from filling up: one host, however many connections it opens, cannot
+// take the slots the installing machines need.
+const (
+	DefaultPortmapMaxConnections        = 1024
+	DefaultPortmapMaxConnectionsPerHost = 4
 )
 
 // Portmap answers port mapper GETPORT calls over TCP with the port of the
@@ -73,12 +82,27 @@ type Portmap struct {
 	Port uint32
 	// Timeout bounds how long a connection may sit idle, and each write.
 	Timeout time.Duration
-	Log     *slog.Logger
+	// MaxConnections and MaxConnectionsPerHost bound the connections
+	// served at once, in total and from one IP address; zero means the
+	// default. Connections beyond them are closed at once rather than
+	// queued: klibc waits for ever on a connection nobody answers.
+	MaxConnections        int
+	MaxConnectionsPerHost int
+	// Allow lists the networks clients may connect from. Connections from
+	// anywhere else are closed at once. Empty allows every address.
+	Allow []netip.Prefix
+	// Log receives lookups, and refused connections and rejected calls at
+	// most one warning per few seconds. Nil means slog.Default().
+	Log *slog.Logger
 }
 
 // Serve accepts connections until the listener is closed.
 func (p *Portmap) Serve(l net.Listener) error {
-	slots := make(chan struct{}, maxPortmapConns)
+	warnings := &throttledLog{log: p.logger(), interval: warningInterval}
+	gate := newConnectionGate("portmap", p.Allow,
+		orDefault(p.MaxConnections, DefaultPortmapMaxConnections),
+		orDefault(p.MaxConnectionsPerHost, DefaultPortmapMaxConnectionsPerHost),
+		warnings)
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -92,21 +116,23 @@ func (p *Portmap) Serve(l net.Listener) error {
 			}
 			return err
 		}
-		select {
-		case slots <- struct{}{}:
-			go func() {
-				defer func() { <-slots }()
-				p.serveConn(conn)
-			}()
-		default:
-			_ = conn.Close() // too busy: fail fast rather than queue
+		release, ok := gate.admit(conn)
+		if !ok {
+			_ = conn.Close()
+			continue
 		}
+		go func() {
+			defer release()
+			p.serveConn(conn, warnings)
+		}()
 	}
 }
 
 // serveConn answers calls on one connection until the peer closes it,
 // goes quiet for longer than the timeout or sends something unparseable.
-func (p *Portmap) serveConn(conn net.Conn) {
+// Rejected calls are logged to warnings, which keeps a flood of them from
+// flooding the log.
+func (p *Portmap) serveConn(conn net.Conn, warnings *throttledLog) {
 	defer func() { _ = conn.Close() }()
 	client := conn.RemoteAddr().String()
 	var mark [4]byte
@@ -120,7 +146,7 @@ func (p *Portmap) serveConn(conn net.Conn) {
 		fragment := binary.BigEndian.Uint32(mark[:])
 		size := fragment &^ lastFragment
 		if fragment&lastFragment == 0 || size < minRPCCall || size > maxPortmapCall {
-			p.Log.Warn("portmap call rejected", "client", client, "reason", "bad record mark")
+			warnings.warn("portmap call rejected", "client", client, "reason", "bad record mark")
 			return
 		}
 		call := make([]byte, size)
@@ -129,7 +155,7 @@ func (p *Portmap) serveConn(conn net.Conn) {
 		}
 		reply := p.reply(call, client)
 		if reply == nil {
-			p.Log.Warn("portmap call rejected", "client", client, "reason", "not an RPC call")
+			warnings.warn("portmap call rejected", "client", client, "reason", "not an RPC call")
 			return
 		}
 		// One Write per reply: record mark and body leave together.
@@ -189,9 +215,13 @@ func (p *Portmap) reply(call []byte, client string) []byte {
 	wantVers := binary.BigEndian.Uint32(args[4:])
 	wantProto := binary.BigEndian.Uint32(args[8:])
 	port := p.lookup(wantProg, wantVers, wantProto)
-	p.Log.Info("portmap getport", "client", client,
+	p.logger().Info("portmap getport", "client", client,
 		"program", wantProg, "version", wantVers, "protocol", wantProto, "port", port)
 	return accepted(xid, acceptSuccess, port)
+}
+
+func (p *Portmap) logger() *slog.Logger {
+	return orDefault(p.Log, slog.Default())
 }
 
 // lookup returns the port for a program, or 0 if it is not served.

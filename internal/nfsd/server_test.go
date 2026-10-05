@@ -294,12 +294,14 @@ func TestServeRestart(t *testing.T) {
 	if after.Fileid != wantID || before.Fileid != wantID {
 		t.Errorf("fileid before %d, after %d, inode %d", before.Fileid, after.Fileid, wantID)
 	}
-	if status := rawLookup(t, addr, makeHandleSlice("iso"), "hello.txt"); status != nfsc.NFS3Ok {
+	if status := rawLookup(t, addr, isoHandle(), "hello.txt"); status != nfsc.NFS3Ok {
 		t.Errorf("lookup under the old root handle: status %d", status)
 	}
 }
 
-func makeHandleSlice(export string, path ...string) []byte {
-	key := makeHandle(export, path)
+// isoHandle returns the file handle of a path in the "iso" export of the
+// test tree.
+func isoHandle(path ...string) []byte {
+	key := makeHandle("iso", path)
 	return key[:]
 }
