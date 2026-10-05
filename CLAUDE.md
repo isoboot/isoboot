@@ -9,9 +9,18 @@
 
 - Quote interpolated values in templates: `"{{ .Values.foo }}"` for YAML fields and inline shell/config args.
 
+## Project Guide
+
+- `AGENTS.md` has the layout, the generated files and the conventions; `README.md` explains the system.
+
 ## E2E Tests
 
 - Don't use loops to verify downloads — just duplicate the check per artifact (max 3). A little duplication is clearer than loop + if/else mapping.
+- Provision E2E (`test/e2e/provision/`): `rows.json` is the only list of rows, for CI and local runs. After changing it or an example it uses, run `test/e2e/provision/check-rows.sh`.
+- Never run `test/e2e/provision/run.sh` or a phase script on your machine or a shared host: they uninstall k3s, delete `/data/isoboot` and change the network. They refuse to run unless `GITHUB_ACTIONS=true`, the host has `/etc/isoboot-e2e-vm`, or `E2E_ALLOW_THIS_HOST=1` is set. Don't set that to get around the guard.
+- Run rows locally with `hack/e2e-local.sh [--row <id>]... [--keep] [--reuse]` (x86-64 Linux host with KVM, nested virtualisation and multipass). It runs everything in the throwaway VM `isoboot-e2e-local` and copies logs to `e2e-logs/<time>/<row>/`. `--keep` leaves the VM and the last row's state; inside it, `~/isoboot/test/e2e/provision/run.sh <row> <phase>` re-runs one phase. `--reuse` runs in that VM again, keeping its downloads.
+- In CI the provision E2E runs on PRs labelled `e2e` (`.github/workflows/test-provision-e2e.yaml`), one phase script per step.
+- After changing the harness, run `test/e2e/provision/selftest.sh` (bash 4+, jq, docker; no KVM). New checks in the harness go into `lib.sh` as functions with a selftest case that fails without them.
 
 ## Before Pushing
 
