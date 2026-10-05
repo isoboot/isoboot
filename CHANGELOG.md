@@ -31,6 +31,19 @@
   26.04.1 and 26.10 over NFS at 2 GiB; the guest reboots by itself after the
   install instead of being powered off; the RTL8168 QEMU is built only for the
   Debian rows
+- **BREAKING**: The chart's CRDs move from `templates/crds.yaml` to `crds/`,
+  copied unchanged from `config/crd/bases` by `make manifests`. Helm now
+  installs them before everything else, which fixes a race where the
+  post-install iPXE `BootArtifact` could be created before its CRD was served.
+  The `crds.enabled` value is removed: use `helm install --skip-crds` instead,
+  and on upgrade apply `charts/isoboot/crds/` with kubectl first (Helm never
+  upgrades CRDs).
+- Fix the controller being OOM-killed at its 128Mi limit while downloading or
+  unpacking a multi-GB ISO: large writes are flushed to disk every 32 MiB, so
+  dirty page cache no longer counts against the pod
+- Fix the ISO-mode kernel and initrd being copied again on every reconcile on
+  Linux (the skip check compared coarse timestamps); they are now compared by
+  content and keep their inode when unchanged
 
 ## v0.0.2-rc3
 
