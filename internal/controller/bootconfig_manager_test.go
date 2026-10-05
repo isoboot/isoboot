@@ -18,6 +18,9 @@ package controller
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -50,10 +53,12 @@ func (c *bootConfigGetCounter) Get(ctx context.Context, key client.ObjectKey, ob
 }
 
 var _ = Describe("BootConfig controller in a manager", func() {
-	It("is not reconciled again because of its own status update", func() {
-		const ns = "bc-manager"
-		Expect(k8sClient.Create(ctx, &corev1.Namespace{Name: ns})).To(Succeed())
-
+	// startManager runs reconciler in a manager whose cache holds only
+	// namespace ns, until the spec ends. wrapClient, when not nil, wraps the
+	// manager's client before the reconciler gets it.
+	startManager := func(ns string, reconciler *BootConfigReconciler, wrapClient func(client.Client) client.Client) {
+		err := k8sClient.Create(ctx, &corev1.Namespace{Name: ns})
+		ExpectWithOffset(1, client.IgnoreAlreadyExists(err)).To(Succeed())
 		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 			Scheme:                 k8sClient.Scheme(),
 			Metrics:                metricsserver.Options{BindAddress: "0"},
@@ -61,17 +66,29 @@ var _ = Describe("BootConfig controller in a manager", func() {
 			Cache:                  cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}},
 			Controller:             config.Controller{SkipNameValidation: new(true)},
 		})
-		Expect(err).NotTo(HaveOccurred())
-		counter := &bootConfigGetCounter{Client: mgr.GetClient(), name: "bc-loop"}
-		Expect((&BootConfigReconciler{
-			Client: counter, Scheme: mgr.GetScheme(), DataDir: GinkgoT().TempDir(), Namespace: ns,
-		}).SetupWithManager(mgr)).To(Succeed())
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		reconciler.Client = mgr.GetClient()
+		if wrapClient != nil {
+			reconciler.Client = wrapClient(reconciler.Client)
+		}
+		reconciler.Scheme = mgr.GetScheme()
+		reconciler.Namespace = ns
+		ExpectWithOffset(1, reconciler.SetupWithManager(mgr)).To(Succeed())
 		mgrCtx, stop := context.WithCancel(ctx)
 		DeferCleanup(stop)
 		go func() {
 			defer GinkgoRecover()
 			Expect(mgr.Start(mgrCtx)).To(Succeed())
 		}()
+	}
+
+	It("is not reconciled again because of its own status update", func() {
+		const ns = "bc-manager"
+		counter := &bootConfigGetCounter{name: "bc-loop"}
+		startManager(ns, &BootConfigReconciler{DataDir: GinkgoT().TempDir()}, func(c client.Client) client.Client {
+			counter.Client = c
+			return counter
+		})
 
 		// Missing artifacts: the first reconcile sets Error and asks to be
 		// requeued in 10 seconds.
@@ -84,11 +101,31 @@ var _ = Describe("BootConfig controller in a manager", func() {
 		Expect(k8sClient.Create(ctx, bc)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, bc) })
 
+		// The manager can take a few seconds to start when the machine is
+		// busy (make test runs packages in parallel).
 		Eventually(func() isobootgithubiov1alpha1.BootConfigPhase {
 			var got isobootgithubiov1alpha1.BootConfig
 			_ = k8sClient.Get(ctx, types.NamespacedName{Name: "bc-loop", Namespace: ns}, &got)
 			return got.Status.Phase
-		}).Should(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+		}).WithTimeout(30 * time.Second).Should(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
 		Consistently(counter.count.Load, 2*time.Second, 100*time.Millisecond).Should(BeEquivalentTo(1))
+	})
+
+	It("removes the files of deleted BootConfigs when it starts", func() {
+		dataDir := GinkgoT().TempDir()
+		bootDir := filepath.Join(dataDir, "boot")
+		Expect(os.MkdirAll(filepath.Join(bootDir, "gone"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(bootDir, "boot.ipxe"), []byte("#!ipxe"), 0o644)).To(Succeed())
+
+		startManager("bc-manager-sweep", &BootConfigReconciler{DataDir: dataDir}, nil)
+
+		Eventually(func() string {
+			entries, _ := os.ReadDir(bootDir)
+			names := make([]string, 0, len(entries))
+			for _, e := range entries {
+				names = append(names, e.Name())
+			}
+			return strings.Join(names, " ")
+		}).WithTimeout(30 * time.Second).Should(Equal("boot.ipxe"))
 	})
 })
