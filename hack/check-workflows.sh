@@ -37,7 +37,10 @@ jobs_where() {
   done
 }
 
-if "$ACTIONLINT" "${workflows[@]}"; then pass "actionlint"; else fail "actionlint"; fi
+# actionlint shellchecks every run: block with the pinned shellcheck, not
+# whatever is on the PATH, so CI and a laptop agree.
+SHELLCHECK=${SHELLCHECK:-hack/shellcheck-pinned.sh}
+if "$ACTIONLINT" -shellcheck="$SHELLCHECK" "${workflows[@]}"; then pass "actionlint"; else fail "actionlint"; fi
 
 # build-01: a tag can be moved to other code; a commit SHA cannot.
 expect_none "every action is pinned to a full commit SHA with its version in a comment" \

@@ -571,7 +571,9 @@ jobs:
     - name: Clean up
       if: always()
       run: |
-        [ -f /tmp/qemu-pxe.pid ] && sudo kill "$(cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+        if [ -f /tmp/qemu-pxe.pid ]; then
+          sudo kill "$(cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+        fi
         sudo ip link del tap-ns4 2>/dev/null || true
         /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
         docker rm -f dhcp-srv wget-client 2>/dev/null || true
