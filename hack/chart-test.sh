@@ -114,6 +114,20 @@ expect "metrics Service selects only the controller pod" "controller-manager" \
       | [env(SELECTOR) | to_entries | .[] | $labels[.key] == .value] | all)
     | .metadata.name | sub("^rel-isoboot-", "")' | xargs)"
 
+# chart-06: nginx copies its ConfigMap once at pod start, so a changed
+# ConfigMap (e.g. httpd.port) must change the pod template to roll the pod.
+nginx_checksum() {
+  query "$1" 'select(.kind == "Deployment" and .metadata.name == "rel-isoboot-nginx")
+    | .spec.template.metadata.annotations["checksum/nginx-config"]'
+}
+checksum_default=$(nginx_checksum "$default")
+checksum_changed=$(nginx_checksum "$(render --set httpd.port=9090)")
+if [ "$checksum_default" != null ] && [ "$checksum_default" != "$checksum_changed" ]; then
+  pass "nginx pod template changes when its ConfigMap changes"
+else
+  fail "nginx pod template changes when its ConfigMap changes ($checksum_default / $checksum_changed)"
+fi
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures chart check(s) failed" >&2
   exit 1

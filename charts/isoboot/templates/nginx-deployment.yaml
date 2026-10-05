@@ -22,6 +22,10 @@ spec:
       labels:
         {{- include "isoboot.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: nginx
+      annotations:
+        # The init container renders nginx.conf once, at pod start: roll the
+        # pod whenever the ConfigMap changes.
+        checksum/nginx-config: {{ include (print $.Template.BasePath "/nginx-configmap.yaml") . | sha256sum }}
     spec:
       automountServiceAccountToken: false
       hostNetwork: true
