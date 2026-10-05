@@ -5,6 +5,9 @@
 # command. Needs bash 4+, jq, GNU coreutils and docker (the sshd cases run a
 # throwaway sshd in a container).
 # Usage: selftest.sh
+# The stub functions (kubectl, sleep, sudo, ...) are called by the code under
+# test, which shellcheck cannot see.
+# shellcheck disable=SC2329
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
