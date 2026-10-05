@@ -24,7 +24,10 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: BootConfig is the Schema for the bootconfigs API.
+        description: |-
+          BootConfig is the Schema for the bootconfigs API.
+          The name is used for directories, an NFS export and temporary files beside
+          them, which together must fit the 255-byte file name limit.
         properties:
           apiVersion:
             description: |-
@@ -123,6 +126,10 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: BootConfig names are limited to 200 characters (used as NFS export
+            and directory names)
+          rule: size(self.metadata.name) <= 200
     served: true
     storage: true
     subresources:

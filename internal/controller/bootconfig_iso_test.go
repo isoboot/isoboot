@@ -31,6 +31,7 @@ import (
 	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -527,6 +528,27 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(entries).To(HaveLen(2))
 		Expect(nfsEntries()).To(BeEmpty())
+	})
+
+	It("extracts for a BootConfig with the longest allowed name", func() {
+		name := strings.Repeat("a", 200)
+		defer readyISOArtifact("iso-long", contents, nil)()
+		defer makeISOConfig(name, "iso-long", "casper/vmlinuz", "casper/initrd")()
+		_, err := doReconcile(name)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus(name)).To(Equal(isobootgithubiov1alpha1.BootConfigStatus{Phase: isobootgithubiov1alpha1.BootConfigPhaseReady}))
+	})
+
+	It("rejects a BootConfig name longer than 200 characters", func() {
+		bc := &isobootgithubiov1alpha1.BootConfig{
+			Name: strings.Repeat("a", 201), Namespace: "default",
+			Spec: isobootgithubiov1alpha1.BootConfigSpec{
+				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{ArtifactRef: "x", KernelPath: "k", InitrdPath: "i"},
+			},
+		}
+		err := k8sClient.Create(ctx, bc)
+		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "%v", err)
+		Expect(err.Error()).To(ContainSubstring("200 characters"))
 	})
 
 	It("writes the same status message when the same failure repeats", func() {
