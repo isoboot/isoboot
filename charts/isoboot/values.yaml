@@ -18,9 +18,9 @@ image:
 # Example: sudo mkdir -p /data/isoboot && sudo chown 65532:65532 /data/isoboot
 dataDir: /data/isoboot
 
-# Set to false to skip CRD installation (e.g. if CRDs are managed separately).
-crds:
-  enabled: true
+# CRDs live in the chart's crds/ directory: Helm installs them before anything
+# else and never upgrades or deletes them. To manage them separately, install
+# with --skip-crds; on upgrade, apply charts/isoboot/crds/ with kubectl first.
 
 nginx:
   image:
