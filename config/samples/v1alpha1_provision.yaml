@@ -7,5 +7,5 @@ metadata:
   name: provision-sample
 spec:
   machineRef: machine-sample
-  bootConfigRef: rocky-9
+  bootConfigRef: rocky-10.2
   provisionAutomationRef: provisionautomation-sample

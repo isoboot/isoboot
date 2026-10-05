@@ -128,7 +128,14 @@ exactly that for the E2E and is a working reference.
   subnet (`dnsmasq.subnet`) and localhost.
 - nfsd accepts NFS, MOUNT and port-mapper connections only from
   `nfsd.allowedCIDRs` (default: the PXE subnet). Everything it exports is
-  read-only.
+  read-only. It allows 8 NFS connections per client address (512 in all) and
+  4 port-mapper connections per address (1024 in all); machines behind one
+  NAT address share those. A request may be at most 8 KiB and a READ returns
+  at most 1 MiB, with 32 MiB of READ data in flight across all clients.
+- squid refuses loopback (127.0.0.0/8), link-local addresses,
+  `squid.blockedDestinationCIDRs` (default: the k3s pod and service
+  networks), ports other than 80, 443 and nginx's port, and CONNECT except to
+  443. The node's other addresses stay reachable on those ports.
 - `/automation` serves a Provision's files only while it is `Pending` or
   `InProgress` (404 afterwards), since they can contain rendered Secrets.
   `/automation` and `/conditional-boot` answers are sent with
@@ -146,6 +153,11 @@ exactly that for the E2E and is a working reference.
   the installed machine cannot reach squid.
 - `config/` (kustomize) duplicates the chart and is only used by the Kind
   E2E tests; the chart is the supported way to install.
+- In a checkout, `charts/isoboot/Chart.yaml` carries a placeholder version
+  and appVersion `0.1.0`, for which no image is published. Install a released
+  chart from `oci://ghcr.io/isoboot/charts/isoboot`, or package the checkout
+  with `helm package charts/isoboot --version X --app-version X` for a
+  published version X.
 
 ## Development
 
