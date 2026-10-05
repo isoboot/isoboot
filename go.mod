@@ -3,7 +3,7 @@ module github.com/isoboot/isoboot
 go 1.26
 
 require (
-	github.com/diskfs/go-diskfs v1.9.3
+	github.com/diskfs/go-diskfs v1.9.4
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
