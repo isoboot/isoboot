@@ -222,7 +222,13 @@ wait_case() {
       *"{.status.message}"*) echo "hash mismatch" ;;
     esac
   }
-  sleep() { :; }
+  # 1000 polls are more than 160 min: a wait_ready whose limits broke ends
+  # the case instead of hanging the selftest.
+  stub_sleeps=0
+  sleep() {
+    stub_sleeps=$((stub_sleeps + 1))
+    [ "$stub_sleeps" -lt 1000 ] || { echo "stub: wait_ready still waiting after 1000 polls"; exit 1; }
+  }
   load_lib
   data_dir_bytes() {
     if [ "$stub_growth" = grow ]; then echo $(($(cat "$tmp/polls") * 1048576)); else echo 4096; fi
