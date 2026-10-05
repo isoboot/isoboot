@@ -99,14 +99,48 @@ expect_none "release: the test job waits for nfsd and squid" \
     done)"
 
 # ci-03: adding some other label to a PR that already has "e2e" must not
-# cancel or restart the provision E2E. Both job conditions and the
-# concurrency group look at which label was added.
-expect_none "provision E2E: runs on a labeled event only for the e2e label" \
-  "$("$YQ" eval '[.jobs.rows.if, .jobs.build.if, .concurrency.group] | .[]
-    | select(test("github.event.label.name == .e2e.") | not)' "$provision")"
-expect_none "provision E2E: no fork PR runs (its token cannot push)" \
-  "$("$YQ" eval '[.jobs.rows.if, .jobs.build.if] | .[]
-    | select(test("github.event.pull_request.head.repo.full_name == github.repository") | not)' "$provision")"
+# cancel or restart the provision E2E, and fork PRs (whose token cannot push)
+# run nothing. The job conditions and the concurrency group's suffix are
+# evaluated for each event below, as GitHub would evaluate them.
+# evaluate <expression> <context JSON>: true or false. Handles the syntax
+# these conditions use: ==, !=, &&, ||, parentheses, 'strings' and
+# contains(<list>.*.name, '<value>').
+evaluate() {
+  local expression
+  expression=$(sed -E \
+    -e "s/contains\(([a-z_.]+)\.\*\.name, '([^']*)'\)/([\1[].name] | any_c(. == '\2'))/g" \
+    -e 's/github\./\./g' -e "s/'/\"/g" -e 's/&&/and/g' -e 's/\|\|/or/g' <<<"$1")
+  "$YQ" eval -p=json "$expression" - <<<"$2"
+}
+rows_if=$("$YQ" eval '.jobs.rows.if' "$provision")
+build_if=$("$YQ" eval '.jobs.build.if' "$provision")
+group_condition=$("$YQ" eval '.concurrency.group' "$provision" | sed -E 's/.*\$\{\{ (.*) \}\}$/\1/')
+# pull_request_event <action> <label added> <labels, JSON> <head repository>
+pull_request_event() {
+  printf '{"event_name": "pull_request", "repository": "isoboot/isoboot", "event": {"action": "%s", "label": {"name": "%s"}, "pull_request": {"labels": %s, "head": {"repo": {"full_name": "%s"}}}}}' "$@"
+}
+# expect_runs <description> <jobs run> <concurrency group of a real run> <context JSON>
+expect_runs() {
+  local actual
+  actual="rows=$(evaluate "$rows_if" "$4") build=$(evaluate "$build_if" "$4") group=$(evaluate "$group_condition" "$4")"
+  if [ "$actual" = "rows=$2 build=$2 group=$3" ]; then
+    pass "$1"
+  else
+    fail "$1 (expected rows=$2 build=$2 group=$3, got $actual)"
+  fi
+}
+expect_runs "provision E2E: runs when the e2e label is added" true true \
+  "$(pull_request_event labeled e2e '[{"name": "e2e"}]' isoboot/isoboot)"
+expect_runs "provision E2E: another label on an e2e PR neither runs nor cancels it" false false \
+  "$(pull_request_event labeled docs '[{"name": "e2e"}, {"name": "docs"}]' isoboot/isoboot)"
+expect_runs "provision E2E: runs on a push to an e2e PR" true true \
+  "$(pull_request_event synchronize '' '[{"name": "e2e"}]' isoboot/isoboot)"
+expect_runs "provision E2E: a push to a PR without e2e runs nothing" false false \
+  "$(pull_request_event synchronize '' '[]' isoboot/isoboot)"
+expect_runs "provision E2E: a fork PR runs nothing" false true \
+  "$(pull_request_event labeled e2e '[{"name": "e2e"}]' someone/isoboot)"
+expect_runs "provision E2E: runs on workflow_dispatch" true true \
+  '{"event_name": "workflow_dispatch", "repository": "isoboot/isoboot", "event": {}}'
 
 # ci-04: git diff ignores untracked files, so a generated file that was never
 # committed would pass a git diff check.
