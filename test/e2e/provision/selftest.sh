@@ -28,10 +28,16 @@ export PATH="$tmp/bin:$PATH"
 failures=0
 # expect <pass|fail> <name> <extended regex the output must match, or ''> <command...>
 # Runs the command in a subshell and compares its exit status and output.
+# The subshell runs with set -e, as the phase scripts do: "out=$(...) || rc=$?"
+# would turn set -e off inside the command, and a check that ends a phase
+# script without its FAIL message would pass here.
 expect() {
-  local want=$1 name=$2 pattern=$3 out rc=0 got=pass
+  local want=$1 name=$2 pattern=$3 out rc got=pass
   shift 3
-  out=$("$@" 2>&1) || rc=$?
+  set +e
+  out=$(set -e; "$@" 2>&1)
+  rc=$?
+  set -e
   [ "$rc" = 0 ] || got=fail
   if [ "$got" = "$want" ] && { [ -z "$pattern" ] || grep -qE -- "$pattern" <<<"$out"; }; then
     echo "ok - $name"
