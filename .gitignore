@@ -31,3 +31,4 @@ go.work
 
 # Claude Code
 .claude/scheduled_tasks.lock
+e2e-logs/
