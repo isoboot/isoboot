@@ -70,13 +70,16 @@ Security:
   only the release namespace, with a Role and RoleBinding there instead of
   ClusterRoles. The controller no longer has any access to Secrets or
   ConfigMaps; only httpd reads them.
-- nginx serves `/static/` and `/dynamic/` only to `dnsmasq.subnet` and
-  localhost. squid serves only that subnet and refuses loopback
+- nginx serves `/static/` and `/dynamic/` only to `dnsmasq.subnet`, localhost
+  and the node's own addresses (squid, on the node, relays installers'
+  requests from one of them; the first version of this rule returned 403 to
+  every install file and status call sent through the proxy). squid serves only that subnet and refuses loopback
   (127.0.0.0/8), link-local addresses, `squid.blockedDestinationCIDRs`
   (default: the k3s pod and service networks), ports other than 80, 443 and
   nginx's port, and CONNECT except to 443.
 - nfsd: new repeatable `--allow-cidr` (chart value `nfsd.allowedCIDRs`,
-  default `dnsmasq.subnet`); connections from other addresses are closed and
+  default `dnsmasq.subnet`; the chart always adds the node's own address for
+  the kubelet's probes); connections from other addresses are closed and
   logged, rate-limited. Link-local IPv6 clients match too.
 - nfsd: requests are checked before go-nfs decodes them (at most 8 KiB;
   credentials at most 400 bytes; every declared length must fit), so a
@@ -140,6 +143,11 @@ E2E:
   create, and treats zero rows as an error.
 - QEMU, iPXE and the k3s install script are pinned and checksummed. The Kind
   E2E pins the hash of its test file.
+- No more `| head -1` or `| grep -q` at the end of a pipeline under
+  `pipefail`: they could kill the writer with SIGPIPE and turn a success into
+  a failure (seen as exit 141 installing k3s).
+- actionlint checks workflow scripts with the pinned shellcheck v0.11.0, not
+  whatever shellcheck is installed, so CI and a laptop give the same result.
 - Docs: README describes the current system, its security defaults and
   limitations; AGENTS.md is specific to this repo; PLAN.md is removed;
   `config/samples` use the pinned Rocky 10.2 artifacts.
