@@ -20,19 +20,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// BootConfigISOSpec defines the ISO extraction configuration.
+// BootConfigISOSpec defines ISO mode (mode B). The controller unpacks the
+// whole ISO tree into <nfs-dir>/<bootconfig-name>/, which nfsd exports
+// read-only over NFSv3, and copies the kernel and initrd into the boot
+// directory, which is served over HTTP. The ISO itself is not served.
 type BootConfigISOSpec struct {
 	// artifactRef is the name of the BootArtifact for the ISO file.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	ArtifactRef string `json:"artifactRef"`
 
-	// kernelPath is the path to the kernel within the ISO.
+	// kernelPath is the path to the kernel within the ISO (served over HTTP).
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	KernelPath string `json:"kernelPath"`
 
-	// initrdPath is the path to the initrd within the ISO.
+	// initrdPath is the path to the initrd within the ISO (served over HTTP).
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	InitrdPath string `json:"initrdPath"`
@@ -59,19 +62,23 @@ type BootConfigNetbootSpec struct {
 // BootConfigSpec defines the desired state of BootConfig.
 // A BootConfig groups BootArtifacts into a servable PXE boot directory.
 // The directory name is metadata.name.
-// Exactly one mode: netboot (direct kernel + initrd refs) or iso (ISO extraction).
+// Exactly one mode: netboot (direct kernel + initrd refs) or iso (ISO tree
+// exported over NFS, kernel + initrd over HTTP).
 // +kubebuilder:validation:XValidation:rule="has(self.netboot) != has(self.iso)",message="must set exactly one of netboot or iso"
 type BootConfigSpec struct {
 	// netboot defines direct PXE kernel/initrd artifacts (mode A).
 	// +optional
 	Netboot *BootConfigNetbootSpec `json:"netboot,omitempty"`
 
-	// iso defines ISO extraction configuration (mode B).
+	// iso exports the ISO's contents over NFS and serves its kernel and
+	// initrd over HTTP (mode B).
 	// +optional
 	ISO *BootConfigISOSpec `json:"iso,omitempty"`
 
 	// kernelArgs is the kernel boot arguments template string, applied in both
-	// modes. May contain Go template variables interpolated at provision time.
+	// modes. May contain Go template variables interpolated at provision time:
+	// ProvisionAutomationBaseURL, ProxyURL, UpdatePhaseURL, ProvisionName and,
+	// in iso mode, NFSRoot ("<IPv4>:/<bootconfig-name>", for casper's nfsroot=).
 	// +optional
 	KernelArgs string `json:"kernelArgs,omitempty"`
 }

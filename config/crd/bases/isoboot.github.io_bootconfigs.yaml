@@ -47,7 +47,9 @@ spec:
             description: spec defines the desired state of BootConfig
             properties:
               iso:
-                description: iso defines ISO extraction configuration (mode B).
+                description: |-
+                  iso exports the ISO's contents over NFS and serves its kernel and
+                  initrd over HTTP (mode B).
                 properties:
                   artifactRef:
                     description: artifactRef is the name of the BootArtifact for the
@@ -55,11 +57,13 @@ spec:
                     minLength: 1
                     type: string
                   initrdPath:
-                    description: initrdPath is the path to the initrd within the ISO.
+                    description: initrdPath is the path to the initrd within the ISO
+                      (served over HTTP).
                     minLength: 1
                     type: string
                   kernelPath:
-                    description: kernelPath is the path to the kernel within the ISO.
+                    description: kernelPath is the path to the kernel within the ISO
+                      (served over HTTP).
                     minLength: 1
                     type: string
                 required:
@@ -70,7 +74,9 @@ spec:
               kernelArgs:
                 description: |-
                   kernelArgs is the kernel boot arguments template string, applied in both
-                  modes. May contain Go template variables interpolated at provision time.
+                  modes. May contain Go template variables interpolated at provision time:
+                  ProvisionAutomationBaseURL, ProxyURL, UpdatePhaseURL, ProvisionName and,
+                  in iso mode, NFSRoot ("<IPv4>:/<bootconfig-name>", for casper's nfsroot=).
                 type: string
               netboot:
                 description: netboot defines direct PXE kernel/initrd artifacts (mode
