@@ -59,6 +59,9 @@ func TestConditionalBoot_StatusCodes(t *testing.T) {
 		{"no match", noMatchDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusNotFound},
 		{"duplicate", duplicateDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusConflict},
 		{"internal error", errorDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusInternalServerError},
+		{"boot config not ready", func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+			return nil, fmt.Errorf("%w: %q is %q", httpd.ErrBootConfigNotReady, "ubuntu", "Pending")
+		}, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusNotFound},
 		{"missing mac", fixedDirective(), "/conditional-boot", http.StatusBadRequest},
 		{"empty mac", fixedDirective(), "/conditional-boot?mac=", http.StatusBadRequest},
 		{"invalid mac format", fixedDirective(), "/conditional-boot?mac=not-a-mac", http.StatusBadRequest},

@@ -39,6 +39,10 @@ type BootDirective struct {
 	ProvisionName string
 }
 
+// ErrBootConfigNotReady indicates that the Provision's BootConfig is not
+// Ready, so the machine is not sent to the installer.
+var ErrBootConfigNotReady = errors.New("boot config not ready")
+
 // IsDuplicateError reports whether err indicates a duplicate machine or provision.
 func IsDuplicateError(err error) bool {
 	return errors.Is(err, ErrMultipleMachines) ||
@@ -46,7 +50,10 @@ func IsDuplicateError(err error) bool {
 }
 
 // BootDirectiveForMAC looks up the pending provision for the given MAC address
-// and returns boot directive data. It returns nil if no pending provision exists.
+// and returns boot directive data. It returns nil if no pending provision
+// exists, and an ErrBootConfigNotReady error while the Provision's BootConfig
+// is not Ready: its kernel, initrd and ISO tree may be missing or from
+// different builds.
 func BootDirectiveForMAC(
 	ctx context.Context, c client.Client, ns, mac string,
 ) (*BootDirective, error) {
@@ -65,6 +72,10 @@ func BootDirectiveForMAC(
 	}, &bc); err != nil {
 		return nil, fmt.Errorf("getting boot config %q: %w",
 			provision.Spec.BootConfigRef, err)
+	}
+	if bc.Status.Phase != isobootgithubiov1alpha1.BootConfigPhaseReady {
+		return nil, fmt.Errorf("%w: %q is %q: %s",
+			ErrBootConfigNotReady, bc.Name, bc.Status.Phase, bc.Status.Message)
 	}
 
 	// Mode B (ISO): kernel and initrd are extracted to fixed filenames; the

@@ -30,6 +30,11 @@ var _ = Describe("BootDirectiveForMAC", func() {
 
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
+	setPhase := func(bc *isobootgithubiov1alpha1.BootConfig, phase isobootgithubiov1alpha1.BootConfigPhase) {
+		bc.Status.Phase = phase
+		ExpectWithOffset(1, k8sClient.Status().Update(ctx, bc)).To(Succeed())
+	}
+
 	createBootConfig := func(
 		name, kernelRef, initrdRef, kernelArgs string,
 	) *isobootgithubiov1alpha1.BootConfig {
@@ -44,6 +49,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+		setPhase(bc, isobootgithubiov1alpha1.BootConfigPhaseReady)
 		return bc
 	}
 
@@ -142,6 +148,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+		setPhase(bc, isobootgithubiov1alpha1.BootConfigPhaseReady)
 		p := createProvision("bd-p4", "bd-m4", "bd-bc3",
 			isobootgithubiov1alpha1.ProvisionPhasePending)
 		defer func() {
@@ -163,6 +170,51 @@ var _ = Describe("BootDirectiveForMAC", func() {
 		Expect(result.KernelArgs).To(Equal("autoinstall ds=nocloud-net"))
 		Expect(result.ProvisionName).To(Equal("bd-p4"))
 	})
+
+	DescribeTable("boots nothing while the BootConfig is not Ready",
+		func(suffix string, phase isobootgithubiov1alpha1.BootConfigPhase) {
+			mac := "bb-00-00-00-01-" + suffix
+			m := createMachine("bd-nr-m"+suffix, mac)
+			bc := &isobootgithubiov1alpha1.BootConfig{
+				Name: "bd-nr-bc" + suffix, Namespace: ns,
+				Spec: isobootgithubiov1alpha1.BootConfigSpec{
+					ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
+						ArtifactRef: "does-not-exist", KernelPath: "casper/vmlinuz", InitrdPath: "casper/initrd",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+			if phase != "" {
+				setPhase(bc, phase)
+			}
+			p := createProvision("bd-nr-p"+suffix, "bd-nr-m"+suffix, bc.Name,
+				isobootgithubiov1alpha1.ProvisionPhasePending)
+			defer func() {
+				Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, bc)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, m)).To(Succeed())
+			}()
+
+			Eventually(func() error {
+				_, err := BootDirectiveForMAC(ctx, indexedClient, ns, mac)
+				return err
+			}).Should(MatchError(ErrBootConfigNotReady))
+
+			// Ready again: the machine boots the installer.
+			setPhase(bc, isobootgithubiov1alpha1.BootConfigPhaseReady)
+			var directive *BootDirective
+			Eventually(func() error {
+				var err error
+				directive, err = BootDirectiveForMAC(ctx, indexedClient, ns, mac)
+				return err
+			}).Should(Succeed())
+			Expect(directive).NotTo(BeNil())
+			Expect(directive.NFSExport).To(Equal("/" + bc.Name))
+		},
+		Entry("Pending", "01", isobootgithubiov1alpha1.BootConfigPhasePending),
+		Entry("Error", "02", isobootgithubiov1alpha1.BootConfigPhaseError),
+		Entry("not reconciled yet", "03", isobootgithubiov1alpha1.BootConfigPhase("")),
+	)
 
 	It("returns error when boot config not found", func() {
 		m := createMachine("bd-m2", "bb-00-00-00-00-03")

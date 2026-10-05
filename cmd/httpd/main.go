@@ -182,6 +182,13 @@ func conditionalBootHandler(
 
 		directive, err := getDirective(r.Context(), mac)
 		if err != nil {
+			if errors.Is(err, httpd.ErrBootConfigNotReady) {
+				// 404 like "no pending provision": the machine boots its
+				// local disk.
+				slog.Info("not booting the installer", "mac", mac, "reason", err)
+				http.Error(w, "boot config not ready", http.StatusNotFound)
+				return
+			}
 			if httpd.IsDuplicateError(err) {
 				slog.Error("duplicate match", "mac", mac, "error", err)
 				http.Error(w, err.Error(), http.StatusConflict)
