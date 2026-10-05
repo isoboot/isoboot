@@ -257,6 +257,66 @@ expect fail "wait-for-resource.sh reports an Error phase whose message it cannot
   "$repo/test/e2e/wait-for-resource.sh" -n isoboot-system bootartifact x 2 0
 rm "$tmp/bin/kubectl"
 
+# ── hack/e2e-local.sh against a stub multipass (e2e-07) ────────────
+# The stub logs every call to $tmp/multipass-calls. STUB_VM=absent|marked|
+# unmarked is the VM before the run, STUB_LAUNCH=fail makes the launch fail,
+# STUB_ROWS=fail|empty|list is what jq in the VM answers.
+cat > "$tmp/bin/multipass" <<STUB
+#!/bin/sh
+echo "\$*" >> "$tmp/multipass-calls"
+case "\$1" in
+  info) [ "\$STUB_VM" != absent ] ;;
+  launch) [ "\$STUB_LAUNCH" != fail ] ;;
+  start|delete) exit 0 ;;
+  exec)
+    case "\$*" in
+      *"jq -r"*)
+        case "\$STUB_ROWS" in
+          fail) echo "jq: error: syntax error" >&2; exit 1 ;;
+          empty) exit 0 ;;
+          *) echo alma-10.2; echo ubuntu-26.04 ;;
+        esac ;;
+      *"test -e /etc/isoboot-e2e-vm"*) [ "\$STUB_VM" = marked ] ;;
+      *"tar -xzf -"*) cat >/dev/null ;;
+      *"cd /tmp/isoboot-e2e/"*) exit 1 ;;
+      *) exit 0 ;;
+    esac ;;
+esac
+STUB
+chmod +x "$tmp/bin/multipass"
+# local_case <vm before> <launch: ok|fail> <rows: fail|empty|list> <e2e-local.sh options...>
+local_case() {
+  : > "$tmp/multipass-calls"
+  STUB_VM=$1 STUB_LAUNCH=$2 STUB_ROWS=$3 E2E_LOCAL_SKIP_HOST_CHECKS=1 \
+    "$repo/hack/e2e-local.sh" --logs "$tmp/e2e-logs" "${@:4}" || return
+  echo "multipass calls:"
+  cat "$tmp/multipass-calls"
+}
+calls_have() { grep -qE -- "$1" "$tmp/multipass-calls"; }
+calls_lack() { ! calls_have "$1"; }
+
+expect fail "local: rows.json that jq cannot read fails the run" "could not read the rows" \
+  local_case absent ok fail
+expect pass "local: ... and the VM it created is deleted" "" calls_have "^delete --purge isoboot-e2e-local$"
+expect fail "local: zero rows fails the run" "no rows to run" \
+  local_case absent ok empty
+expect pass "local: all rows run by default" "exec isoboot-e2e-local -- env .*/run.sh ubuntu-26.04" \
+  local_case absent ok list
+expect pass "local: --keep keeps the row's state and the VM" "env E2E_IMAGES=local E2E_KEEP_DOWNLOADS=1 E2E_KEEP=1 .*run.sh alma-10.2" \
+  local_case absent ok list --keep --row alma-10.2
+expect pass "local: ... and does not delete the VM" "" calls_lack "^delete"
+expect pass "local: a new VM is marked as disposable" "" calls_have "exec isoboot-e2e-local -- sudo touch /etc/isoboot-e2e-vm"
+expect pass "local: --reuse runs on a marked VM" "run.sh alma-10.2" \
+  local_case marked ok list --reuse --row alma-10.2
+expect pass "local: ... and never deletes it" "" calls_lack "^delete"
+expect fail "local: --reuse refuses a VM without the marker" "has no /etc/isoboot-e2e-vm" \
+  local_case unmarked ok list --reuse --row alma-10.2
+expect pass "local: ... and does not run or delete anything there" "" calls_lack "run.sh|^delete"
+expect fail "local: a failed launch fails the run" "" \
+  local_case absent fail list --row alma-10.2
+expect pass "local: ... and removes the half-made VM" "" calls_have "^delete --purge isoboot-e2e-local$"
+rm "$tmp/bin/multipass"
+
 echo
 if [ "$failures" -gt 0 ]; then
   echo "selftest: $failures check(s) failed"
