@@ -447,13 +447,33 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(getStatus("iso-bc-trav").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
 	})
 
-	It("is Error when the kernel path escapes through a symlink", func() {
-		// Even if such a link were created, os.Root refuses to follow it out.
-		defer readyISOArtifact("iso-travlink", contents, map[string]string{"evil": "../../.."})()
-		defer makeISOConfig("iso-bc-travlink", "iso-travlink", "evil/etc/passwd", "casper/initrd")()
+	It("does not copy a file from outside the tree through a symlink in it", func() {
+		defer readyISOArtifact("iso-travlink", contents, nil)()
+		defer makeISOConfig("iso-bc-travlink", "iso-travlink", "casper/vmlinuz", "casper/initrd")()
 		_, err := doReconcile("iso-bc-travlink")
 		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-travlink").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		// Extraction never creates a link that leaves the tree, so plant one
+		// in the extracted tree directly. The marker still matches, so the
+		// tree is not extracted again, and only os.Root stands between the
+		// kernel path and the file outside.
+		Expect(os.WriteFile(filepath.Join(dataDir, "outside"), []byte("OUTSIDE"), 0o644)).To(Succeed())
+		Expect(os.Symlink("../..", filepath.Join(nfsDir, "iso-bc-travlink", "evil"))).To(Succeed())
+		_, err = os.Stat(filepath.Join(nfsDir, "iso-bc-travlink", "evil", "outside"))
+		Expect(err).NotTo(HaveOccurred(), "the planted link must reach the file")
+
+		var bc isobootgithubiov1alpha1.BootConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "iso-bc-travlink", Namespace: "default"}, &bc)).To(Succeed())
+		bc.Spec.ISO.KernelPath = "evil/outside"
+		Expect(k8sClient.Update(ctx, &bc)).To(Succeed())
+
+		_, err = doReconcile("iso-bc-travlink")
+		Expect(err).NotTo(HaveOccurred())
 		Expect(getStatus("iso-bc-travlink").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+		kernel, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-travlink", "vmlinuz"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(kernel)).To(Equal("KERNEL-BYTES"))
 	})
 })
 
@@ -505,11 +525,25 @@ var _ = Describe("ISO tree helpers", func() {
 	})
 })
 
+// countingFile is a writeSyncer that counts its bytes and Sync calls.
+type countingFile struct {
+	written int
+	syncs   int
+}
+
+func (f *countingFile) Write(p []byte) (int, error) {
+	f.written += len(p)
+	return len(p), nil
+}
+
+func (f *countingFile) Sync() error {
+	f.syncs++
+	return nil
+}
+
 var _ = Describe("syncWriter", func() {
 	It("writes everything and syncs every syncEvery bytes", func() {
-		f, err := os.Create(filepath.Join(GinkgoT().TempDir(), "out"))
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = f.Close() }()
+		f := &countingFile{}
 		w := &syncWriter{f: f}
 		chunk := make([]byte, 1<<20)
 		total := 0
@@ -518,9 +552,8 @@ var _ = Describe("syncWriter", func() {
 			Expect(err).NotTo(HaveOccurred())
 			total += n
 		}
+		Expect(f.written).To(Equal(total))
+		Expect(f.syncs).To(Equal(1))
 		Expect(w.pending).To(Equal(int64(total - syncEvery)))
-		fi, err := f.Stat()
-		Expect(err).NotTo(HaveOccurred())
-		Expect(fi.Size()).To(Equal(int64(total)))
 	})
 })

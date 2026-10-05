@@ -331,8 +331,14 @@ const syncEvery = 32 << 20
 // Every large file the controller writes goes through it.
 // It has no ReadFrom, so io.CopyBuffer uses the caller's buffer.
 type syncWriter struct {
-	f       *os.File
+	f       writeSyncer
 	pending int64
+}
+
+// writeSyncer is the part of *os.File that syncWriter uses.
+type writeSyncer interface {
+	io.Writer
+	Sync() error
 }
 
 func (w *syncWriter) Write(p []byte) (int, error) {
