@@ -11,6 +11,11 @@
 #                  $E2E_WORK_ROOT/<row-id>, its logs go to .../<row-id>/logs.
 #   E2E_QEMU_CACHE where the custom RTL8168 QEMU build is kept (default
 #                  ~/qemu-cache; CI caches this directory).
+#   E2E_KEEP_DOWNLOADS=1  cleanup.sh keeps the downloaded artifacts in
+#                  $DATA_DIR/artifacts, so later rows and runs on the same host
+#                  do not fetch them again (hack/e2e-local.sh sets it; CI
+#                  downloads afresh).
+#   E2E_NO_PROGRESS_MINUTES, E2E_WAIT_MAX_MINUTES  limits of wait_ready.
 #   E2E_ALLOW_THIS_HOST=1  run on a host that is neither a GitHub Actions
 #                  runner nor a VM made by hack/e2e-local.sh (see below).
 #
@@ -107,9 +112,73 @@ wait_pods() {
   kc wait --for=condition=Ready pod -l "app.kubernetes.io/component=$component" --timeout="${timeout}s"
 }
 
-# wait_ready <kind> <name>: wait for a custom resource to reach phase Ready.
+# data_dir_bytes: the bytes under $DATA_DIR, without the squid cache.
+# Downloads and ISO unpacks grow it, so it shows the controller at work.
+data_dir_bytes() {
+  local bytes
+  bytes=$(sudo du -sb --exclude=squid "$DATA_DIR" 2>/dev/null | cut -f1 || true)
+  echo "${bytes:-0}"
+}
+
+# wait_ready <kind> <name>: wait for a custom resource to reach phase Ready
+# for as long as there is progress: its phase changes or the bytes under
+# $DATA_DIR change (a multi-GB ISO can take long on a slow link). Fails after
+# E2E_NO_PROGRESS_MINUTES (default 10) without progress, after
+# E2E_WAIT_MAX_MINUTES (default 120) in all, or on 3 Error phases in a row.
 wait_ready() {
-  "$REPO_ROOT/test/e2e/wait-for-resource.sh" -n "$NS" "$1" "$2"
+  local kind=$1 name=$2 phase bytes message last_phase=none last_bytes=none
+  local waited=0 idle=0 errors=0
+  local idle_limit=$((${E2E_NO_PROGRESS_MINUTES:-10} * 60))
+  local total_limit=$((${E2E_WAIT_MAX_MINUTES:-120} * 60))
+  while :; do
+    phase=$(kc get "$kind" "$name" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+    if [ "$phase" = Ready ]; then
+      pass "$kind $name is Ready (waited $((waited / 60)) min)"
+      return 0
+    fi
+    if [ "$phase" = Error ]; then
+      errors=$((errors + 1))
+      message=$(kc get "$kind" "$name" -o jsonpath='{.status.message}' 2>/dev/null || true)
+      log "$kind $name is in phase Error ($errors in a row): $message"
+      [ "$errors" -lt 3 ] || { wait_ready_dump "$kind" "$name"; fail "$kind $name stays in phase Error: $message"; }
+    else
+      errors=0
+    fi
+    bytes=$(data_dir_bytes)
+    if [ "$phase" != "$last_phase" ] || [ "$bytes" != "$last_bytes" ]; then
+      idle=0
+    fi
+    if [ "$idle" -ge "$idle_limit" ]; then
+      wait_ready_dump "$kind" "$name"
+      fail "$kind $name: no progress for $((idle / 60)) min (phase '${phase:-<none>}', $((bytes / 1048576)) MiB in $DATA_DIR)"
+    fi
+    if [ "$waited" -ge "$total_limit" ]; then
+      wait_ready_dump "$kind" "$name"
+      fail "$kind $name is not Ready after $((waited / 60)) min (phase '${phase:-<none>}')"
+    fi
+    [ $((waited % 60)) = 0 ] \
+      && log "$kind $name: phase ${phase:-<none>}, $((bytes / 1048576)) MiB in $DATA_DIR, waited $((waited / 60)) min"
+    last_phase=$phase
+    last_bytes=$bytes
+    sleep 10
+    waited=$((waited + 10))
+    idle=$((idle + 10))
+  done
+}
+
+wait_ready_dump() {
+  kc get "$1" "$2" -o yaml || true
+  kc logs -l app.kubernetes.io/component=controller --tail=50 || true
+}
+
+# clean_data_dir <dir>: empty the data directory but keep the squid cache and,
+# with E2E_KEEP_DOWNLOADS=1 (local runs), the downloaded artifacts: the
+# controller checks their hash and reuses them instead of downloading again.
+clean_data_dir() {
+  local kept=(! -name squid)
+  [ "${E2E_KEEP_DOWNLOADS:-0}" = 1 ] && kept+=(! -name artifacts)
+  [ -d "$1" ] || return 0
+  sudo find "$1" -mindepth 1 -maxdepth 1 "${kept[@]}" -exec rm -rf {} +
 }
 
 provision_phase() {

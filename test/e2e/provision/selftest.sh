@@ -39,12 +39,17 @@ expect() {
   fi
 }
 
-# with_lib <command...>: source lib.sh as on a CI runner, then run the command.
-# Cases define their stubs (kubectl, sleep, ...) as functions after sourcing.
-with_lib() {
+# load_lib: source lib.sh as on a CI runner. Cases stub commands (kubectl,
+# sleep, ...) with functions; a stub for a lib.sh function goes after this.
+load_lib() {
   export GITHUB_ACTIONS=true E2E_WORK_ROOT=$tmp/work
   # shellcheck source=test/e2e/provision/lib.sh
   source "$here/lib.sh"
+}
+
+# with_lib <command...>: load_lib, then run the command.
+with_lib() {
+  load_lib
   "$@"
 }
 
@@ -186,6 +191,71 @@ expect fail "an unreadable pod list fails the row" "could not list the isoboot p
   restarts_case unreadable
 expect pass "pods without restarts pass" "PASS: no isoboot pod restarted" \
   restarts_case "$tmp/pods-ok.json"
+
+# ── apply-row.sh: waits follow progress, not a fixed time (e2e-12) ─
+# wait_case <polls before Ready, or "never"> <grow|still> <phase while waiting>
+# One poll is 10 s of waiting. "grow" makes the data directory grow by 1 MiB a
+# poll, as a download does; "still" leaves it unchanged.
+wait_case() {
+  stub_ready_after=$1 stub_growth=$2 stub_waiting_phase=$3
+  echo 0 > "$tmp/polls"
+  kubectl() {
+    local polls
+    case "$*" in
+      *"{.status.phase}"*)
+        polls=$(($(cat "$tmp/polls") + 1))
+        echo "$polls" > "$tmp/polls"
+        if [ "$stub_ready_after" != never ] && [ "$polls" -gt "$stub_ready_after" ]; then
+          echo Ready
+        else
+          echo "$stub_waiting_phase"
+        fi ;;
+      *"{.status.message}"*) echo "hash mismatch" ;;
+    esac
+  }
+  sleep() { :; }
+  load_lib
+  data_dir_bytes() {
+    if [ "$stub_growth" = grow ]; then echo $(($(cat "$tmp/polls") * 1048576)); else echo 4096; fi
+  }
+  wait_ready bootartifact ubuntu-26.04-iso
+}
+# env_wait_case <NAME=value> <wait_case arguments...>
+env_wait_case() { export "${1?}"; shift; wait_case "$@"; }
+expect pass "a download that keeps growing for 25 min is waited for" "PASS: bootartifact ubuntu-26.04-iso is Ready \(waited 25 min\)" \
+  wait_case 150 grow Downloading
+expect fail "a download that stops growing fails after 10 min" "no progress for 10 min \(phase 'Downloading'" \
+  wait_case never still Downloading
+expect fail "a wait that never ends fails at E2E_WAIT_MAX_MINUTES" "is not Ready after 30 min" \
+  env_wait_case E2E_WAIT_MAX_MINUTES=30 never grow Downloading
+expect fail "three Error phases in a row fail at once" "stays in phase Error: hash mismatch" \
+  wait_case never grow Error
+
+# clean_case <E2E_KEEP_DOWNLOADS value>: run clean_data_dir on a scratch copy
+# of the data directory layout and list what is left.
+clean_case() {
+  local dir=$tmp/data-$1
+  mkdir -p "$dir/squid/cache" "$dir/artifacts/ubuntu-26.04-iso" "$dir/boot/ubuntu-26.04" "$dir/nfs/ubuntu-26.04"
+  sudo() { "$@"; }
+  E2E_KEEP_DOWNLOADS=$1 with_lib clean_data_dir "$dir"
+  (cd "$dir" && find . -mindepth 1 -maxdepth 1 | sort | tr '\n' ' ')
+}
+expect pass "cleanup keeps only the squid cache by default" "^\./squid $" clean_case 0
+expect pass "E2E_KEEP_DOWNLOADS=1 also keeps the downloads" "^\./artifacts \./squid $" clean_case 1
+
+# wait-for-resource.sh (Kind and Helm workflows): an unreadable message must
+# not end the wait silently.
+cat > "$tmp/bin/kubectl" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *"{.status.phase}"*) echo Error ;;
+  *"{.status.message}"*) echo "connection refused" >&2; exit 1 ;;
+esac
+STUB
+chmod +x "$tmp/bin/kubectl"
+expect fail "wait-for-resource.sh reports an Error phase whose message it cannot read" "is in Error phase \(count=2\)" \
+  "$repo/test/e2e/wait-for-resource.sh" -n isoboot-system bootartifact x 2 0
+rm "$tmp/bin/kubectl"
 
 echo
 if [ "$failures" -gt 0 ]; then

@@ -24,7 +24,7 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
   fi
   if [ "$phase" = "Error" ]; then
     error_count=$((error_count + 1))
-    msg=$(kubectl "${NS_FLAG[@]}" get "$RESOURCE_TYPE" "$RESOURCE_NAME" -o jsonpath='{.status.message}')
+    msg=$(kubectl "${NS_FLAG[@]}" get "$RESOURCE_TYPE" "$RESOURCE_NAME" -o jsonpath='{.status.message}' 2>/dev/null || true)
     echo "$RESOURCE_TYPE is in Error phase (count=$error_count): $msg"
     if [ "$error_count" -ge 3 ]; then
       echo "Failing fast after $error_count consecutive errors"
