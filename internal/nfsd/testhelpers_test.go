@@ -18,12 +18,14 @@ package nfsd
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	nfsc "github.com/willscott/go-nfs-client/nfs"
@@ -118,7 +120,16 @@ func startServer(t *testing.T, root string) (addr string, stop func()) {
 // mount mounts an export with the NFS client library.
 func mount(t *testing.T, addr, export string) (*nfsc.Target, error) {
 	t.Helper()
-	client, err := rpc.DialTCP("tcp", addr, false)
+	// rpc.DialTCP binds a random local port and, outside its privileged
+	// mode, does not retry when that port is already taken.
+	var client *rpc.Client
+	var err error
+	for range 10 {
+		client, err = rpc.DialTCP("tcp", addr, false)
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			break
+		}
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
