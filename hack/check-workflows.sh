@@ -143,9 +143,31 @@ expect_runs "provision E2E: runs on workflow_dispatch" true true \
   '{"event_name": "workflow_dispatch", "repository": "isoboot/isoboot", "event": {}}'
 
 # ci-04: git diff ignores untracked files, so a generated file that was never
-# committed would pass a git diff check.
-expect_none "verify-manifests fails on untracked generated files" \
-  "$(grep -q 'git status --porcelain' .github/workflows/verify-manifests.yml || echo "no git status --porcelain")"
+# committed would pass a git diff check. Run the workflow's check, with the
+# shell options GitHub uses, in a scratch repository in each state.
+verify_check=$("$YQ" eval '.jobs.verify.steps[] | select(.name == "Check for changed or new generated files") | .run' \
+  .github/workflows/verify-manifests.yml)
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+git -C "$scratch" init -q
+echo generated >"$scratch/generated.yaml"
+git -C "$scratch" add generated.yaml
+git -C "$scratch" -c user.name=check -c user.email=check@example.invalid commit -q -m generated
+# verify_status: the exit status of the check in the scratch repository.
+verify_status() {
+  (cd "$scratch" && bash --noprofile --norc -eo pipefail -c "$verify_check" >/dev/null 2>&1) && echo 0 || echo 1
+}
+clean=$(verify_status)
+echo new >"$scratch/new-kind.yaml"
+untracked=$(verify_status)
+rm "$scratch/new-kind.yaml"
+echo changed >"$scratch/generated.yaml"
+changed=$(verify_status)
+if [ -n "$verify_check" ] && [ "clean=$clean untracked=$untracked changed=$changed" = "clean=0 untracked=1 changed=1" ]; then
+  pass "verify-manifests passes a clean tree and fails on changed or untracked generated files"
+else
+  fail "verify-manifests passes a clean tree and fails on changed or untracked generated files (clean=$clean untracked=$untracked changed=$changed)"
+fi
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures workflow check(s) failed" >&2
