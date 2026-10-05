@@ -93,9 +93,10 @@ expect_none "release: the chart and latest are published only after the test job
     | select([.value.needs // [] | .[]] | any_c(. == "test") | not) | .key' "$release")"
 expect_none "release: the build job pushes no latest tag" \
   "$("$YQ" eval '.jobs.build.steps[] | select(.with.tags != null) | select(.with.tags | test("latest")) | .name' "$release")"
+release_test_scripts=$("$YQ" eval '.jobs.test.steps[].run // ""' "$release")
 expect_none "release: the test job waits for nfsd and squid" \
   "$(for component in nfsd squid; do
-      grep -q "for component in .*$component" "$release" || echo "$component"
+      grep -q "for component in .*$component" <<<"$release_test_scripts" || echo "$component"
     done)"
 
 # ci-03: adding some other label to a PR that already has "e2e" must not
