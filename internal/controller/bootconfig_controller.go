@@ -190,6 +190,13 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		log.V(1).Info("Skipping BootConfig without netboot or iso")
 		return ctrl.Result{}, nil
 	}
+	return r.reconcileNetboot(ctx, &bc)
+}
+
+// reconcileNetboot handles Mode A: the boot directory holds symlinks to the
+// kernel and initrd artifacts (or the initrd concatenated with firmware).
+func (r *BootConfigReconciler) reconcileNetboot(ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 	nb := bc.Spec.Netboot
 
 	// A BootConfig switched from iso to netboot no longer needs its tree.
@@ -203,7 +210,7 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
-		return r.setError(ctx, &bc, fmt.Sprintf("kernel artifact %q not found", nb.KernelRef))
+		return r.setError(ctx, bc, fmt.Sprintf("kernel artifact %q not found", nb.KernelRef))
 	}
 
 	initrdArtifact, err := r.getArtifact(ctx, nb.InitrdRef, bc.Namespace)
@@ -211,15 +218,15 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
-		return r.setError(ctx, &bc, fmt.Sprintf("initrd artifact %q not found", nb.InitrdRef))
+		return r.setError(ctx, bc, fmt.Sprintf("initrd artifact %q not found", nb.InitrdRef))
 	}
 
 	// Check if all artifacts are Ready
 	if kernelArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for kernel artifact %q to be Ready", nb.KernelRef))
+		return r.setPending(ctx, bc, fmt.Sprintf("waiting for kernel artifact %q to be Ready", nb.KernelRef))
 	}
 	if initrdArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for initrd artifact %q to be Ready", nb.InitrdRef))
+		return r.setPending(ctx, bc, fmt.Sprintf("waiting for initrd artifact %q to be Ready", nb.InitrdRef))
 	}
 
 	// Optionally look up firmware artifact
@@ -230,10 +237,10 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			if client.IgnoreNotFound(err) != nil {
 				return ctrl.Result{}, err
 			}
-			return r.setError(ctx, &bc, fmt.Sprintf("firmware artifact %q not found", nb.FirmwareRef))
+			return r.setError(ctx, bc, fmt.Sprintf("firmware artifact %q not found", nb.FirmwareRef))
 		}
 		if firmwareArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-			return r.setPending(ctx, &bc, fmt.Sprintf("waiting for firmware artifact %q to be Ready", nb.FirmwareRef))
+			return r.setPending(ctx, bc, fmt.Sprintf("waiting for firmware artifact %q to be Ready", nb.FirmwareRef))
 		}
 	}
 
@@ -256,16 +263,16 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 	}
 	if err := os.MkdirAll(kernelDir, 0o755); err != nil {
-		return r.setError(ctx, &bc, fmt.Sprintf("creating kernel dir: %v", err))
+		return r.setError(ctx, bc, fmt.Sprintf("creating kernel dir: %v", err))
 	}
 	if err := os.MkdirAll(initrdDir, 0o755); err != nil {
-		return r.setError(ctx, &bc, fmt.Sprintf("creating initrd dir: %v", err))
+		return r.setError(ctx, bc, fmt.Sprintf("creating initrd dir: %v", err))
 	}
 
 	// Create kernel symlink
 	kernelTarget := filepath.Join("..", "..", "..", "artifacts", kernelArtifact.Name, kernelFilename)
 	if err := ensureSymlink(kernelDir, kernelFilename, kernelTarget); err != nil {
-		return r.setError(ctx, &bc, fmt.Sprintf("creating kernel symlink: %v", err))
+		return r.setError(ctx, bc, fmt.Sprintf("creating kernel symlink: %v", err))
 	}
 
 	if firmwareArtifact != nil {
@@ -276,13 +283,13 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		combinedPath := filepath.Join(initrdDir, initrdFilename)
 
 		if err := concatenateFiles(combinedPath, initrdPath, firmwarePath); err != nil {
-			return r.setError(ctx, &bc, fmt.Sprintf("concatenating initrd + firmware: %v", err))
+			return r.setError(ctx, bc, fmt.Sprintf("concatenating initrd + firmware: %v", err))
 		}
 	} else {
 		// No firmware: symlink initrd directly
 		initrdTarget := filepath.Join("..", "..", "..", "artifacts", initrdArtifact.Name, initrdFilename)
 		if err := ensureSymlink(initrdDir, initrdFilename, initrdTarget); err != nil {
-			return r.setError(ctx, &bc, fmt.Sprintf("creating initrd symlink: %v", err))
+			return r.setError(ctx, bc, fmt.Sprintf("creating initrd symlink: %v", err))
 		}
 	}
 
@@ -290,7 +297,7 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		log.Info("BootConfig assembled", "name", bc.Name, "bootDir", bootDir)
 	}
 
-	return r.setReady(ctx, &bc)
+	return r.setReady(ctx, bc)
 }
 
 // reconcileISO handles Mode B: the whole ISO tree is unpacked into

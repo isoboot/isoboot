@@ -33,7 +33,6 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -411,7 +410,7 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		defer readyISOArtifact("iso-fail", map[string]string{`casper/a\b`: "x", "casper/vmlinuz": "K", "casper/initrd": "I"}, nil)()
 		defer makeISOConfig("iso-bc-fail", "iso-fail", "casper/vmlinuz", "casper/initrd")()
 
-		var results []reconcile.Result
+		results := make([]reconcile.Result, 0, 3)
 		for range 3 {
 			result, err := doReconcile("iso-bc-fail")
 			Expect(err).NotTo(HaveOccurred())
@@ -441,7 +440,7 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		defer readyISOArtifact("iso-fail2", map[string]string{`casper/a\b`: "x"}, nil)()
 		defer makeISOConfig("iso-bc-fail2", "iso-fail2", "casper/vmlinuz", "casper/initrd")()
 
-		var delays []time.Duration
+		delays := make([]time.Duration, 0, 3)
 		for range 3 {
 			result, err := doReconcile("iso-bc-fail2")
 			Expect(err).NotTo(HaveOccurred())
@@ -558,7 +557,7 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		// Trees and boot directories are named after the BootConfig only, so
 		// a same-named BootConfig in another namespace must not touch them.
 		for _, ns := range []string{"zz-a", "zz-b"} {
-			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}))).To(Succeed())
+			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, &corev1.Namespace{Name: ns}))).To(Succeed())
 		}
 		reconciler.Namespace = "zz-a"
 		createIn := func(ns, kernel string, spec isobootgithubiov1alpha1.BootConfigSpec) *isobootgithubiov1alpha1.BootConfig {
@@ -581,7 +580,7 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 			return bc
 		}
 		reconcileIn := func(ns string) {
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "ub", Namespace: ns}})
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{Name: "ub", Namespace: ns})
 			Expect(err).NotTo(HaveOccurred())
 		}
 		isoSpec := isobootgithubiov1alpha1.BootConfigSpec{ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
@@ -866,7 +865,8 @@ var _ = Describe("ISO tree helpers", func() {
 
 		Expect(extractISOTree(GinkgoLogr, isoPath, dest)).To(Succeed())
 
-		want := []string{dest, filepath.Join(dest, "pool"), filepath.Join(dest, "dists"), filepath.Join(dest, "dists", "x")}
+		want := make([]string, 0, 4+len(files))
+		want = append(want, dest, filepath.Join(dest, "pool"), filepath.Join(dest, "dists"), filepath.Join(dest, "dists", "x"))
 		for p := range files {
 			want = append(want, filepath.Join(dest, p))
 		}

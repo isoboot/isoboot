@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -53,7 +52,7 @@ func (c *bootConfigGetCounter) Get(ctx context.Context, key client.ObjectKey, ob
 var _ = Describe("BootConfig controller in a manager", func() {
 	It("is not reconciled again because of its own status update", func() {
 		const ns = "bc-manager"
-		Expect(k8sClient.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})).To(Succeed())
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{Name: ns})).To(Succeed())
 
 		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 			Scheme:                 k8sClient.Scheme(),

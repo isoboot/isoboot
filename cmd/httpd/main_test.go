@@ -523,14 +523,15 @@ func TestNoStore(t *testing.T) {
 	}
 	rendered := func(_ context.Context, _, _, _, _ string) (string, error) { return "secret", nil }
 	notServed := func(_ context.Context, _, _, _, _ string) (string, error) { return "", httpd.ErrFileNotFound }
+	const bootURL = "/conditional-boot?mac=aa-bb-cc-dd-ee-ff"
 	tests := []struct {
 		name       string
 		handler    http.Handler
 		url        string
 		wantStatus int
 	}{
-		{"boot script", conditionalBootHandler(fixedDirective(), ""), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusOK},
-		{"no boot script", conditionalBootHandler(noMatchDirective(), ""), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusNotFound},
+		{"boot script", conditionalBootHandler(fixedDirective(), ""), bootURL, http.StatusOK},
+		{"no boot script", conditionalBootHandler(noMatchDirective(), ""), bootURL, http.StatusNotFound},
 		{"bad mac", conditionalBootHandler(fixedDirective(), ""), "/conditional-boot?mac=x", http.StatusBadRequest},
 		{"automation file", automation(rendered), "/automation/my-provision/user-data", http.StatusOK},
 		{"automation file not served", automation(notServed), "/automation/my-provision/user-data", http.StatusNotFound},
