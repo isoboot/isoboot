@@ -13,3 +13,4 @@ spec:
     targetPort: 8443
   selector:
     {{- include "isoboot.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: controller

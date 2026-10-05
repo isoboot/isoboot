@@ -104,6 +104,16 @@ expect "every pinned Deployment uses the Recreate strategy" \
   "$(query "$default" 'select(.kind == "Deployment" and .spec.template.spec.affinity.podAntiAffinity != null)
     | (.metadata.name | sub("^rel-isoboot-", "")) + "=" + (.spec.strategy.type // "RollingUpdate")' | sort | xargs)"
 
+# chart-04: only the controller serves metrics on 8443; the Service must not
+# pick the other isoboot pods (most of them on the host network) as endpoints.
+metrics_selector=$(query "$default" -o=json -I=0 \
+  'select(.kind == "Service" and .metadata.name == "rel-isoboot-metrics-service") | .spec.selector')
+expect "metrics Service selects only the controller pod" "controller-manager" \
+  "$(SELECTOR=$metrics_selector query "$default" 'select(.kind == "Deployment")
+    | select(.spec.template.metadata.labels as $labels
+      | [env(SELECTOR) | to_entries | .[] | $labels[.key] == .value] | all)
+    | .metadata.name | sub("^rel-isoboot-", "")' | xargs)"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures chart check(s) failed" >&2
   exit 1
