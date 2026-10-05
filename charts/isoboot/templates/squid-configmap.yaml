@@ -8,8 +8,10 @@ metadata:
 data:
   squid.conf: |
     # squid is on the host network: 127.0.0.1 is the node and ClusterIPs are
-    # reachable, so it only fetches from web ports outside the node and the
-    # cluster, and only for the PXE subnet (and the node itself).
+    # reachable. It serves only the PXE subnet (and the node itself), fetches
+    # only from web ports, and never from loopback, link-local addresses or
+    # the cluster's networks. The node's other addresses stay reachable on
+    # those ports: installers report status to nginx.port through it.
     acl localnet src {{ include "isoboot.subnet" . }}
     acl SSL_ports port 443
     # 80 and 443 for package mirrors, nginx.port for installer callbacks.
