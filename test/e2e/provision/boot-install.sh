@@ -49,14 +49,14 @@ done
 pass "VM got DHCP lease $vm_ip"
 
 for i in $(seq 1 60); do
-  nginx_access_log | grep "GET /static/$bootconfig/$(row kernel_path) " | grep '" 200 ' | grep -q 'iPXE/' && break
+  nginx_access_log | grep "GET /static/$bootconfig/$(row kernel_path) " | grep '" 200 ' | grep 'iPXE/' >/dev/null && break
   [ "$i" = 60 ] && { tail_serial; fail "no iPXE HTTP 200 for /static/$bootconfig/$(row kernel_path)"; }
   sleep 5
 done
 pass "iPXE fetched the kernel"
 
 for i in $(seq 1 60); do
-  nginx_access_log | grep "GET /static/$bootconfig/$(row initrd_path) " | grep '" 200 ' | grep -q 'iPXE/' && break
+  nginx_access_log | grep "GET /static/$bootconfig/$(row initrd_path) " | grep '" 200 ' | grep 'iPXE/' >/dev/null && break
   [ "$i" = 60 ] && { tail_serial; fail "no iPXE HTTP 200 for /static/$bootconfig/$(row initrd_path)"; }
   sleep 5
 done
@@ -118,9 +118,9 @@ if [ "$(row nfs)" = true ]; then
   kc logs -l app.kubernetes.io/component=nfsd --tail=-1 > "$LOG_DIR/nfsd.log" 2>&1 || true
   # The installer's own DHCP client may get another address than iPXE did,
   # so accept any client on the site subnet (the VM is the only one there).
-  grep 'msg=mount ' "$LOG_DIR/nfsd.log" | grep -F 'client=192.168.101.' | grep -q "export=/$bootconfig\$" \
+  grep 'msg=mount ' "$LOG_DIR/nfsd.log" | grep -F 'client=192.168.101.' | grep "export=/$bootconfig\$" >/dev/null \
     || { cat "$LOG_DIR/nfsd.log"; fail "nfsd log has no mount of /$bootconfig by the VM"; }
-  pass "nfsd: $(grep 'msg=mount ' "$LOG_DIR/nfsd.log" | grep "export=/$bootconfig\$" | head -1)"
+  pass "nfsd: $(grep 'msg=mount ' "$LOG_DIR/nfsd.log" | grep "export=/$bootconfig\$" | sed -n 1p)"
   nginx_access_log > "$LOG_DIR/nginx-access.log"
   grep -q "GET /static/$bootconfig/vmlinuz " "$LOG_DIR/nginx-access.log" \
     || fail "nginx did not serve /static/$bootconfig/vmlinuz"

@@ -57,9 +57,9 @@ if [ "$(row nic)" = rtl8168 ]; then
   sudo install -m 0755 "$E2E_QEMU_CACHE/qemu-system-x86_64" /usr/local/bin/qemu-system-x86_64
   sudo mkdir -p /usr/local/share/qemu
   sudo cp -a "$E2E_QEMU_CACHE/share/." /usr/local/share/qemu/
-  /usr/local/bin/qemu-system-x86_64 -device help 2>&1 | grep -q '"rtl8168"' \
+  /usr/local/bin/qemu-system-x86_64 -device help 2>&1 | grep '"rtl8168"' >/dev/null \
     || fail "custom QEMU has no rtl8168 device"
-  pass "custom QEMU with rtl8168: $(/usr/local/bin/qemu-system-x86_64 --version | head -1)"
+  pass "custom QEMU with rtl8168: $(/usr/local/bin/qemu-system-x86_64 --version | sed -n 1p)"
 else
-  pass "stock QEMU: $(/usr/bin/qemu-system-x86_64 --version | head -1)"
+  pass "stock QEMU: $(/usr/bin/qemu-system-x86_64 --version | sed -n 1p)"
 fi

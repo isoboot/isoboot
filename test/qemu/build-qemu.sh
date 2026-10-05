@@ -70,6 +70,6 @@ sudo cp -a pc-bios/*.bin pc-bios/*.rom pc-bios/keymaps /usr/local/share/qemu/ 2>
 sudo cp -a build/pc-bios/*.bin build/pc-bios/*.rom /usr/local/share/qemu/ 2>/dev/null || true
 
 /usr/local/bin/qemu-system-x86_64 --version
-/usr/local/bin/qemu-system-x86_64 -device help 2>&1 | grep -q '"rtl8168"' \
+/usr/local/bin/qemu-system-x86_64 -device help 2>&1 | grep '"rtl8168"' >/dev/null \
   || { echo "FAIL: built QEMU has no rtl8168 device (meson.build patch missed?)" >&2; exit 1; }
 echo "iPXE ROM: $(ls -la /usr/local/share/qemu/efi-rtl8168.rom)"

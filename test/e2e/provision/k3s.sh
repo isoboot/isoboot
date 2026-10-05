@@ -15,7 +15,7 @@ if ! command -v k3s >/dev/null; then
     || fail "checksum mismatch for the k3s $K3S_VERSION install script"
   INSTALL_K3S_EXEC="--disable=traefik" INSTALL_K3S_VERSION="$K3S_VERSION" sh "$installer"
 fi
-installed=$(k3s --version | head -1 | awk '{print $3}')
+installed=$(k3s --version | awk 'NR == 1 {print $3}')
 [ "$installed" = "$K3S_VERSION" ] || fail "k3s $installed is installed, expected $K3S_VERSION"
 sudo chmod 644 /etc/rancher/k3s/k3s.yaml
 
@@ -38,4 +38,4 @@ for i in $(seq 1 90); do
   sleep 2
 done
 kubectl -n kube-system rollout status deployment/coredns --timeout=300s
-pass "k3s $(k3s --version | head -1 | awk '{print $3}') ready, node $(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')"
+pass "k3s $(k3s --version | awk 'NR == 1 {print $3}') ready, node $(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')"

@@ -209,7 +209,7 @@ nginx_access_log() {
 # dhcp_ip: the address the site DHCP server last acknowledged for the VM's MAC.
 dhcp_ip() {
   sudo docker exec "$DHCP_CONTAINER" grep -a DHCPACK /tmp/dnsmasq.log 2>/dev/null \
-    | grep -i "$MAC_COLON" | tail -1 | grep -oE '192\.168\.101\.[0-9]+' | head -1 || true
+    | grep -i "$MAC_COLON" | tail -1 | grep -oE '192\.168\.101\.[0-9]+' | sed -n 1p || true
 }
 
 qemu_running() {
@@ -305,7 +305,7 @@ sshd_auth_methods() {
   ssh -v "$@" -o BatchMode=yes -o PreferredAuthentications=none \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 \
     "$destination" true 2>&1 | tr -d '\r' \
-    | sed -n 's/.*Authentications that can continue: //p' | head -1 || true
+    | sed -n 's/.*Authentications that can continue: //p' | sed -n 1p || true
 }
 
 # assert_no_password_auth <user@host> [ssh options...]: fail unless sshd
