@@ -43,6 +43,9 @@ func TestRender(t *testing.T) {
 		{"NFSRoot", "netboot=nfs nfsroot={{.NFSRoot}} ds=nocloud;s={{.ProvisionAutomationBaseURL}}/ ---",
 			Data{ProvisionAutomationBaseURL: base, NFSRoot: "10.0.0.1:/ubuntu-26.04"},
 			"netboot=nfs nfsroot=10.0.0.1:/ubuntu-26.04 ds=nocloud;s=" + base + "/ ---"},
+		// kernelArgs: > (a YAML folded scalar) keeps one final line break.
+		{"final line break dropped", "console=ttyS0 ip=dhcp\n", Data{}, "console=ttyS0 ip=dhcp"},
+		{"final CRLF dropped", "console=ttyS0 ip=dhcp\r\n", Data{}, "console=ttyS0 ip=dhcp"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,6 +72,7 @@ func TestRenderErrors(t *testing.T) {
 		{"ISOURL no longer exists", "url={{.ISOURL}}", Data{}, "ISOURL"},
 		{"line break in the template", "ip=dhcp\nchain http://x", Data{}, "single line"},
 		{"carriage return in the template", "ip=dhcp\rx", Data{}, "single line"},
+		{"line break before the final one", "ip=dhcp\nchain http://x\n", Data{}, "single line"},
 		{"line break from the data", "name={{.ProvisionName}}", Data{ProvisionName: "a\nb"}, "single line"},
 	}
 	for _, tt := range tests {

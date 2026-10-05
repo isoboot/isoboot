@@ -43,7 +43,9 @@ type Data struct {
 // in the iPXE script every further line would be another command.
 var errLineBreak = errors.New("kernel args must be a single line")
 
-// Render renders args as a Go template with data. The result must be one line.
+// Render renders args as a Go template with data. The result must be one
+// line. Leading and trailing white space is dropped: a YAML folded scalar
+// (kernelArgs: >) ends in a line break, which is not another command.
 func Render(args string, data Data) (string, error) {
 	tmpl, err := template.New("kernelArgs").
 		Option("missingkey=error").Parse(args)
@@ -55,10 +57,11 @@ func Render(args string, data Data) (string, error) {
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("executing kernel args template: %w", err)
 	}
-	if strings.ContainsAny(buf.String(), "\r\n") {
+	rendered := strings.TrimSpace(buf.String())
+	if strings.ContainsAny(rendered, "\r\n") {
 		return "", errLineBreak
 	}
-	return buf.String(), nil
+	return rendered, nil
 }
 
 // sampleData has a value for every field, in the shape httpd fills them in
