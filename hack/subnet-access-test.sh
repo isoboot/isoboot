@@ -31,7 +31,7 @@ work=
 
 cleanup() {
   docker rm -f "$prefix-squid" "$prefix-nginx" "$prefix-web-pxe" "$prefix-web-other" \
-    "$prefix-client-pxe" "$prefix-client-other" >/dev/null 2>&1 || true
+    "$prefix-web-squid-host" "$prefix-client-pxe" "$prefix-client-other" >/dev/null 2>&1 || true
   docker network rm "$pxe_net" "$other_net" >/dev/null 2>&1 || true
   [ -z "$work" ] || rm -rf "$work"
 }
@@ -93,6 +93,9 @@ start "$prefix-squid" "$pxe_net" "$squid_pxe" -v "$work/squid.conf:/etc/squid/sq
     chown squid:squid /run/squid /var/cache/squid /var/log/squid
     squid -z --foreground -f /etc/squid/squid.conf && exec squid --foreground -f /etc/squid/squid.conf'
 docker network connect --ip "$squid_other" "$other_net" "$prefix-squid"
+# A web server on the proxy host's own loopback, on an allowed port: what a
+# node-local service (the kubelet, say) is to the host-network squid.
+docker run -d --name "$prefix-web-squid-host" --network "container:$prefix-squid" "$nginx_image" >/dev/null
 
 start "$prefix-nginx" "$pxe_net" "$nginx_pxe" -v "$work/nginx.conf:/etc/nginx/nginx.conf:ro" \
   -v "$work/static:/data/isoboot/nginx/static/boot:ro" --tmpfs /var/run:mode=1777 "$nginx_image"
@@ -126,7 +129,7 @@ proxy=(-x "http://$squid_pxe:3128")
 expect "PXE client fetches from a web server on an allowed port" 200 \
   "$(status pxe "${proxy[@]}" "http://$web_pxe:8080/")"
 expect "PXE client cannot fetch from the proxy host itself" 403 \
-  "$(status pxe "${proxy[@]}" "http://127.0.0.1:3128/")"
+  "$(status pxe "${proxy[@]}" "http://127.0.0.1:8080/")"
 expect "PXE client cannot fetch from a link-local address" 403 \
   "$(status pxe "${proxy[@]}" "http://169.254.169.254/")"
 expect "PXE client cannot fetch from a blocked destination network" 403 \
