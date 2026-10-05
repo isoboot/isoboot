@@ -103,6 +103,13 @@ trap finish EXIT
 
 vm_exec cloud-init status --wait >/dev/null || true
 vm_exec test -e /dev/kvm || die "no /dev/kvm inside the VM: nested virtualisation is not reaching it"
+# The E2E scripts run only on a host marked as disposable (see lib.sh).
+if $created; then
+  vm_exec sudo touch /etc/isoboot-e2e-vm
+else
+  vm_exec test -e /etc/isoboot-e2e-vm \
+    || die "VM $vm has no /etc/isoboot-e2e-vm, so it was not made by this script and the E2E would change it for real. If it is a throwaway E2E VM, mark it: multipass exec $vm -- sudo touch /etc/isoboot-e2e-vm"
+fi
 
 echo "== Copying $repo (tracked and untracked files, without ignored ones) into $vm:~/isoboot"
 (

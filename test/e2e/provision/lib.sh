@@ -11,7 +11,31 @@
 #                  $E2E_WORK_ROOT/<row-id>, its logs go to .../<row-id>/logs.
 #   E2E_QEMU_CACHE where the custom RTL8168 QEMU build is kept (default
 #                  ~/qemu-cache; CI caches this directory).
+#   E2E_ALLOW_THIS_HOST=1  run on a host that is neither a GitHub Actions
+#                  runner nor a VM made by hack/e2e-local.sh (see below).
+#
+# The phase scripts change the host for real: they install packages and k3s,
+# uninstall k3s, delete /data/isoboot, add a bridge and iptables rules, stop
+# rpcbind and open /dev/kvm to everyone. So they refuse to run unless the host
+# is known to be disposable: a GitHub Actions runner (GITHUB_ACTIONS=true), a
+# VM that hack/e2e-local.sh created (it writes the marker file
+# /etc/isoboot-e2e-vm), or a host the caller names as disposable with
+# E2E_ALLOW_THIS_HOST=1.
 set -euo pipefail
+
+log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+pass() { log "PASS: $*"; }
+fail() {
+  printf '[%s] FAIL: %s\n' "$(date -u +%H:%M:%S)" "$*" >&2
+  exit 1
+}
+
+E2E_HOST_MARKER=/etc/isoboot-e2e-vm
+if [ "${GITHUB_ACTIONS:-}" != true ] && [ ! -e "$E2E_HOST_MARKER" ] \
+    && [ "${E2E_ALLOW_THIS_HOST:-}" != 1 ]; then
+  fail "refusing to change this host: it is not a GitHub Actions runner and has no $E2E_HOST_MARKER (hack/e2e-local.sh creates it in its VM). Run hack/e2e-local.sh, or set E2E_ALLOW_THIS_HOST=1 only on a throwaway machine."
+fi
+
 # Constants used by the phase scripts that source this file.
 # shellcheck disable=SC2034
 {
@@ -47,14 +71,9 @@ case $E2E_IMAGES in
 esac
 # shellcheck disable=SC2034
 ALPINE_VERSION=$(cat "$REPO_ROOT/.alpine-version")
-export KUBECONFIG=${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}
-
-log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
-pass() { log "PASS: $*"; }
-fail() {
-  printf '[%s] FAIL: %s\n' "$(date -u +%H:%M:%S)" "$*" >&2
-  exit 1
-}
+# Always the k3s that k3s.sh installs, never a cluster from the caller's
+# environment.
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 # load_row <row-id>: select the row and set ROW_ID, WORK, LOG_DIR, MAC, MAC_COLON.
 load_row() {
