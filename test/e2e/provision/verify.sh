@@ -46,13 +46,7 @@ on_vm true || fail "SSH key login failed"
 pass "SSH key login as isoboot@$vm_ip"
 
 # (b) password login is refused
-if ssh -o StrictHostKeyChecking=no -o "UserKnownHostsFile=$WORK/known_hosts" -o ConnectTimeout=5 \
-    -o BatchMode=no -o PasswordAuthentication=yes -o PubkeyAuthentication=no \
-    -o KbdInteractiveAuthentication=no -o NumberOfPasswordPrompts=0 \
-    "isoboot@$vm_ip" true 2>/dev/null; then
-  fail "password login should be blocked but succeeded"
-fi
-pass "password login blocked"
+assert_no_password_auth "isoboot@$vm_ip"
 
 # (c) hostname
 actual=$(on_vm hostname)
@@ -60,15 +54,9 @@ actual=$(on_vm hostname)
 pass "hostname $actual"
 
 # (d) the injected SSH host keys
-expected=$(ssh-keygen -lf "$keys/ssh_host_ecdsa_key.pub" | awk '{print $2}')
-actual=$(ssh-keyscan -t ecdsa "$vm_ip" 2>/dev/null | ssh-keygen -lf - | awk '{print $2}')
-[ "$expected" = "$actual" ] || fail "ecdsa host key: expected $expected, got $actual"
-expected=$(ssh-keygen -lf "$keys/ssh_host_ed25519_key.pub" | awk '{print $2}')
-actual=$(ssh-keyscan -t ed25519 "$vm_ip" 2>/dev/null | ssh-keygen -lf - | awk '{print $2}')
-[ "$expected" = "$actual" ] || fail "ed25519 host key: expected $expected, got $actual"
-expected=$(ssh-keygen -lf "$keys/ssh_host_rsa_key.pub" | awk '{print $2}')
-actual=$(ssh-keyscan -t rsa "$vm_ip" 2>/dev/null | ssh-keygen -lf - | awk '{print $2}')
-[ "$expected" = "$actual" ] || fail "rsa host key: expected $expected, got $actual"
+assert_host_key "$vm_ip" ecdsa "$keys/ssh_host_ecdsa_key.pub"
+assert_host_key "$vm_ip" ed25519 "$keys/ssh_host_ed25519_key.pub"
+assert_host_key "$vm_ip" rsa "$keys/ssh_host_rsa_key.pub"
 pass "ecdsa, ed25519 and rsa host keys match the injected ones"
 
 # (e) OS identity
@@ -101,4 +89,5 @@ if [ "$(row verify_rtl_firmware)" = true ]; then
   pass "r8169 detected the RTL8168 device"
 fi
 
+assert_no_restarts
 pass "all checks for $ROW_ID"

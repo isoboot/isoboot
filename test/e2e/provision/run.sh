@@ -9,7 +9,8 @@
 # verify collect-logs (collect-logs takes --print as an extra argument).
 # Needs an x86-64 Ubuntu host with KVM, passwordless sudo and internet access.
 # The host is changed for real (packages, k3s, a bridge, iptables, /data/isoboot),
-# so use a throwaway VM or CI runner: hack/e2e-local.sh makes one.
+# so the scripts run only on a GitHub Actions runner, in a VM made by
+# hack/e2e-local.sh (marker /etc/isoboot-e2e-vm) or with E2E_ALLOW_THIS_HOST=1.
 # Environment: see lib.sh (E2E_IMAGES, E2E_VERSION, E2E_WORK_ROOT, E2E_QEMU_CACHE).
 set -euo pipefail
 dir=$(cd "$(dirname "$0")" && pwd)
@@ -17,7 +18,8 @@ phases=(host-setup k3s network images helm-install apply-row boot-install verify
 
 row_id=${1:-}
 if [ -z "$row_id" ] || [ "$row_id" = -h ] || [ "$row_id" = --help ]; then
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+  # The comment block at the top of this file.
+  awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
   echo "Rows: $(jq -r '[.[].id] | join(" ")' "$dir/rows.json")"
   exit 2
 fi

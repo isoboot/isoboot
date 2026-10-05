@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tear down what the phases set up, so the next row starts clean on the same
 # host: the VM, k3s, the site network and the data directory (the squid cache
-# under it is kept). Logs under $E2E_WORK_ROOT stay. CI runners are thrown
-# away instead. Usage: cleanup.sh
+# under it is kept, and with E2E_KEEP_DOWNLOADS=1 the downloaded artifacts).
+# Logs under $E2E_WORK_ROOT stay. CI runners are thrown away instead.
+# Usage: cleanup.sh
 set -uo pipefail
 # shellcheck source=test/e2e/provision/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -22,8 +23,6 @@ sudo iptables -t nat -D POSTROUTING -s "$SUBNET" ! -o "$BRIDGE" -j MASQUERADE 2>
 sudo iptables -D FORWARD -i "$BRIDGE" -j ACCEPT 2>/dev/null
 sudo iptables -D FORWARD -o "$BRIDGE" -j ACCEPT 2>/dev/null
 sudo sysctl -qw net.bridge.bridge-nf-call-iptables=1 2>/dev/null
-if [ -d "$DATA_DIR" ]; then
-  sudo find "$DATA_DIR" -mindepth 1 -maxdepth 1 ! -name squid -exec rm -rf {} +
-fi
+clean_data_dir "$DATA_DIR"
 log "cleaned up"
 exit 0

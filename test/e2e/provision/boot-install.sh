@@ -4,9 +4,12 @@
 # Provision going InProgress then Complete, and the installer rebooting by
 # itself (QEMU runs with -no-reboot, so it exits). The VM is never powered off
 # under a running installer: anaconda still relabels and syncs after %post.
-# NFS rows also prove the NFS path: nfsd logged the guest's mount of
-# /<bootconfig> and nginx served no .iso.
-# A row with "expect": "stall" (Debian without firmware) must NOT complete.
+# NFS rows (BootConfigs in iso mode) also prove the NFS path: the guest's
+# kernel command line mounts NFS and has no url= or toram, nfsd logged the
+# guest's mount of /<bootconfig>, and nginx served no .iso.
+# A row with "expect": "stall" (Debian without NIC firmware) must stay Pending
+# and never fetch its automation files: the installer had no network.
+# Every row ends by checking that no isoboot pod restarted.
 # Usage: boot-install.sh <row-id>
 set -euo pipefail
 # shellcheck source=test/e2e/provision/lib.sh
@@ -15,6 +18,15 @@ load_row "${1:-}"
 
 bootconfig=$(row bootconfig)
 serial=$LOG_DIR/serial-install.log
+
+# The NFS checks follow the BootConfig's real mode, not only the row's flag.
+iso_artifact=$(kc get bootconfig "$bootconfig" -o jsonpath='{.spec.iso.artifactRef}')
+if [ -n "$iso_artifact" ] && [ "$(row nfs)" != true ]; then
+  fail "BootConfig $bootconfig is in iso mode (NFS), but row $ROW_ID does not have \"nfs\": true"
+fi
+if [ -z "$iso_artifact" ] && [ "$(row nfs)" = true ]; then
+  fail "row $ROW_ID has \"nfs\": true, but BootConfig $bootconfig is not in iso mode"
+fi
 
 cp "$(ovmf_vars)" "$WORK/ovmf-vars.fd"
 rm -f "$WORK/disk.qcow2"
@@ -52,16 +64,11 @@ pass "iPXE fetched the initrd"
 
 # ── Negative row: the install must not complete ────────────────────
 if [ "$(row expect)" = stall ]; then
-  for i in $(seq 1 50); do
-    phase=$(provision_phase)
-    [ "$phase" = Complete ] && fail "provision reached Complete, but this row has no firmware for its NIC"
-    [ $((i % 6)) = 1 ] && log "phase=${phase:-?} (check $i/50)"
-    sleep 10
-  done
+  assert_stalls 50 10
   screendump stall
   tail_serial
   qemu_stop
-  pass "provision did not reach Complete without firmware (phase=$(provision_phase))"
+  assert_no_restarts
   exit 0
 fi
 
@@ -107,6 +114,7 @@ pass "installer finished and rebooted (QEMU exited)"
 
 # ── NFS rows: prove the installer ran from the NFS export ──────────
 if [ "$(row nfs)" = true ]; then
+  assert_nfs_cmdline "$serial" "$bootconfig"
   kc logs -l app.kubernetes.io/component=nfsd --tail=-1 > "$LOG_DIR/nfsd.log" 2>&1 || true
   # The installer's own DHCP client may get another address than iPXE did,
   # so accept any client on the site subnet (the VM is the only one there).
@@ -123,3 +131,5 @@ if [ "$(row nfs)" = true ]; then
   fi
   pass "nginx served vmlinuz and initrd and no .iso"
 fi
+
+assert_no_restarts

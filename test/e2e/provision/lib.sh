@@ -11,7 +11,37 @@
 #                  $E2E_WORK_ROOT/<row-id>, its logs go to .../<row-id>/logs.
 #   E2E_QEMU_CACHE where the custom RTL8168 QEMU build is kept (default
 #                  ~/qemu-cache; CI caches this directory).
+#   E2E_KEEP_DOWNLOADS=1  cleanup.sh keeps the downloaded artifacts in
+#                  $DATA_DIR/nginx/static/artifacts, so later rows and runs on
+#                  the same host
+#                  do not fetch them again (hack/e2e-local.sh sets it; CI
+#                  downloads afresh).
+#   E2E_NO_PROGRESS_MINUTES, E2E_WAIT_MAX_MINUTES  limits of wait_ready.
+#   E2E_ALLOW_THIS_HOST=1  run on a host that is neither a GitHub Actions
+#                  runner nor a VM made by hack/e2e-local.sh (see below).
+#
+# The phase scripts change the host for real: they install packages and k3s,
+# uninstall k3s, delete /data/isoboot, add a bridge and iptables rules, stop
+# rpcbind and open /dev/kvm to everyone. So they refuse to run unless the host
+# is known to be disposable: a GitHub Actions runner (GITHUB_ACTIONS=true), a
+# VM that hack/e2e-local.sh created (it writes the marker file
+# /etc/isoboot-e2e-vm), or a host the caller names as disposable with
+# E2E_ALLOW_THIS_HOST=1.
 set -euo pipefail
+
+log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+pass() { log "PASS: $*"; }
+fail() {
+  printf '[%s] FAIL: %s\n' "$(date -u +%H:%M:%S)" "$*" >&2
+  exit 1
+}
+
+E2E_HOST_MARKER=/etc/isoboot-e2e-vm
+if [ "${GITHUB_ACTIONS:-}" != true ] && [ ! -e "$E2E_HOST_MARKER" ] \
+    && [ "${E2E_ALLOW_THIS_HOST:-}" != 1 ]; then
+  fail "refusing to change this host: it is not a GitHub Actions runner and has no $E2E_HOST_MARKER (hack/e2e-local.sh creates it in its VM). Run hack/e2e-local.sh, or set E2E_ALLOW_THIS_HOST=1 only on a throwaway machine."
+fi
+
 # Constants used by the phase scripts that source this file.
 # shellcheck disable=SC2034
 {
@@ -34,6 +64,8 @@ PROVISION="qemu-vm1-provision"
 # Tool versions, pinned so every run installs the same ones; bump on purpose.
 # Keep KUBECTL_VERSION in .devcontainer/post-install.sh on the same minor.
 K3S_VERSION="v1.36.5+k3s1"
+# sha256 of install.sh at the K3S_VERSION tag; it changes with the version.
+K3S_INSTALL_SHA256="46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad"
 HELM_VERSION="v3.22.0"
 }
 
@@ -47,14 +79,9 @@ case $E2E_IMAGES in
 esac
 # shellcheck disable=SC2034
 ALPINE_VERSION=$(cat "$REPO_ROOT/.alpine-version")
-export KUBECONFIG=${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}
-
-log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
-pass() { log "PASS: $*"; }
-fail() {
-  printf '[%s] FAIL: %s\n' "$(date -u +%H:%M:%S)" "$*" >&2
-  exit 1
-}
+# Always the k3s that k3s.sh installs, never a cluster from the caller's
+# environment.
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 # load_row <row-id>: select the row and set ROW_ID, WORK, LOG_DIR, MAC, MAC_COLON.
 load_row() {
@@ -88,9 +115,84 @@ wait_pods() {
   kc wait --for=condition=Ready pod -l "app.kubernetes.io/component=$component" --timeout="${timeout}s"
 }
 
-# wait_ready <kind> <name>: wait for a custom resource to reach phase Ready.
+# data_dir_bytes: the bytes under $DATA_DIR, without the squid cache.
+# Downloads and ISO unpacks grow it, so it shows the controller at work.
+data_dir_bytes() {
+  local bytes
+  bytes=$(sudo du -sb --exclude=squid "$DATA_DIR" 2>/dev/null | cut -f1 || true)
+  echo "${bytes:-0}"
+}
+
+# wait_ready <kind> <name>: wait for a custom resource to reach phase Ready
+# for as long as there is progress: its phase changes or the bytes under
+# $DATA_DIR change (a multi-GB ISO can take long on a slow link). Fails after
+# E2E_NO_PROGRESS_MINUTES (default 10) without progress, after
+# E2E_WAIT_MAX_MINUTES (default 120) in all, or on 3 Error phases in a row.
 wait_ready() {
-  "$REPO_ROOT/test/e2e/wait-for-resource.sh" -n "$NS" "$1" "$2"
+  local kind=$1 name=$2 phase bytes message last_phase=none last_bytes=none
+  local waited=0 idle=0 errors=0
+  local idle_limit=$((${E2E_NO_PROGRESS_MINUTES:-10} * 60))
+  local total_limit=$((${E2E_WAIT_MAX_MINUTES:-120} * 60))
+  while :; do
+    phase=$(kc get "$kind" "$name" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+    if [ "$phase" = Ready ]; then
+      pass "$kind $name is Ready (waited $((waited / 60)) min)"
+      return 0
+    fi
+    if [ "$phase" = Error ]; then
+      errors=$((errors + 1))
+      message=$(kc get "$kind" "$name" -o jsonpath='{.status.message}' 2>/dev/null || true)
+      log "$kind $name is in phase Error ($errors in a row): $message"
+      [ "$errors" -lt 3 ] || { wait_ready_dump "$kind" "$name"; fail "$kind $name stays in phase Error: $message"; }
+    else
+      errors=0
+    fi
+    bytes=$(data_dir_bytes)
+    if [ "$phase" != "$last_phase" ] || [ "$bytes" != "$last_bytes" ]; then
+      idle=0
+    fi
+    if [ "$idle" -ge "$idle_limit" ]; then
+      wait_ready_dump "$kind" "$name"
+      fail "$kind $name: no progress for $((idle / 60)) min (phase '${phase:-<none>}', $((bytes / 1048576)) MiB in $DATA_DIR)"
+    fi
+    if [ "$waited" -ge "$total_limit" ]; then
+      wait_ready_dump "$kind" "$name"
+      fail "$kind $name is not Ready after $((waited / 60)) min (phase '${phase:-<none>}')"
+    fi
+    [ $((waited % 60)) = 0 ] \
+      && log "$kind $name: phase ${phase:-<none>}, $((bytes / 1048576)) MiB in $DATA_DIR, waited $((waited / 60)) min"
+    last_phase=$phase
+    last_bytes=$bytes
+    sleep 10
+    waited=$((waited + 10))
+    idle=$((idle + 10))
+  done
+}
+
+wait_ready_dump() {
+  kc get "$1" "$2" -o yaml || true
+  kc logs -l app.kubernetes.io/component=controller --tail=50 || true
+}
+
+# clean_data_dir <dir>: empty the data directory but keep the squid cache and,
+# with E2E_KEEP_DOWNLOADS=1 (local runs), the downloaded artifacts in
+# nginx/static/artifacts (the chart runs the controller with
+# --data-dir=<dataDir>/nginx/static): the controller checks their hash and
+# reuses them instead of downloading again.
+clean_data_dir() {
+  local dir=$1
+  [ -d "$dir" ] || return 0
+  if [ "${E2E_KEEP_DOWNLOADS:-0}" != 1 ]; then
+    sudo find "$dir" -mindepth 1 -maxdepth 1 ! -name squid -exec rm -rf {} +
+    return
+  fi
+  sudo find "$dir" -mindepth 1 -maxdepth 1 ! -name squid ! -name nginx -exec rm -rf {} +
+  if [ -d "$dir/nginx" ]; then
+    sudo find "$dir/nginx" -mindepth 1 -maxdepth 1 ! -name static -exec rm -rf {} +
+  fi
+  if [ -d "$dir/nginx/static" ]; then
+    sudo find "$dir/nginx/static" -mindepth 1 -maxdepth 1 ! -name artifacts -exec rm -rf {} +
+  fi
 }
 
 provision_phase() {
@@ -192,4 +294,97 @@ qemu_start() {
     -daemonize -pidfile "$WORK/qemu.pid"
   sudo chmod 644 "$serial"
   log "QEMU started ($(row nic) NIC, $(row ram_mb) MB, boot from $boot, serial $serial)"
+}
+
+# sshd_auth_methods <user@host> [ssh options...]: the login methods sshd
+# offers, read from its answer to the "none" method (ssh -v ends its debug
+# lines with CR LF). Empty if unreachable.
+sshd_auth_methods() {
+  local destination=$1
+  shift
+  ssh -v "$@" -o BatchMode=yes -o PreferredAuthentications=none \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 \
+    "$destination" true 2>&1 | tr -d '\r' \
+    | sed -n 's/.*Authentications that can continue: //p' | head -1 || true
+}
+
+# assert_no_password_auth <user@host> [ssh options...]: fail unless sshd
+# refuses passwords. It asks the server which methods it offers instead of
+# trying a password, so a client-side setting cannot make it pass.
+# keyboard-interactive counts as password login (PAM asks for the password).
+assert_no_password_auth() {
+  local methods
+  methods=$(sshd_auth_methods "$@")
+  [ -n "$methods" ] || fail "could not read the login methods sshd on $1 offers"
+  case ",$methods," in
+    *,password,* | *,keyboard-interactive,*) fail "sshd on $1 offers password login: $methods" ;;
+  esac
+  pass "sshd on $1 offers only $methods"
+}
+
+# assert_host_key <host> <type> <expected public key file>: fail unless the
+# host's SSH host key of that type is the expected one.
+assert_host_key() {
+  local host=$1 type=$2 expected actual
+  expected=$(ssh-keygen -lf "$3" | awk '{print $2}')
+  actual=$(ssh-keyscan -t "$type" "$host" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | awk '{print $2}' || true)
+  [ "$expected" = "$actual" ] || fail "$type host key: expected $expected, got ${actual:-none}"
+}
+
+# assert_stalls <checks> <seconds between checks>: the negative row's proof.
+# The installer has no firmware for its NIC, so it never gets a network: the
+# Provision must stay exactly Pending throughout (an unreadable phase fails
+# too), and nginx must never have served the Provision's automation files,
+# which are the installer's first fetch once it has a network.
+assert_stalls() {
+  local checks=$1 interval=$2 phase access i
+  for i in $(seq 1 "$checks"); do
+    phase=$(provision_phase)
+    [ "$phase" = Pending ] \
+      || fail "Provision is '${phase:-<unreadable>}' at check $i/$checks; it must stay Pending (no NIC firmware, so no network)"
+    [ $((i % 6)) = 1 ] && log "phase=$phase (check $i/$checks)"
+    sleep "$interval"
+  done
+  access=$(nginx_access_log)
+  [ -n "$access" ] || fail "could not read the nginx access log"
+  if grep -F "GET /dynamic/automation/$PROVISION/" <<<"$access"; then
+    fail "the installer fetched its automation files (above): it had a network without NIC firmware"
+  fi
+  pass "Provision stayed Pending and the installer fetched nothing: no network without NIC firmware"
+}
+
+# assert_nfs_cmdline <serial log> <bootconfig>: the guest kernel's own command
+# line (printed on the serial console) mounts the tree over NFS and has
+# nothing that copies the ISO into RAM (url=, iso-url=, toram).
+assert_nfs_cmdline() {
+  local serial=$1 bootconfig=$2 cmdline
+  cmdline=$(grep -a -m1 'Command line:' "$serial" | tr -d '\r') \
+    || fail "no kernel command line in $serial"
+  cmdline=" ${cmdline#*Command line: } "
+  case $cmdline in
+    *" netboot=nfs "*) ;;
+    *) fail "kernel command line has no netboot=nfs:$cmdline" ;;
+  esac
+  case $cmdline in
+    *" nfsroot=$HOST_IP:/$bootconfig "*) ;;
+    *) fail "kernel command line has no nfsroot=$HOST_IP:/$bootconfig:$cmdline" ;;
+  esac
+  case $cmdline in
+    *" url="* | *" iso-url="* | *" toram "* | *" toram="*)
+      fail "kernel command line would copy the ISO into RAM:$cmdline" ;;
+  esac
+  pass "kernel command line: netboot=nfs nfsroot=$HOST_IP:/$bootconfig, no url=, iso-url= or toram"
+}
+
+# assert_no_restarts: fail if any container of an isoboot pod has restarted
+# (an OOM kill the controller recovers from would otherwise go unnoticed).
+assert_no_restarts() {
+  local restarts
+  restarts=$(kc get pods -o json | jq -r '.items[] | .metadata.name as $pod
+      | ((.status.initContainerStatuses // []) + (.status.containerStatuses // []))[]
+      | select(.restartCount > 0)
+      | "\($pod)/\(.name) restarts=\(.restartCount) last=\(.lastState.terminated.reason // "?")"') \
+    || fail "could not list the isoboot pods"
+  [ -z "$restarts" ] || fail "isoboot pods restarted: $restarts"
+  pass "no isoboot pod restarted"
 }
