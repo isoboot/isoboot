@@ -208,8 +208,7 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 	if err != nil {
 		return r.setError(ctx, bc, err.Error())
 	}
-	treeTime, err := ensureISOTree(log, isoPath, source, r.NFSDir, bc.Name)
-	if err != nil {
+	if _, err := ensureISOTree(log, isoPath, source, r.NFSDir, bc.Name); err != nil {
 		return r.setError(ctx, bc, fmt.Sprintf("extracting iso tree: %v", err))
 	}
 
@@ -231,9 +230,11 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 		{iso.KernelPath, filepath.Join(bootDir, "vmlinuz")},
 		{iso.InitrdPath, filepath.Join(bootDir, "initrd")},
 	} {
-		// Copy again whenever the tree was replaced after the copy was made,
-		// so kernel, initrd and tree always come from the same ISO build.
-		if info, err := os.Stat(f.dst); err == nil && info.ModTime().After(treeTime) {
+		// Copy whenever the file differs from the tree, so kernel, initrd and
+		// tree always come from the same ISO build. Content, not timestamps:
+		// the copy and the tree marker can share a coarse filesystem
+		// timestamp, and an unchanged copy must keep its inode.
+		if same, err := treeFileMatches(treeDir, f.src, f.dst); err == nil && same {
 			continue
 		}
 		if err := copyFromTree(treeDir, f.src, f.dst); err != nil {

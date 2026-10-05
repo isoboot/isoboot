@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -419,4 +420,57 @@ func copyFromTree(treeDir, rel, dst string) error {
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
 	return nil
+}
+
+// treeFileMatches reports whether dst already holds the same bytes as rel in
+// the extracted tree at treeDir.
+func treeFileMatches(treeDir, rel, dst string) (bool, error) {
+	root, err := os.OpenRoot(treeDir)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = root.Close() }()
+	src, err := root.Open(strings.TrimPrefix(rel, "/"))
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = src.Close() }()
+	cur, err := os.Open(dst)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = cur.Close() }()
+
+	srcInfo, err := src.Stat()
+	if err != nil {
+		return false, err
+	}
+	curInfo, err := cur.Stat()
+	if err != nil {
+		return false, err
+	}
+	if !srcInfo.Mode().IsRegular() || !curInfo.Mode().IsRegular() || srcInfo.Size() != curInfo.Size() {
+		return false, nil
+	}
+
+	srcBuf := make([]byte, 1<<20)
+	curBuf := make([]byte, 1<<20)
+	for {
+		srcN, srcErr := io.ReadFull(src, srcBuf)
+		curN, curErr := io.ReadFull(cur, curBuf)
+		if srcN != curN || !bytes.Equal(srcBuf[:srcN], curBuf[:curN]) {
+			return false, nil
+		}
+		srcDone := errors.Is(srcErr, io.EOF) || errors.Is(srcErr, io.ErrUnexpectedEOF)
+		curDone := errors.Is(curErr, io.EOF) || errors.Is(curErr, io.ErrUnexpectedEOF)
+		if srcDone || curDone {
+			return srcDone && curDone, nil
+		}
+		if srcErr != nil {
+			return false, srcErr
+		}
+		if curErr != nil {
+			return false, curErr
+		}
+	}
 }
