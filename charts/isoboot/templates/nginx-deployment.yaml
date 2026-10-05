@@ -1,0 +1,101 @@
+{{- include "isoboot.requireNodeName" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-nginx"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # One pod pinned to one node, kept apart from its own replacement by
+  # anti-affinity (and host ports): a rolling update's extra pod could never
+  # be scheduled, so stop the old pod first.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: nginx
+  template:
+    metadata:
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: nginx
+      annotations:
+        # The init container renders nginx.conf once, at pod start: roll the
+        # pod whenever the ConfigMap changes.
+        checksum/nginx-config: {{ include (print $.Template.BasePath "/nginx-configmap.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- include "isoboot.affinity" (dict "context" . "component" "nginx") | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: resolve-dns
+        image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - sh /config-template/render-config.sh /config-template/nginx.conf /config/nginx.conf
+        securityContext:
+          runAsUser: 65532
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        volumeMounts:
+        - name: config-template
+          mountPath: /config-template
+          readOnly: true
+        - name: config
+          mountPath: /config
+      containers:
+      - name: nginx
+        image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+        ports:
+        - containerPort: {{ .Values.nginx.port }}
+          protocol: TCP
+        {{- include "isoboot.restrictedSecurityContext" . | nindent 8 }}
+        livenessProbe:
+          tcpSocket:
+            port: {{ .Values.nginx.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.nginx.port }}
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        resources:
+          {{- toYaml .Values.nginx.resources | nindent 10 }}
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          readOnly: true
+        - name: data
+          mountPath: "{{ .Values.dataDir }}"
+          readOnly: true
+        - name: cache
+          mountPath: /var/cache/nginx
+        - name: run
+          mountPath: /var/run
+      volumes:
+      - name: config-template
+        configMap:
+          name: "{{ include "isoboot.fullname" . }}-nginx-config"
+      - name: config
+        emptyDir: {}
+      - name: data
+        hostPath:
+          path: "{{ .Values.dataDir }}"
+          type: Directory
+      - name: cache
+        emptyDir: {}
+      - name: run
+        emptyDir: {}

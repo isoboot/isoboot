@@ -1,0 +1,31 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: ubuntu-26.04-iso
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-amd64.iso
+  sha256: "cc8a95cde20f6ced61a322420de00f10cc3c90ced545daa46cb9c1a117f1d927"
+---
+# Mode B (ISO): Ubuntu ships no traditional netboot kernel/initrd. isoboot
+# unpacks the whole ISO and nfsd exports it as /<bootconfig-name>; the
+# kernel and initrd from the same ISO are served over HTTP. casper mounts the
+# tree over NFS (netboot=nfs nfsroot={{.NFSRoot}}), so nothing is copied into
+# RAM. fsck.mode=skip stops casper checksumming the whole tree over NFS.
+# Never add url= (downloads the ISO into RAM) or nfsopts= (ignored by casper).
+# The autoinstall user-data comes from the ProvisionAutomation's "user-data"
+# and "meta-data" files; it may use "proxy: {{.ProxyURL}}" for squid and must
+# not reconfigure the boot NIC (no network: section).
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: ubuntu-26.04
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  iso:
+    artifactRef: ubuntu-26.04-iso
+    kernelPath: casper/vmlinuz
+    initrdPath: casper/initrd
+  kernelArgs: "console=ttyS0,115200 ip=dhcp netboot=nfs nfsroot={{.NFSRoot}} fsck.mode=skip autoinstall ds=nocloud;s={{.ProvisionAutomationBaseURL}}/ ---"

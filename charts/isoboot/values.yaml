@@ -1,0 +1,136 @@
+# Override the full resource name prefix (default: release-chartname or release if it contains chartname).
+fullnameOverride: ""
+# Override just the chart name portion of the resource name prefix.
+nameOverride: ""
+
+# nodeName is required — the node where the controller pod will be scheduled.
+# All data is stored on this node via hostPath.
+nodeName: ""
+
+alpineImage: alpine:3.24.2
+# The one isoboot image: it holds /manager (the controller), /httpd and /nfsd,
+# and each Deployment runs its own program from it.
+image:
+  repository: ghcr.io/isoboot/isoboot
+  # tag defaults to .Chart.AppVersion if omitted
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# dataDir must be pre-created on the target node and writable by UID 65532.
+# Example: sudo mkdir -p /data/isoboot && sudo chown 65532:65532 /data/isoboot
+dataDir: /data/isoboot
+
+# CRDs live in the chart's crds/ directory: Helm installs them before anything
+# else and never upgrades or deletes them. To manage them separately, install
+# with --skip-crds; on upgrade, apply charts/isoboot/crds/ with kubectl first.
+
+nginx:
+  image:
+    repository: nginxinc/nginx-unprivileged
+    tag: "1.31.6-alpine"
+  port: 8080
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+httpd:
+  # No conflict with nginx.port — httpd uses ClusterIP networking, nginx uses hostNetwork.
+  port: 8080
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+squid:
+  image:
+    repository: ghcr.io/isoboot/isoboot-squid
+    # tag defaults to .Chart.AppVersion if omitted
+    tag: ""
+  port: 3128
+  # Destinations squid refuses besides the node itself (127.0.0.0/8) and
+  # link-local addresses: the cluster's pod and service networks, so PXE
+  # clients cannot reach in-cluster services through the proxy. The defaults
+  # are k3s's; set your cluster's.
+  blockedDestinationCIDRs:
+  - 10.42.0.0/16
+  - 10.43.0.0/16
+  maxObjectSize: "1024 MB"
+  # 0 uses squid's compiled-in default (typically 256 MB).
+  cacheMemMB: 0
+  cacheSizeMB: 8000
+  log:
+    access: false
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+dnsmasq:
+  # subnet is required (e.g. "192.168.101.0/24"): the PXE subnet. Only it (and
+  # the node itself) may use nginx, squid and nfsd.
+  subnet: ""
+  ipxe:
+    url: "https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz"
+    sha512: "14ab6e793b87f5ee8437b79bcba1edc39a1e10a69a6c71dac3e2b17422bdbc7a8184d2b2a4b3a3193674850239994bb0b95907b89a7a630454d57c30af09089b"
+  image:
+    repository: ghcr.io/isoboot/isoboot-dnsmasq
+    # tag defaults to .Chart.AppVersion if omitted
+    tag: ""
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+# nfsd exports the unpacked tree of every iso-mode BootConfig read-only over
+# NFSv3/TCP as /<bootconfig-name> (Ubuntu live-server installers boot with
+# netboot=nfs nfsroot={{.NFSRoot}}). It runs on the host network as UID 0 with
+# only the NET_BIND_SERVICE capability. Its port mapper always listens on TCP
+# 111, the only port the installer's NFS client asks.
+# Nothing else on the node may listen on TCP 111 or on nfsd.port: stop and
+# mask rpcbind (pulled in by nfs-common) and any kernel NFS server first, e.g.
+#   sudo systemctl disable --now rpcbind.socket rpcbind.service nfs-server
+nfsd:
+  # false disables Ubuntu installs: Ubuntu BootConfigs (iso mode) need nfsd,
+  # and with it off the controller puts them in Error instead of unpacking
+  # their ISOs. Netboot BootConfigs (Debian, Rocky) do not use nfsd.
+  enabled: true
+  # NFS and MOUNT share this port.
+  port: 2049
+  # Client networks (CIDRs) allowed to use NFS, MOUNT and the port mapper;
+  # connections from anywhere else are closed. Empty means dnsmasq.subnet.
+  allowedCIDRs: []
+  # info, debug, or trace (logs every request)
+  logLevel: info
+  # Go memory limit (GOMEMLIMIT). Keep it about 50 MiB under
+  # resources.limits.memory: under a connection flood nfsd's live heap stays
+  # near 90 MiB, but without a limit the Go GC lets the process grow to about
+  # 190 MiB first.
+  goMemLimit: 200MiB
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi

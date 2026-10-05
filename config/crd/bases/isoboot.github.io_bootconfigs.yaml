@@ -1,0 +1,138 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: bootconfigs.isoboot.github.io
+spec:
+  group: isoboot.github.io
+  names:
+    kind: BootConfig
+    listKind: BootConfigList
+    plural: bootconfigs
+    singular: bootconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          BootConfig is the Schema for the bootconfigs API.
+          The name is used for directories, an NFS export and temporary files beside
+          them, which together must fit the 255-byte file name limit.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of BootConfig
+            properties:
+              iso:
+                description: |-
+                  iso exports the ISO's contents over NFS and serves its kernel and
+                  initrd over HTTP (mode B).
+                properties:
+                  artifactRef:
+                    description: artifactRef is the name of the BootArtifact for the
+                      ISO file.
+                    minLength: 1
+                    type: string
+                  initrdPath:
+                    description: initrdPath is the path to the initrd within the ISO
+                      (served over HTTP).
+                    minLength: 1
+                    type: string
+                  kernelPath:
+                    description: kernelPath is the path to the kernel within the ISO
+                      (served over HTTP).
+                    minLength: 1
+                    type: string
+                required:
+                - artifactRef
+                - initrdPath
+                - kernelPath
+                type: object
+              kernelArgs:
+                description: |-
+                  kernelArgs is the kernel boot arguments template string, applied in both
+                  modes. May contain Go template variables interpolated at provision time:
+                  ProvisionAutomationBaseURL, ProxyURL, UpdatePhaseURL, ProvisionName and,
+                  in iso mode, NFSRoot ("<IPv4>:/<bootconfig-name>", for casper's nfsroot=).
+                  It must render to a single line. The controller renders it with sample
+                  values and sets the BootConfig to Error when it cannot.
+                type: string
+              netboot:
+                description: netboot defines direct PXE kernel/initrd artifacts (mode
+                  A).
+                properties:
+                  firmwareRef:
+                    description: |-
+                      firmwareRef is the name of the BootArtifact for the firmware archive.
+                      When set, the controller concatenates initrd + firmware into the served initrd.
+                    type: string
+                  initrdRef:
+                    description: initrdRef is the name of the BootArtifact for the
+                      initrd.
+                    minLength: 1
+                    type: string
+                  kernelRef:
+                    description: kernelRef is the name of the BootArtifact for the
+                      kernel.
+                    minLength: 1
+                    type: string
+                required:
+                - initrdRef
+                - kernelRef
+                type: object
+            type: object
+            x-kubernetes-validations:
+            - message: must set exactly one of netboot or iso
+              rule: has(self.netboot) != has(self.iso)
+          status:
+            description: status defines the observed state of BootConfig
+            properties:
+              message:
+                description: message provides human-readable details about the current
+                  phase.
+                type: string
+              phase:
+                description: phase is the current phase of the boot config.
+                enum:
+                - Pending
+                - Ready
+                - Error
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: BootConfig names are limited to 200 characters (used as NFS export
+            and directory names)
+          rule: size(self.metadata.name) <= 200
+    served: true
+    storage: true
+    subresources:
+      status: {}

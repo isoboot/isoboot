@@ -1,0 +1,623 @@
+name: Tag Release & E2E Test
+
+# build pushes the images under the version tag only; test installs them
+# with the chart from this commit and PXE-boots a VM; only then does publish
+# push the chart and, for a final release, move the latest tags. A failed
+# test leaves version-tagged images but no chart and no latest.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.0.1-rc1); runs from main only"
+        required: true
+
+# Read-only by default; build and publish may push packages.
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/isoboot/isoboot
+  # Rocky Linux 10.2 — per-release knobs (BootConfig name + SHA-256s from .treeinfo)
+  BOOTCONFIG_NAME: rocky-10.2
+  VMLINUZ_SHA256: "bdbe11aa10d1dce86d89e65e2f8476f78f47968b8045b20fa0f0aace82b77d77"
+  INITRD_SHA256: "ba5d8f6e40467b0c25590b0abeca6008b36093b696d649bfa53c7e8edc3fc37d"
+
+jobs:
+  build:
+    name: Build & push images (version tag)
+    # A release comes from a v* tag, or by hand from main.
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
+
+    - name: Read Alpine version
+      run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
+
+    - name: Parse version
+      id: version
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -n "$INPUT_VERSION" ]; then
+          version=$INPUT_VERSION
+        else
+          version=${GITHUB_REF_NAME#v}
+        fi
+        [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "FAIL: '$version' is not a version"; exit 1; }
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Log in to GHCR
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+    - name: Build and push multi-arch isoboot image (manager, httpd, nfsd)
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build and push dnsmasq image
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      with:
+        context: .
+        file: Dockerfile.dnsmasq
+        platforms: linux/amd64,linux/arm64
+        push: true
+        build-args: ALPINE_VERSION=${{ env.ALPINE_VERSION }}
+        tags: ${{ env.IMAGE }}-dnsmasq:${{ steps.version.outputs.version }}
+        cache-from: type=gha,scope=dnsmasq
+        cache-to: type=gha,mode=max,scope=dnsmasq
+
+    - name: Build and push squid image
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      with:
+        context: .
+        file: Dockerfile.squid
+        platforms: linux/amd64,linux/arm64
+        push: true
+        build-args: ALPINE_VERSION=${{ env.ALPINE_VERSION }}
+        tags: ${{ env.IMAGE }}-squid:${{ steps.version.outputs.version }}
+        cache-from: type=gha,scope=squid
+        cache-to: type=gha,mode=max,scope=squid
+
+  test:
+    name: E2E DHCP + k3s + Rocky 10.2
+    needs: build
+    # isc-dhcp-client may be removed from future ubuntu-latest — accepted risk.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
+
+    - name: Read Alpine version
+      run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
+
+    # ── PXE network: ns1=DHCP server, host=k3s node, ns3=wget client ──
+    - name: Install network tools
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq isc-dhcp-client qemu-system-x86 qemu-utils ovmf
+
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Create PXE bridge
+      run: |
+        sudo ip link add br-pxe type bridge
+        sudo ip link set br-pxe up
+        sudo mkdir -p /var/run/netns
+
+    # E2E uses plain alpine for the DHCP server — the pre-built dnsmasq
+    # image is for the chart (production). The E2E container runs a
+    # different dnsmasq config and needs root for privileged ports.
+    - name: Start DHCP server container (ns1 — 192.168.101.1)
+      run: |
+        docker run -d --name dhcp-srv \
+          --cap-add=NET_ADMIN --cap-add=NET_BIND_SERVICE \
+          alpine:${{ env.ALPINE_VERSION }} sleep infinity
+
+        docker exec dhcp-srv apk add --no-cache dnsmasq
+
+        # Link container netns so ip-netns can manage it
+        SRV_PID=$(docker inspect -f '{{.State.Pid}}' dhcp-srv)
+        sudo ln -sf "/proc/$SRV_PID/ns/net" /var/run/netns/ns1
+
+        # Attach to bridge with static IP 192.168.101.1/24
+        sudo ip link add veth-ns1 type veth peer name veth-ns1-br
+        sudo ip link set veth-ns1-br master br-pxe
+        sudo ip link set veth-ns1-br up
+        sudo ip link set veth-ns1 netns "$SRV_PID"
+        sudo ip netns exec ns1 ip addr add 192.168.101.1/24 dev veth-ns1
+        sudo ip netns exec ns1 ip link set veth-ns1 up
+        sudo ip netns exec ns1 ip link set lo up
+
+        # Start dnsmasq inside the container
+        docker exec -d dhcp-srv dnsmasq \
+          --no-daemon \
+          --interface=veth-ns1 \
+          --bind-interfaces \
+          --dhcp-range=192.168.101.100,192.168.101.200,255.255.255.0,1h \
+          --dhcp-option=option:router,192.168.101.1 \
+          --log-dhcp \
+          --log-facility=/tmp/dnsmasq.log
+
+        # Wait for dnsmasq to be ready
+        for _ in 1 2 3 4 5; do
+          docker exec dhcp-srv pgrep dnsmasq 2>/dev/null && break
+          sleep 1
+        done
+        docker exec dhcp-srv pgrep dnsmasq || { echo "FAIL: dnsmasq not running"; docker logs dhcp-srv; exit 1; }
+        echo "DHCP server running at 192.168.101.1 (ns1)"
+
+    # ── k3s cluster ──────────────────────────────────────────────────
+    - name: Create host data directory
+      run: |
+        sudo mkdir -p /data/isoboot
+        sudo chown 65532:65532 /data/isoboot
+
+    # The k3s the provision E2E pins (K3S_VERSION in test/e2e/provision/lib.sh).
+    - name: Install k3s
+      run: |
+        K3S_VERSION=$(sed -n 's/^K3S_VERSION="\(.*\)"$/\1/p' test/e2e/provision/lib.sh)
+        [ -n "$K3S_VERSION" ] || { echo "FAIL: no K3S_VERSION in test/e2e/provision/lib.sh"; exit 1; }
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" INSTALL_K3S_VERSION="$K3S_VERSION" sh -
+        sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+        echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$GITHUB_ENV"
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        kubectl wait --for=condition=Ready node --all --timeout=120s
+
+    - name: Allow PXE bridge traffic through iptables
+      run: |
+        # k3s loads br_netfilter and sets bridge-nf-call-iptables=1,
+        # which routes bridge frames through iptables. Without these
+        # rules, k3s FORWARD chain drops DHCP and HTTP on br-pxe.
+        sudo iptables -I FORWARD -i br-pxe -j ACCEPT
+        sudo iptables -I FORWARD -o br-pxe -j ACCEPT
+
+    - name: Connect host to PXE bridge (DHCP client)
+      run: |
+        sudo dhclient -v br-pxe
+
+        # Remove DHCP-assigned default route to avoid breaking internet
+        sudo ip route del default via 192.168.101.1 dev br-pxe 2>/dev/null || true
+
+        # Show and capture assigned IP
+        PXE_IP=$(ip -4 -o addr show br-pxe | grep -oP '192\.168\.101\.\d+' | head -1)
+        [ -n "$PXE_IP" ] || { echo "FAIL: dhclient did not obtain a 192.168.101.x lease"; exit 1; }
+        echo "k3s host got DHCP IP: $PXE_IP on br-pxe"
+        echo "$PXE_IP" > /tmp/pxe-ip
+        echo "8080" > /tmp/pxe-port
+
+        # Verify bidirectional connectivity
+        ping -c 3 192.168.101.1
+        sudo ip netns exec ns1 ping -c 3 "$PXE_IP"
+        echo "PXE network OK: ns1(.1) <-> host($PXE_IP)"
+
+    # ── Deploy isoboot: the images pushed by build, the chart as publish will push it ──
+    - name: Get k3s node name
+      id: node
+      run: echo "name=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')" >> "$GITHUB_OUTPUT"
+
+    # nfsd needs TCP 111 (port mapper) and 2049 on the host; stop the
+    # runner's own rpcbind if it has one.
+    - name: Free TCP 111 and 2049 for nfsd
+      run: |
+        nfs_ports_busy() { sudo ss -Htlnp '( sport = :111 or sport = :2049 )' | grep .; }
+        if nfs_ports_busy >/dev/null; then
+          sudo systemctl disable --now rpcbind.socket rpcbind.service 2>/dev/null || true
+        fi
+        if nfs_ports_busy; then
+          echo "FAIL: something listens on TCP 111 or 2049 (above); nfsd needs both"
+          exit 1
+        fi
+
+    - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+      with:
+        version: v3.22.0
+
+    - name: Helm install
+      env:
+        VERSION: ${{ needs.build.outputs.version }}
+        NODE_NAME: ${{ steps.node.outputs.name }}
+      run: |
+        helm package charts/isoboot --version "${VERSION}" --app-version "${VERSION}" --destination /tmp/charts
+        helm install isoboot "/tmp/charts/isoboot-${VERSION}.tgz" \
+          --namespace isoboot-system \
+          --create-namespace \
+          --set nodeName="${NODE_NAME}" \
+          --set dnsmasq.subnet=192.168.101.0/24 \
+          --set alpineImage="alpine:${ALPINE_VERSION}"
+
+    - name: Wait for controller and nginx
+      run: |
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=controller --timeout=120s
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=nginx --timeout=120s
+
+    - name: Wait for httpd
+      run: |
+        kubectl -n isoboot-system wait --for=condition=Ready \
+          pod -l app.kubernetes.io/component=httpd --timeout=120s
+        kubectl -n isoboot-system get pods
+
+    - name: Verify CRDs installed
+      run: |
+        kubectl get crd bootartifacts.isoboot.github.io
+        kubectl get crd bootconfigs.isoboot.github.io
+
+    # ── iPXE boot firmware (created by chart when dnsmasq.enabled) ──
+    - name: Wait for iPXE BootArtifact Ready
+      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact isoboot-ipxe
+
+    - name: Wait for dnsmasq, nfsd and squid pods ready
+      run: |
+        for component in dnsmasq nfsd squid; do
+          kubectl -n isoboot-system wait --for=condition=Ready \
+            pod -l app.kubernetes.io/component=$component --timeout=180s
+        done
+        kubectl -n isoboot-system get pods
+
+    # ── Rocky Linux 10.2 boot artifacts ──────────────────────────────
+    - name: Apply Rocky Linux 10.2 example manifest
+      run: kubectl -n isoboot-system apply -f examples/${{ env.BOOTCONFIG_NAME }}.yaml
+
+    - name: Wait for BootArtifacts Ready
+      run: |
+        ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ env.BOOTCONFIG_NAME }}-kernel
+        ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact ${{ env.BOOTCONFIG_NAME }}-initrd
+
+    - name: Verify artifact SHA-256 on host disk
+      run: |
+        echo "${{ env.VMLINUZ_SHA256 }}  /data/isoboot/nginx/static/artifacts/${{ env.BOOTCONFIG_NAME }}-kernel/vmlinuz" | sha256sum -c
+        echo "${{ env.INITRD_SHA256 }}  /data/isoboot/nginx/static/artifacts/${{ env.BOOTCONFIG_NAME }}-initrd/initrd.img" | sha256sum -c
+
+    - name: Wait for BootConfig Ready
+      run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootconfig ${{ env.BOOTCONFIG_NAME }}
+
+    - name: Verify BootConfig symlinks on host disk
+      run: |
+        # Verify kernel symlink
+        target=$(readlink /data/isoboot/nginx/static/boot/${{ env.BOOTCONFIG_NAME }}/kernel/vmlinuz)
+        echo "kernel symlink target: $target"
+        [ "$target" = "../../../artifacts/${{ env.BOOTCONFIG_NAME }}-kernel/vmlinuz" ] || { echo "FAIL: wrong kernel target"; exit 1; }
+
+        # Verify initrd symlink
+        target=$(readlink /data/isoboot/nginx/static/boot/${{ env.BOOTCONFIG_NAME }}/initrd/initrd.img)
+        echo "initrd symlink target: $target"
+        [ "$target" = "../../../artifacts/${{ env.BOOTCONFIG_NAME }}-initrd/initrd.img" ] || { echo "FAIL: wrong initrd target"; exit 1; }
+
+        # Verify symlinks resolve to actual files
+        test -f /data/isoboot/nginx/static/boot/${{ env.BOOTCONFIG_NAME }}/kernel/vmlinuz || { echo "FAIL: kernel doesn't resolve"; exit 1; }
+        test -f /data/isoboot/nginx/static/boot/${{ env.BOOTCONFIG_NAME }}/initrd/initrd.img || { echo "FAIL: initrd doesn't resolve"; exit 1; }
+
+    # ── Verify auto-generated boot script ─────────────────────────
+    - name: Verify boot.ipxe auto-generated
+      run: |
+        test -f /data/isoboot/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe not found"; exit 1; }
+        grep 'chain' /data/isoboot/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing chain directive"; exit 1; }
+        grep 'conditional-boot' /data/isoboot/nginx/static/boot/boot.ipxe || { echo "FAIL: boot.ipxe missing conditional-boot"; exit 1; }
+        echo "boot.ipxe auto-generated correctly:"
+        cat /data/isoboot/nginx/static/boot/boot.ipxe
+
+    # ── PXE download test: ns3 wget client ─────────────────────────
+    - name: Start wget client container (ns3)
+      run: |
+        docker run -d --name wget-client --network=none --cap-add=NET_ADMIN \
+          alpine:${{ env.ALPINE_VERSION }} sh -c "sleep infinity"
+
+        CLIENT_PID=$(docker inspect -f '{{.State.Pid}}' wget-client)
+        sudo ln -sf "/proc/$CLIENT_PID/ns/net" /var/run/netns/ns3
+
+        sudo ip link add veth-ns3 type veth peer name veth-ns3-br
+        sudo ip link set veth-ns3-br master br-pxe
+        sudo ip link set veth-ns3-br up
+        sudo ip link set veth-ns3 netns "$CLIENT_PID"
+        sudo ip netns exec ns3 ip link set veth-ns3 up
+        sudo ip netns exec ns3 ip link set lo up
+
+        # Get DHCP lease
+        sudo ip netns exec ns3 dhclient -v veth-ns3
+        sudo ip netns exec ns3 ip addr show veth-ns3
+        echo "wget client ready (ns3)"
+
+    - name: Download boot artifacts via PXE network (ns3 -> nginx on host)
+      run: |
+        PXE_IP=$(cat /tmp/pxe-ip)
+        PXE_PORT=$(cat /tmp/pxe-port)
+        docker exec wget-client wget -O /tmp/dl-vmlinuz \
+          "http://${PXE_IP}:${PXE_PORT}/static/${{ env.BOOTCONFIG_NAME }}/kernel/vmlinuz"
+        docker exec wget-client wget -O /tmp/dl-initrd \
+          "http://${PXE_IP}:${PXE_PORT}/static/${{ env.BOOTCONFIG_NAME }}/initrd/initrd.img"
+
+    - name: Verify downloaded artifact checksums
+      run: |
+        docker exec wget-client sh -c \
+          "echo '${VMLINUZ_SHA256}  /tmp/dl-vmlinuz' | sha256sum -c"
+        docker exec wget-client sh -c \
+          "echo '${INITRD_SHA256}  /tmp/dl-initrd' | sha256sum -c"
+
+    - name: Create Machine and Provision resources
+      run: |
+        kubectl -n isoboot-system apply -f - <<'EOF'
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Machine
+        metadata:
+          name: test-machine
+        spec:
+          mac: "00-11-22-33-44-55"
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Machine
+        metadata:
+          name: qemu-machine
+        spec:
+          mac: "52-54-00-00-00-01"
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: ProvisionAutomation
+        metadata:
+          name: test-automation
+        spec:
+          files:
+            kickstart.cfg: "# test"
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Provision
+        metadata:
+          name: test-provision
+        spec:
+          machineRef: test-machine
+          bootConfigRef: ${{ env.BOOTCONFIG_NAME }}
+          provisionAutomationRef: test-automation
+        ---
+        apiVersion: isoboot.github.io/v1alpha1
+        kind: Provision
+        metadata:
+          name: qemu-provision
+        spec:
+          machineRef: qemu-machine
+          bootConfigRef: ${{ env.BOOTCONFIG_NAME }}
+          provisionAutomationRef: test-automation
+        EOF
+        kubectl -n isoboot-system patch provision test-provision \
+          --subresource=status --type=merge -p '{"status":{"phase":"Pending"}}'
+        kubectl -n isoboot-system patch provision qemu-provision \
+          --subresource=status --type=merge -p '{"status":{"phase":"Pending"}}'
+
+    - name: Verify dynamic boot endpoint
+      run: |
+        PXE_IP=$(cat /tmp/pxe-ip)
+        PXE_PORT=$(cat /tmp/pxe-port)
+        docker exec wget-client wget -qO /tmp/dynamic-boot \
+          "http://${PXE_IP}:${PXE_PORT}/dynamic/conditional-boot?mac=00-11-22-33-44-55"
+        echo "=== dynamic boot response ==="
+        docker exec wget-client cat /tmp/dynamic-boot
+        docker exec wget-client grep '#!ipxe' /tmp/dynamic-boot \
+          || { echo "FAIL: missing #!ipxe header"; exit 1; }
+        docker exec wget-client grep '${{ env.BOOTCONFIG_NAME }}' /tmp/dynamic-boot \
+          || { echo "FAIL: missing ${{ env.BOOTCONFIG_NAME }}"; exit 1; }
+        docker exec wget-client grep '/static/' /tmp/dynamic-boot \
+          || { echo "FAIL: missing /static/ paths"; exit 1; }
+
+    # ── PXE boot test: ns4 QEMU VM ──────────────────────────────────
+    - name: PXE boot QEMU VM (ns4 — UEFI)
+      run: |
+        # Locate OVMF firmware
+        OVMF_CODE=""
+        for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
+          [ -f "$f" ] && OVMF_CODE="$f" && break
+        done
+        [ -n "$OVMF_CODE" ] || { echo "FAIL: OVMF firmware not found"; exit 1; }
+
+        OVMF_VARS_SRC=""
+        for f in /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd; do
+          [ -f "$f" ] && OVMF_VARS_SRC="$f" && break
+        done
+        [ -n "$OVMF_VARS_SRC" ] || { echo "FAIL: OVMF vars not found"; exit 1; }
+        cp "$OVMF_VARS_SRC" /tmp/ovmf-vars.fd
+
+        # Create tap device on PXE bridge
+        sudo ip tuntap add dev tap-ns4 mode tap
+        sudo ip link set tap-ns4 master br-pxe
+        sudo ip link set tap-ns4 up
+
+        # Create empty disk
+        qemu-img create -f qcow2 /tmp/pxe-test-disk.qcow2 1G
+
+        # Boot QEMU with UEFI PXE
+        sudo qemu-system-x86_64 \
+          -enable-kvm \
+          -m 1024 \
+          -cpu host \
+          -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+          -drive if=pflash,format=raw,file=/tmp/ovmf-vars.fd \
+          -drive file=/tmp/pxe-test-disk.qcow2,format=qcow2 \
+          -netdev tap,id=pxe0,ifname=tap-ns4,script=no,downscript=no \
+          -device virtio-net-pci,netdev=pxe0,bootindex=1,mac=52:54:00:00:00:01 \
+          -boot n \
+          -display none \
+          -serial file:/tmp/qemu-serial.log \
+          -daemonize \
+          -pidfile /tmp/qemu-pxe.pid
+
+        echo "QEMU PXE VM launched (tap-ns4 on br-pxe)"
+
+    - name: Wait for PXE boot to download kernel and initrd
+      run: |
+        echo "Waiting 90s for QEMU PXE boot to complete downloads..."
+        sleep 90
+
+    - name: Verify PXE boot downloaded kernel and initrd
+      run: |
+        NGINX_POD=$(kubectl -n isoboot-system get pod \
+          -l app.kubernetes.io/component=nginx -o jsonpath='{.items[0].metadata.name}')
+
+        echo "=== nginx access log ==="
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log
+
+        # Verify kernel was downloaded by iPXE (not wget-client)
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
+          | grep '"GET /static/${{ env.BOOTCONFIG_NAME }}/kernel/vmlinuz' \
+          | grep '" 200 ' \
+          | grep 'iPXE/' \
+          || { echo "FAIL: no iPXE HTTP 200 for kernel download"; exit 1; }
+
+        # Verify initrd was downloaded by iPXE (not wget-client)
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
+          | grep '"GET /static/${{ env.BOOTCONFIG_NAME }}/initrd/initrd.img' \
+          | grep '" 200 ' \
+          | grep 'iPXE/' \
+          || { echo "FAIL: no iPXE HTTP 200 for initrd download"; exit 1; }
+
+        # Verify dynamic boot endpoint was hit by iPXE
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log \
+          | grep '"GET /dynamic/conditional-boot' \
+          | grep '" 200 ' \
+          | grep 'iPXE/' \
+          || { echo "FAIL: no iPXE HTTP 200 for dynamic boot endpoint"; exit 1; }
+
+        echo "PXE boot successfully downloaded kernel and initrd via HTTP"
+
+    # ── Final PXE network check ──────────────────────────────────────
+    - name: Verify PXE network connectivity
+      run: |
+        PXE_IP=$(cat /tmp/pxe-ip)
+        sudo ip netns exec ns1 ping -c 3 "$PXE_IP"
+        ping -c 3 192.168.101.1
+        sudo ip netns exec ns3 ping -c 3 192.168.101.1
+        echo "PXE network fully operational (ns1, host, ns3)"
+
+    # ── Failure diagnostics ──────────────────────────────────────────
+    - name: Collect logs on failure
+      if: failure()
+      run: |
+        echo "=== Bridge ==="
+        ip addr show br-pxe 2>/dev/null || true
+        bridge link show master br-pxe 2>/dev/null || true
+        echo "=== DHCP server (ns1) ==="
+        sudo ip netns exec ns1 ip addr 2>/dev/null || true
+        echo "=== k3s host ==="
+        ip route 2>/dev/null || true
+        echo "=== wget client (ns3) ==="
+        sudo ip netns exec ns3 ip addr 2>/dev/null || true
+        echo "=== dnsmasq DHCP logs ==="
+        docker exec dhcp-srv cat /tmp/dnsmasq.log 2>/dev/null || true
+        echo "=== dnsmasq container logs ==="
+        docker logs dhcp-srv 2>/dev/null || true
+        echo "=== BootArtifact status ==="
+        kubectl -n isoboot-system get bootartifact -o yaml 2>/dev/null || true
+        echo "=== BootConfig status ==="
+        kubectl -n isoboot-system get bootconfig -o yaml 2>/dev/null || true
+        echo "=== Controller logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/name=isoboot --tail=100 2>/dev/null || true
+        echo "=== httpd logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=httpd --tail=50 2>/dev/null || true
+        echo "=== Nginx logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=nginx --tail=50 2>/dev/null || true
+        echo "=== Nginx resolve-dns init container logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=nginx -c resolve-dns --tail=50 2>/dev/null || true
+        echo "=== dnsmasq generate-boot-ipxe init container logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=dnsmasq -c generate-boot-ipxe --tail=50 2>/dev/null || true
+        echo "=== Nginx access log ==="
+        NGINX_POD=$(kubectl -n isoboot-system get pod -l app.kubernetes.io/component=nginx -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        kubectl -n isoboot-system exec "$NGINX_POD" -- cat /var/run/access.log 2>/dev/null || true
+        echo "=== dnsmasq pod logs ==="
+        kubectl -n isoboot-system logs -l app.kubernetes.io/component=dnsmasq --tail=100 2>/dev/null || true
+        echo "=== QEMU serial log ==="
+        cat /tmp/qemu-serial.log 2>/dev/null || true
+        echo "=== Events ==="
+        kubectl -n isoboot-system get events --sort-by='.lastTimestamp' 2>/dev/null || true
+        echo "=== Host data directory ==="
+        find /data/isoboot -type f -o -type l 2>/dev/null || true
+        echo "=== Describe pods ==="
+        kubectl -n isoboot-system describe pod -l app.kubernetes.io/name=isoboot 2>/dev/null || true
+
+    - name: Clean up
+      if: always()
+      run: |
+        if [ -f /tmp/qemu-pxe.pid ]; then
+          sudo kill "$(cat /tmp/qemu-pxe.pid)" 2>/dev/null || true
+        fi
+        sudo ip link del tap-ns4 2>/dev/null || true
+        /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
+        docker rm -f dhcp-srv wget-client 2>/dev/null || true
+        sudo rm -f /var/run/netns/ns1 /var/run/netns/ns3
+        sudo ip link del br-pxe 2>/dev/null || true
+
+  publish:
+    name: Publish chart and latest tags
+    needs: [build, test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
+
+    - name: Log in to GHCR
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+      with:
+        version: v3.22.0
+
+    - name: Package and push Helm chart
+      env:
+        VERSION: ${{ needs.build.outputs.version }}
+      run: |
+        helm package charts/isoboot --version "${VERSION}" --app-version "${VERSION}" --destination /tmp/charts
+        helm push "/tmp/charts/isoboot-${VERSION}.tgz" "oci://${REGISTRY}/isoboot/charts"
+
+    # Point latest at the tested images (same digests, no rebuild); not for
+    # pre-releases (versions with a '-').
+    - name: Tag latest
+      if: ${{ !contains(needs.build.outputs.version, '-') }}
+      env:
+        VERSION: ${{ needs.build.outputs.version }}
+      run: |
+        for image in "${IMAGE}" "${IMAGE}-dnsmasq" "${IMAGE}-squid"; do
+          docker buildx imagetools create --tag "${image}:latest" "${image}:${VERSION}"
+        done

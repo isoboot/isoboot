@@ -1,0 +1,167 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package httpd
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"text/template"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
+)
+
+// ErrFileNotFound indicates the requested file does not exist in the
+// ProvisionAutomation spec.
+var ErrFileNotFound = errors.New("file not found")
+
+// TemplateData holds the merged data passed to automation file templates.
+type TemplateData struct {
+	ConfigMaps     map[string]string
+	Secrets        map[string]string
+	UpdatePhaseURL string
+	ProvisionName  string
+	// ProxyURL is the squid proxy URL (empty when squid is off), the same
+	// value as the kernel-args ProxyURL.
+	ProxyURL string
+}
+
+// IsAutomationNotFound reports whether err indicates a not-found condition
+// (missing Provision, ProvisionAutomation, or file within the automation).
+func IsAutomationNotFound(err error) bool {
+	return apierrors.IsNotFound(err) || errors.Is(err, ErrFileNotFound)
+}
+
+// RenderAutomationFile looks up a Provision by name, fetches the referenced
+// ProvisionAutomation, and renders the named file template using merged
+// ConfigMap and Secret data from the Provision.
+//
+// Files often carry secrets (host keys, password hashes), and the endpoint
+// has no authentication, so they are served only while the Provision is
+// installing: Pending (installers fetch their file before they report
+// InProgress) or InProgress. Otherwise the file is reported as not found.
+func RenderAutomationFile(
+	ctx context.Context, c client.Client, ns, provisionName, fileName, statusURL, proxyURL string,
+) (string, error) {
+	var provision isobootgithubiov1alpha1.Provision
+	if err := c.Get(ctx, client.ObjectKey{
+		Name:      provisionName,
+		Namespace: ns,
+	}, &provision); err != nil {
+		return "", fmt.Errorf("getting provision %q: %w", provisionName, err)
+	}
+	if phase := provision.Status.Phase; phase != isobootgithubiov1alpha1.ProvisionPhasePending &&
+		phase != isobootgithubiov1alpha1.ProvisionPhaseInProgress {
+		return "", fmt.Errorf("%w: provision %q is %q, files are served only while it is Pending or InProgress",
+			ErrFileNotFound, provisionName, phase)
+	}
+
+	var pa isobootgithubiov1alpha1.ProvisionAutomation
+	if err := c.Get(ctx, client.ObjectKey{
+		Name:      provision.Spec.ProvisionAutomationRef,
+		Namespace: ns,
+	}, &pa); err != nil {
+		return "", fmt.Errorf("getting provision automation %q: %w",
+			provision.Spec.ProvisionAutomationRef, err)
+	}
+
+	tmplContent, ok := pa.Spec.Files[fileName]
+	if !ok {
+		return "", fmt.Errorf("%w: %q in provision automation %q",
+			ErrFileNotFound, fileName, pa.Name)
+	}
+
+	data, err := buildTemplateData(ctx, c, ns, &provision)
+	if err != nil {
+		return "", err
+	}
+	data.UpdatePhaseURL = statusURL
+	data.ProvisionName = provisionName
+	data.ProxyURL = proxyURL
+
+	tmpl, err := template.New(fileName).
+		Option("missingkey=error").Funcs(automationFuncs).Parse(tmplContent)
+	if err != nil {
+		return "", fmt.Errorf("parsing template %q: %w", fileName, err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("executing template %q: %w", fileName, err)
+	}
+
+	return buf.String(), nil
+}
+
+// automationFuncs are the functions automation templates can use besides
+// the built-in ones.
+var automationFuncs = template.FuncMap{
+	// required is index for keys that must exist: {{ required .Secrets
+	// "ssh_host_ed25519_key" }}. Keys with dots cannot be written as
+	// .Secrets.key, and index returns "" for a missing key, so a misspelt
+	// Secret or ConfigMap key would otherwise install an empty host key or
+	// password. A missing key fails the render (a 500 for the installer).
+	"required": func(values map[string]string, key string) (string, error) {
+		value, ok := values[key]
+		if !ok {
+			return "", fmt.Errorf("missing key %q", key)
+		}
+		return value, nil
+	},
+}
+
+func buildTemplateData(
+	ctx context.Context, c client.Client, ns string,
+	provision *isobootgithubiov1alpha1.Provision,
+) (*TemplateData, error) {
+	data := &TemplateData{
+		ConfigMaps: make(map[string]string),
+		Secrets:    make(map[string]string),
+	}
+
+	for _, name := range provision.Spec.ConfigMaps {
+		var cm corev1.ConfigMap
+		if err := c.Get(ctx, client.ObjectKey{
+			Name:      name,
+			Namespace: ns,
+		}, &cm); err != nil {
+			return nil, fmt.Errorf("getting configmap %q: %w", name, err)
+		}
+		maps.Copy(data.ConfigMaps, cm.Data)
+	}
+
+	for _, name := range provision.Spec.Secrets {
+		var secret corev1.Secret
+		if err := c.Get(ctx, client.ObjectKey{
+			Name:      name,
+			Namespace: ns,
+		}, &secret); err != nil {
+			return nil, fmt.Errorf("getting secret %q: %w", name, err)
+		}
+		for k, v := range secret.Data {
+			data.Secrets[k] = string(v)
+		}
+	}
+
+	return data, nil
+}

@@ -1,0 +1,19 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  labels:
+    app.kubernetes.io/name: isoboot
+    app.kubernetes.io/managed-by: kustomize
+  name: rocky-10.2
+spec:
+  # netboot: kernel and initrd artifacts, served over HTTP.
+  netboot:
+    kernelRef: rocky-10.2-kernel
+    initrdRef: rocky-10.2-initrd
+  # iso (mutually exclusive with netboot): the ISO is unpacked and exported
+  # over NFS; see examples/ubuntu-26.04.yaml.
+  # iso:
+  #   artifactRef: ubuntu-26.04-iso
+  #   kernelPath: casper/vmlinuz
+  #   initrdPath: casper/initrd
+  kernelArgs: "ip=dhcp {{if .ProxyURL}}inst.proxy={{.ProxyURL}} {{end}}inst.repo=http://download.rockylinux.org/pub/rocky/10.2/BaseOS/x86_64/os inst.ks={{.ProvisionAutomationBaseURL}}/kickstart.cfg"

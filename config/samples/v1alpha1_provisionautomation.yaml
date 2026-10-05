@@ -1,0 +1,13 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: ProvisionAutomation
+metadata:
+  labels:
+    app.kubernetes.io/name: isoboot
+    app.kubernetes.io/managed-by: kustomize
+  name: provisionautomation-sample
+spec:
+  files:
+    kickstart.cfg: |
+      lang en_US.UTF-8
+      keyboard us
+      timezone UTC

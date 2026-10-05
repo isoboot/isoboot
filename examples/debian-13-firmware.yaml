@@ -1,0 +1,26 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: debian-13-firmware
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://cdimage.debian.org/cdimage/firmware/trixie/13.7.0/firmware.cpio.gz
+  sha256: "f890965e254944dc149236b3d46f88daab40d83dfec54d60dda3aa0ffd442d56"
+---
+# Firmware-enabled BootConfig for Debian 13.
+# Apply together with debian-13.yaml (provides the kernel and initrd artifacts).
+# The controller concatenates initrd.gz + firmware.cpio.gz so the Debian installer
+# can detect and deploy non-free firmware (e.g. for Intel PRO/100, Realtek RTL8168/8125).
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: debian-13-firmware
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  netboot:
+    kernelRef: debian-13-kernel
+    initrdRef: debian-13-initrd
+    firmwareRef: debian-13-firmware
+  kernelArgs: "console=ttyS0,115200 auto=true priority=critical {{if .ProxyURL}}mirror/http/proxy={{.ProxyURL}} {{end}}preseed/url={{.ProvisionAutomationBaseURL}}/preseed.cfg"

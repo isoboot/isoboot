@@ -1,0 +1,174 @@
+{{- include "isoboot.requireNodeName" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ include "isoboot.fullname" . }}-dnsmasq"
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    {{- include "isoboot.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # One pod pinned to one node, kept apart from its own replacement by
+  # anti-affinity (and host ports): a rolling update's extra pod could never
+  # be scheduled, so stop the old pod first.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "isoboot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dnsmasq
+  template:
+    metadata:
+      labels:
+        {{- include "isoboot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: dnsmasq
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "isoboot.affinity" (dict "context" . "component" "dnsmasq") | nindent 6 }}
+      initContainers:
+      - name: generate-boot-ipxe
+        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          SUBNET="{{ include "isoboot.subnet" . }}"
+          IFACE=$(ip -4 route show "$SUBNET" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
+          [ -n "$IFACE" ] || { echo "FAIL: no interface matches subnet $SUBNET"; ip -4 route show; exit 1; }
+          HOST_IP=$(ip -4 -o addr show "$IFACE" | awk '{print $4}' | cut -d/ -f1 | head -1)
+          echo "Detected interface=$IFACE host_ip=$HOST_IP"
+          echo -n "$HOST_IP" > /config/host-ip
+          echo -n "$IFACE" > /config/iface
+          mkdir -p "{{ .Values.dataDir }}/nginx/static/boot" || { echo "FAIL: cannot create {{ .Values.dataDir }}/nginx/static/boot — ensure dataDir is writable by UID 65532"; exit 1; }
+          printf '#!ipxe\nchain http://%s:{{ .Values.nginx.port }}/dynamic/conditional-boot?mac=${net0/mac:hexhyp} || exit\n' "$HOST_IP" > "{{ .Values.dataDir }}/nginx/static/boot/boot.ipxe"
+          echo "Generated boot.ipxe:"
+          cat "{{ .Values.dataDir }}/nginx/static/boot/boot.ipxe"
+        securityContext:
+          runAsUser: 65532
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        volumeMounts:
+        - name: data
+          mountPath: "{{ .Values.dataDir }}"
+        - name: config
+          mountPath: /config
+      - name: extract-ipxe
+        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          TARBALL="{{ .Values.dataDir }}/nginx/static/artifacts/{{ include "isoboot.fullname" . }}-ipxe/ipxeboot.tar.gz"
+          DEST="/ipxe"
+          echo "Waiting for iPXE tarball at $TARBALL (timeout 300s)..."
+          ELAPSED=0
+          until [ -f "$TARBALL" ]; do
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+            [ "$ELAPSED" -lt 300 ] || { echo "FAIL: timed out waiting for $TARBALL"; exit 1; }
+          done
+          tar xzf "$TARBALL" -C "$DEST" --strip-components=2 ipxeboot/x86_64/
+          echo "Extracted x86_64 iPXE files to $DEST:"
+          ls -la "$DEST"
+        securityContext:
+          runAsUser: 65532
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        volumeMounts:
+        - name: data
+          mountPath: "{{ .Values.dataDir }}"
+          readOnly: true
+        - name: ipxe
+          mountPath: /ipxe
+      containers:
+      - name: dnsmasq
+        image: "{{ .Values.dnsmasq.image.repository }}:{{ .Values.dnsmasq.image.tag | default .Chart.AppVersion }}"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          HOST_IP=$(cat /config/host-ip)
+          [ -n "$HOST_IP" ] || { echo "FAIL: host-ip not set"; exit 1; }
+          IFACE=$(cat /config/iface)
+          [ -n "$IFACE" ] || { echo "FAIL: iface not set"; exit 1; }
+          NETWORK=$(echo "{{ include "isoboot.subnet" . }}" | cut -d/ -f1)
+          echo "Using interface=$IFACE host_ip=$HOST_IP network=$NETWORK"
+
+          exec dnsmasq \
+            --no-daemon \
+            --port=0 \
+            --interface="$IFACE" \
+            --bind-dynamic \
+            --dhcp-range="${NETWORK},proxy" \
+            --dhcp-no-override \
+            --dhcp-match=set:bios,option:client-arch,0 \
+            --dhcp-match=set:efi64,option:client-arch,7 \
+            --dhcp-match=set:efi64,option:client-arch,9 \
+            --dhcp-match=set:ipxe,175 \
+            --pxe-service="tag:!ipxe,X86PC,Network Boot,undionly.kpxe,${HOST_IP}" \
+            --pxe-service="tag:!ipxe,X86-64_EFI,Network Boot UEFI,ipxe.efi,${HOST_IP}" \
+            --pxe-service="tag:!ipxe,BC_EFI,Network Boot UEFI,ipxe.efi,${HOST_IP}" \
+            --dhcp-boot="tag:ipxe,http://${HOST_IP}:{{ .Values.nginx.port }}/static/boot.ipxe" \
+            --enable-tftp \
+            --tftp-root=/ipxe \
+            --log-dhcp \
+            --log-facility=-
+        securityContext:
+          runAsUser: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+            add:
+            - NET_ADMIN
+            - NET_RAW
+            - NET_BIND_SERVICE
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - test -f /ipxe/undionly.kpxe && test -f /ipxe/ipxe.efi
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command:
+            - pidof
+            - dnsmasq
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.dnsmasq.resources | nindent 10 }}
+        volumeMounts:
+        - name: ipxe
+          mountPath: /ipxe
+          readOnly: true
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: leases
+          mountPath: /var/lib/misc
+      volumes:
+      - name: data
+        hostPath:
+          path: "{{ .Values.dataDir }}"
+          type: Directory
+      - name: ipxe
+        emptyDir: {}
+      - name: config
+        emptyDir: {}
+      - name: leases
+        emptyDir: {}

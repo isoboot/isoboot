@@ -1,0 +1,34 @@
+# Debian 13.7 netboot installer. The URLs name the dated installer build
+# (20250803+deb13u7 = 13.7) instead of "current", whose files change with
+# every point release; hashes from that directory's images/SHA256SUMS.
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: debian-13-kernel
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/20250803+deb13u7/images/netboot/debian-installer/amd64/linux
+  sha256: "2b2358b37674d2505350528875bb17afae2a36522a9e8a9417eaca65a7da0e08"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: debian-13-initrd
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://deb.debian.org/debian/dists/trixie/main/installer-amd64/20250803+deb13u7/images/netboot/debian-installer/amd64/initrd.gz
+  sha256: "57303d157cffce3fa402301667fbc9b2280aa7372082b081e777375ae49da5f2"
+---
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: debian-13
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  netboot:
+    kernelRef: debian-13-kernel
+    initrdRef: debian-13-initrd
+  kernelArgs: "console=ttyS0,115200 auto=true priority=critical {{if .ProxyURL}}mirror/http/proxy={{.ProxyURL}} {{end}}preseed/url={{.ProvisionAutomationBaseURL}}/preseed.cfg"
