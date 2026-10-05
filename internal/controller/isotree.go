@@ -54,14 +54,18 @@ func isoTreeMarker(nfsDir, name string) string {
 }
 
 // isoSource identifies an ISO file well enough to notice when it changes.
-// It is stored in the marker beside the extracted tree.
-func isoSource(isoPath, expectedHash string) (string, error) {
+// It is stored in the marker beside the extracted tree. It describes the file
+// only: the BootArtifact controller replaces the file by rename, which
+// changes its modification time, while an edit of the artifact's hash text
+// alone (sha256 to sha512, or its case) leaves the file and the tree as they
+// are.
+func isoSource(isoPath string) (string, error) {
 	info, err := os.Stat(isoPath)
 	if err != nil {
 		return "", fmt.Errorf("stat iso %q: %w", isoPath, err)
 	}
-	return fmt.Sprintf("path=%s\nsize=%d\nmtime=%d\nhash=%s\n",
-		isoPath, info.Size(), info.ModTime().UnixNano(), expectedHash), nil
+	return fmt.Sprintf("path=%s\nsize=%d\nmtime=%d\n",
+		isoPath, info.Size(), info.ModTime().UnixNano()), nil
 }
 
 // ensureISOTree makes nfsDir/name hold the whole tree of the ISO at isoPath.

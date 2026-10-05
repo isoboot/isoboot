@@ -294,6 +294,31 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		}
 	})
 
+	It("does not re-extract when only the artifact's hash text changes", func() {
+		defer readyISOArtifact("iso-hash", ubuntuLike, ubuntuLinks)()
+		defer makeISOConfig("iso-bc-hash", "iso-hash", "casper/vmlinuz", "casper/initrd")()
+
+		_, err := doReconcile("iso-bc-hash")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-hash").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+		tree := filepath.Join(nfsDir, "iso-bc-hash")
+		before, err := os.Stat(tree)
+		Expect(err).NotTo(HaveOccurred())
+
+		// The same file, its hash now written in upper case. The artifact's
+		// status is still Ready from before the edit.
+		var artifact isobootgithubiov1alpha1.BootArtifact
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "iso-hash", Namespace: "default"}, &artifact)).To(Succeed())
+		artifact.Spec.SHA256 = new(strings.ToUpper(validSHA256))
+		Expect(k8sClient.Update(ctx, &artifact)).To(Succeed())
+
+		_, err = doReconcile("iso-bc-hash")
+		Expect(err).NotTo(HaveOccurred())
+		after, err := os.Stat(tree)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.SameFile(before, after)).To(BeTrue(), "the unchanged ISO must not be extracted again")
+	})
+
 	It("re-extracts tree, kernel and initrd when the ISO changes", func() {
 		defer readyISOArtifact("iso-chg", ubuntuLike, ubuntuLinks)()
 		defer makeISOConfig("iso-bc-chg", "iso-chg", "casper/vmlinuz", "casper/initrd")()

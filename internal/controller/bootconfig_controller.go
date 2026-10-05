@@ -204,7 +204,7 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 
 	isoFilename := urlutil.FilenameFromURL(isoArtifact.Spec.URL)
 	isoPath := filepath.Join(r.DataDir, "artifacts", isoArtifact.Name, isoFilename)
-	source, err := isoSource(isoPath, expectedHash(isoArtifact))
+	source, err := isoSource(isoPath)
 	if err != nil {
 		return r.setError(ctx, bc, err.Error())
 	}
