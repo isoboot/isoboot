@@ -79,6 +79,8 @@ type BootConfigSpec struct {
 	// modes. May contain Go template variables interpolated at provision time:
 	// ProvisionAutomationBaseURL, ProxyURL, UpdatePhaseURL, ProvisionName and,
 	// in iso mode, NFSRoot ("<IPv4>:/<bootconfig-name>", for casper's nfsroot=).
+	// It must render to a single line. The controller renders it with sample
+	// values and sets the BootConfig to Error when it cannot.
 	// +optional
 	KernelArgs string `json:"kernelArgs,omitempty"`
 }
@@ -110,6 +112,9 @@ type BootConfigStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // BootConfig is the Schema for the bootconfigs API.
+// The name is used for directories, an NFS export and temporary files beside
+// them, which together must fit the 255-byte file name limit.
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 200",message="BootConfig names are limited to 200 characters (used as NFS export and directory names)"
 type BootConfig struct {
 	metav1.TypeMeta `json:",inline"`
 

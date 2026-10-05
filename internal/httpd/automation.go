@@ -55,6 +55,11 @@ func IsAutomationNotFound(err error) bool {
 // RenderAutomationFile looks up a Provision by name, fetches the referenced
 // ProvisionAutomation, and renders the named file template using merged
 // ConfigMap and Secret data from the Provision.
+//
+// Files often carry secrets (host keys, password hashes), and the endpoint
+// has no authentication, so they are served only while the Provision is
+// installing: Pending (installers fetch their file before they report
+// InProgress) or InProgress. Otherwise the file is reported as not found.
 func RenderAutomationFile(
 	ctx context.Context, c client.Client, ns, provisionName, fileName, statusURL, proxyURL string,
 ) (string, error) {
@@ -64,6 +69,11 @@ func RenderAutomationFile(
 		Namespace: ns,
 	}, &provision); err != nil {
 		return "", fmt.Errorf("getting provision %q: %w", provisionName, err)
+	}
+	if phase := provision.Status.Phase; phase != isobootgithubiov1alpha1.ProvisionPhasePending &&
+		phase != isobootgithubiov1alpha1.ProvisionPhaseInProgress {
+		return "", fmt.Errorf("%w: provision %q is %q, files are served only while it is Pending or InProgress",
+			ErrFileNotFound, provisionName, phase)
 	}
 
 	var pa isobootgithubiov1alpha1.ProvisionAutomation
@@ -90,7 +100,7 @@ func RenderAutomationFile(
 	data.ProxyURL = proxyURL
 
 	tmpl, err := template.New(fileName).
-		Option("missingkey=error").Parse(tmplContent)
+		Option("missingkey=error").Funcs(automationFuncs).Parse(tmplContent)
 	if err != nil {
 		return "", fmt.Errorf("parsing template %q: %w", fileName, err)
 	}
@@ -101,6 +111,23 @@ func RenderAutomationFile(
 	}
 
 	return buf.String(), nil
+}
+
+// automationFuncs are the functions automation templates can use besides
+// the built-in ones.
+var automationFuncs = template.FuncMap{
+	// required is index for keys that must exist: {{ required .Secrets
+	// "ssh_host_ed25519_key" }}. Keys with dots cannot be written as
+	// .Secrets.key, and index returns "" for a missing key, so a misspelt
+	// Secret or ConfigMap key would otherwise install an empty host key or
+	// password. A missing key fails the render (a 500 for the installer).
+	"required": func(values map[string]string, key string) (string, error) {
+		value, ok := values[key]
+		if !ok {
+			return "", fmt.Errorf("missing key %q", key)
+		}
+		return value, nil
+	},
 }
 
 func buildTemplateData(

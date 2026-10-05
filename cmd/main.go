@@ -32,6 +32,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -59,6 +60,7 @@ func init() {
 func main() {
 	var dataDir string
 	var nfsDir string
+	var namespace string
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -70,6 +72,8 @@ func main() {
 	flag.StringVar(&dataDir, "data-dir", "/data/isoboot", "Base directory for storing artifacts and boot configs.")
 	flag.StringVar(&nfsDir, "nfs-dir", "/data/isoboot/nfs",
 		"Directory holding the extracted tree of each ISO-mode BootConfig, exported by nfsd.")
+	flag.StringVar(&namespace, "namespace", "",
+		"Only watch and reconcile objects in this namespace. Empty means all namespaces.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -167,6 +171,7 @@ func main() {
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
+		Cache:                  cacheOptions(namespace),
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "423af48d.isoboot.github.io",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
@@ -204,10 +209,11 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.BootConfigReconciler{
-		Client:  mgr.GetClient(),
-		Scheme:  mgr.GetScheme(),
-		DataDir: dataDir,
-		NFSDir:  nfsDir,
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		DataDir:   dataDir,
+		NFSDir:    nfsDir,
+		Namespace: namespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "BootConfig")
 		os.Exit(1)
@@ -235,4 +241,13 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// cacheOptions limits the manager's cache, and so every controller, to
+// namespace. Empty means all namespaces.
+func cacheOptions(namespace string) cache.Options {
+	if namespace == "" {
+		return cache.Options{}
+	}
+	return cache.Options{DefaultNamespaces: map[string]cache.Config{namespace: {}}}
 }

@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -95,10 +96,12 @@ func IsProvisionPhaseError(err error) bool {
 
 // PendingProvisionForMAC returns the Provision with status.phase == Pending
 // for the Machine with the given MAC address. It returns nil if no match is
-// found, or an error if multiple machines or provisions match.
+// found, or an error if multiple machines or provisions match. MACs are
+// compared in lower case.
 func PendingProvisionForMAC(
 	ctx context.Context, c client.Client, ns, mac string,
 ) (*isobootgithubiov1alpha1.Provision, error) {
+	mac = strings.ToLower(mac)
 	var machines isobootgithubiov1alpha1.MachineList
 	if err := c.List(ctx, &machines,
 		client.InNamespace(ns),

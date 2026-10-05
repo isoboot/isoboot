@@ -24,16 +24,22 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
+	"github.com/isoboot/isoboot/internal/kernelargs"
 	"github.com/isoboot/isoboot/internal/urlutil"
 )
 
@@ -45,6 +51,94 @@ type BootConfigReconciler struct {
 	// NFSDir holds one extracted ISO tree per ISO-mode BootConfig; nfsd
 	// exports each of its subdirectories.
 	NFSDir string
+	// Namespace, when set, is the only namespace whose BootConfigs this
+	// reconciler acts on. Boot directories and ISO trees are named after
+	// the BootConfig alone, so BootConfigs of the same name in two
+	// namespaces would overwrite and delete each other's files.
+	Namespace string
+
+	// now returns the current time; nil means time.Now. Tests set it.
+	now func() time.Time
+
+	// filesMu is held by each reconcile and by removeOrphans, so the sweep
+	// never runs in the middle of an extraction.
+	filesMu sync.Mutex
+
+	mu sync.Mutex
+	// extractionFailures remembers, per BootConfig, the ISO whose extraction
+	// last failed, so that it is not unpacked again before its backoff ends.
+	extractionFailures map[types.NamespacedName]*extractionFailure
+}
+
+// extractionFailure records failed extractions of one ISO for one BootConfig.
+type extractionFailure struct {
+	// attempt identifies what was extracted: the ISO file and the files
+	// required in its tree.
+	attempt  string
+	message  string
+	failures int
+	retryAt  time.Time
+}
+
+// First and longest wait before extracting an ISO again after a failure.
+// The wait doubles with each failure in between: a multi-GB extraction that
+// fails the same way every time (an unsupported ISO, a full disk) must not
+// run every few seconds.
+const (
+	extractionRetryFirst = 10 * time.Second
+	extractionRetryMax   = 30 * time.Minute
+)
+
+func (r *BootConfigReconciler) currentTime() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
+}
+
+// pendingExtractionFailure returns the failure recorded for key and attempt
+// while its backoff has not ended, or nil.
+func (r *BootConfigReconciler) pendingExtractionFailure(key types.NamespacedName, attempt string) *extractionFailure {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	f := r.extractionFailures[key]
+	if f == nil || f.attempt != attempt || !r.currentTime().Before(f.retryAt) {
+		return nil
+	}
+	return f
+}
+
+// recordExtractionFailure records a failed extraction and returns how long to
+// wait before the next one.
+func (r *BootConfigReconciler) recordExtractionFailure(key types.NamespacedName, attempt, message string) time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.extractionFailures == nil {
+		r.extractionFailures = map[types.NamespacedName]*extractionFailure{}
+	}
+	f := r.extractionFailures[key]
+	if f == nil || f.attempt != attempt {
+		f = &extractionFailure{attempt: attempt}
+		r.extractionFailures[key] = f
+	}
+	delay := extractionRetryFirst
+	for range f.failures {
+		delay *= 2
+		if delay >= extractionRetryMax {
+			delay = extractionRetryMax
+			break
+		}
+	}
+	f.failures++
+	f.message = message
+	f.retryAt = r.currentTime().Add(delay)
+	return delay
+}
+
+func (r *BootConfigReconciler) forgetExtractionFailure(key types.NamespacedName) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.extractionFailures, key)
 }
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=bootconfigs,verbs=get;list;watch
@@ -53,6 +147,16 @@ type BootConfigReconciler struct {
 
 func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+
+	if r.Namespace != "" && req.Namespace != r.Namespace {
+		// The manager's cache is limited to Namespace, so this is a
+		// safeguard: above all, the cleanup below must never run for a
+		// BootConfig of the same name in another namespace.
+		log.V(1).Info("Ignoring BootConfig outside the controller's namespace")
+		return ctrl.Result{}, nil
+	}
+	r.filesMu.Lock()
+	defer r.filesMu.Unlock()
 
 	var bc isobootgithubiov1alpha1.BootConfig
 	if err := r.Get(ctx, req.NamespacedName, &bc); err != nil {
@@ -67,7 +171,13 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if err := removeISOTree(r.NFSDir, req.Name); err != nil {
 			log.Error(err, "Failed to clean up NFS tree", "name", req.Name)
 		}
+		r.forgetExtractionFailure(req.NamespacedName)
 		return ctrl.Result{}, nil
+	}
+
+	// A template that cannot render would only fail when a machine boots.
+	if err := kernelargs.Validate(bc.Spec.KernelArgs); err != nil {
+		return r.setError(ctx, &bc, fmt.Sprintf("invalid kernelArgs: %v", err))
 	}
 
 	// Mode B: extract kernel and initrd from an ISO artifact.
@@ -80,6 +190,13 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		log.V(1).Info("Skipping BootConfig without netboot or iso")
 		return ctrl.Result{}, nil
 	}
+	return r.reconcileNetboot(ctx, &bc)
+}
+
+// reconcileNetboot handles Mode A: the boot directory holds symlinks to the
+// kernel and initrd artifacts (or the initrd concatenated with firmware).
+func (r *BootConfigReconciler) reconcileNetboot(ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 	nb := bc.Spec.Netboot
 
 	// A BootConfig switched from iso to netboot no longer needs its tree.
@@ -93,7 +210,7 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
-		return r.setError(ctx, &bc, fmt.Sprintf("kernel artifact %q not found", nb.KernelRef))
+		return r.setError(ctx, bc, fmt.Sprintf("kernel artifact %q not found", nb.KernelRef))
 	}
 
 	initrdArtifact, err := r.getArtifact(ctx, nb.InitrdRef, bc.Namespace)
@@ -101,15 +218,15 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
-		return r.setError(ctx, &bc, fmt.Sprintf("initrd artifact %q not found", nb.InitrdRef))
+		return r.setError(ctx, bc, fmt.Sprintf("initrd artifact %q not found", nb.InitrdRef))
 	}
 
 	// Check if all artifacts are Ready
 	if kernelArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for kernel artifact %q to be Ready", nb.KernelRef))
+		return r.setPending(ctx, bc, fmt.Sprintf("waiting for kernel artifact %q to be Ready", nb.KernelRef))
 	}
 	if initrdArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-		return r.setPending(ctx, &bc, fmt.Sprintf("waiting for initrd artifact %q to be Ready", nb.InitrdRef))
+		return r.setPending(ctx, bc, fmt.Sprintf("waiting for initrd artifact %q to be Ready", nb.InitrdRef))
 	}
 
 	// Optionally look up firmware artifact
@@ -120,10 +237,10 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			if client.IgnoreNotFound(err) != nil {
 				return ctrl.Result{}, err
 			}
-			return r.setError(ctx, &bc, fmt.Sprintf("firmware artifact %q not found", nb.FirmwareRef))
+			return r.setError(ctx, bc, fmt.Sprintf("firmware artifact %q not found", nb.FirmwareRef))
 		}
 		if firmwareArtifact.Status.Phase != isobootgithubiov1alpha1.BootArtifactPhaseReady {
-			return r.setPending(ctx, &bc, fmt.Sprintf("waiting for firmware artifact %q to be Ready", nb.FirmwareRef))
+			return r.setPending(ctx, bc, fmt.Sprintf("waiting for firmware artifact %q to be Ready", nb.FirmwareRef))
 		}
 	}
 
@@ -136,17 +253,26 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	kernelDir := filepath.Join(bootDir, "kernel")
 	initrdDir := filepath.Join(bootDir, "initrd")
 
+	// Only the kernel and initrd directories belong here. This also removes
+	// the vmlinuz and initrd files of a BootConfig switched from iso mode.
+	if entries, err := os.ReadDir(bootDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() || (e.Name() != "kernel" && e.Name() != "initrd") {
+				_ = os.RemoveAll(filepath.Join(bootDir, e.Name()))
+			}
+		}
+	}
 	if err := os.MkdirAll(kernelDir, 0o755); err != nil {
-		return r.setError(ctx, &bc, fmt.Sprintf("creating kernel dir: %v", err))
+		return r.setError(ctx, bc, fmt.Sprintf("creating kernel dir: %v", err))
 	}
 	if err := os.MkdirAll(initrdDir, 0o755); err != nil {
-		return r.setError(ctx, &bc, fmt.Sprintf("creating initrd dir: %v", err))
+		return r.setError(ctx, bc, fmt.Sprintf("creating initrd dir: %v", err))
 	}
 
 	// Create kernel symlink
 	kernelTarget := filepath.Join("..", "..", "..", "artifacts", kernelArtifact.Name, kernelFilename)
 	if err := ensureSymlink(kernelDir, kernelFilename, kernelTarget); err != nil {
-		return r.setError(ctx, &bc, fmt.Sprintf("creating kernel symlink: %v", err))
+		return r.setError(ctx, bc, fmt.Sprintf("creating kernel symlink: %v", err))
 	}
 
 	if firmwareArtifact != nil {
@@ -157,13 +283,13 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		combinedPath := filepath.Join(initrdDir, initrdFilename)
 
 		if err := concatenateFiles(combinedPath, initrdPath, firmwarePath); err != nil {
-			return r.setError(ctx, &bc, fmt.Sprintf("concatenating initrd + firmware: %v", err))
+			return r.setError(ctx, bc, fmt.Sprintf("concatenating initrd + firmware: %v", err))
 		}
 	} else {
 		// No firmware: symlink initrd directly
 		initrdTarget := filepath.Join("..", "..", "..", "artifacts", initrdArtifact.Name, initrdFilename)
 		if err := ensureSymlink(initrdDir, initrdFilename, initrdTarget); err != nil {
-			return r.setError(ctx, &bc, fmt.Sprintf("creating initrd symlink: %v", err))
+			return r.setError(ctx, bc, fmt.Sprintf("creating initrd symlink: %v", err))
 		}
 	}
 
@@ -171,7 +297,7 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		log.Info("BootConfig assembled", "name", bc.Name, "bootDir", bootDir)
 	}
 
-	return r.setReady(ctx, &bc)
+	return r.setReady(ctx, bc)
 }
 
 // reconcileISO handles Mode B: the whole ISO tree is unpacked into
@@ -204,23 +330,33 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 
 	isoFilename := urlutil.FilenameFromURL(isoArtifact.Spec.URL)
 	isoPath := filepath.Join(r.DataDir, "artifacts", isoArtifact.Name, isoFilename)
-	source, err := isoSource(isoPath, expectedHash(isoArtifact))
+	source, err := isoSource(isoPath)
 	if err != nil {
 		return r.setError(ctx, bc, err.Error())
 	}
-	if _, err := ensureISOTree(log, isoPath, source, r.NFSDir, bc.Name); err != nil {
-		return r.setError(ctx, bc, fmt.Sprintf("extracting iso tree: %v", err))
+	key := client.ObjectKeyFromObject(bc)
+	attempt := fmt.Sprintf("%skernel=%s\ninitrd=%s\n", source, iso.KernelPath, iso.InitrdPath)
+	if f := r.pendingExtractionFailure(key, attempt); f != nil {
+		return r.setErrorUntil(ctx, bc, f.message, f.retryAt.Sub(r.currentTime()))
 	}
+	if err := ensureISOTree(log, isoPath, source, r.NFSDir, bc.Name, []string{iso.KernelPath, iso.InitrdPath}); err != nil {
+		message := fmt.Sprintf("extracting iso tree: %v", err)
+		delay := r.recordExtractionFailure(key, attempt, message)
+		log.Info("ISO extraction failed, waiting before the next attempt", "retryAfter", delay)
+		return r.setErrorUntil(ctx, bc, message, delay)
+	}
+	r.forgetExtractionFailure(key)
 
 	bootDir := filepath.Join(r.DataDir, "boot", bc.Name)
 	if err := os.MkdirAll(bootDir, 0o755); err != nil {
 		return r.setError(ctx, bc, fmt.Sprintf("creating boot dir: %v", err))
 	}
-	// Only vmlinuz and initrd belong here; this also removes the ISO symlink
-	// that older versions served over HTTP.
+	// Only the vmlinuz and initrd files belong here. This also removes the
+	// ISO symlink that older versions served over HTTP, and the kernel and
+	// initrd directories of a BootConfig switched from netboot mode.
 	if entries, err := os.ReadDir(bootDir); err == nil {
 		for _, e := range entries {
-			if e.Name() != "vmlinuz" && e.Name() != "initrd" {
+			if !e.Type().IsRegular() || (e.Name() != "vmlinuz" && e.Name() != "initrd") {
 				_ = os.RemoveAll(filepath.Join(bootDir, e.Name()))
 			}
 		}
@@ -368,8 +504,16 @@ func (r *BootConfigReconciler) setPending(ctx context.Context, bc *isobootgithub
 }
 
 func (r *BootConfigReconciler) setError(ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig, message string) (ctrl.Result, error) {
+	return r.setErrorUntil(ctx, bc, message, 10*time.Second)
+}
+
+// setErrorUntil sets the Error phase and asks to be reconciled again after
+// retryAfter.
+func (r *BootConfigReconciler) setErrorUntil(
+	ctx context.Context, bc *isobootgithubiov1alpha1.BootConfig, message string, retryAfter time.Duration,
+) (ctrl.Result, error) {
 	if bc.Status.Phase == isobootgithubiov1alpha1.BootConfigPhaseError && bc.Status.Message == message {
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 	log := logf.FromContext(ctx)
 	log.Info("BootConfig error", "message", message)
@@ -378,7 +522,7 @@ func (r *BootConfigReconciler) setError(ctx context.Context, bc *isobootgithubio
 	if err := r.Status().Update(ctx, bc); err != nil {
 		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
 	}
-	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: retryAfter}, nil
 }
 
 func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, obj client.Object) []reconcile.Request {
@@ -402,10 +546,76 @@ func (r *BootConfigReconciler) findBootConfigsForArtifact(ctx context.Context, o
 	return requests
 }
 
+// removeOrphans deletes the boot directories and ISO trees (with their
+// markers and leftovers) of BootConfigs that no longer exist. A BootConfig
+// deleted while the controller was not running is never reconciled again,
+// and nfsd would keep exporting its tree. Entries of the NFS directory that
+// the controller does not create are left alone.
+func (r *BootConfigReconciler) removeOrphans(ctx context.Context) error {
+	log := logf.FromContext(ctx)
+	r.filesMu.Lock()
+	defer r.filesMu.Unlock()
+
+	var configs isobootgithubiov1alpha1.BootConfigList
+	if err := r.List(ctx, &configs, client.InNamespace(r.Namespace)); err != nil {
+		return fmt.Errorf("listing boot configs: %w", err)
+	}
+	exists := make(map[string]bool, len(configs.Items))
+	for _, bc := range configs.Items {
+		exists[bc.Name] = true
+	}
+
+	remove := func(dir, entry, owner string) {
+		if exists[owner] {
+			return
+		}
+		p := filepath.Join(dir, entry)
+		log.Info("Removing files of a BootConfig that no longer exists", "name", owner, "path", p)
+		if err := os.RemoveAll(p); err != nil {
+			log.Error(err, "Failed to remove", "path", p)
+		}
+	}
+	// Only directories: the boot directory of each BootConfig is one, and
+	// the files beside them are not the controller's (dnsmasq writes the
+	// boot.ipxe that every machine chains first).
+	bootDir := filepath.Join(r.DataDir, "boot")
+	if entries, err := os.ReadDir(bootDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				remove(bootDir, e.Name(), e.Name())
+			}
+		}
+	}
+	if r.NFSDir != "" {
+		if entries, err := os.ReadDir(r.NFSDir); err == nil {
+			for _, e := range entries {
+				if owner := isoTreeOwner(e.Name()); owner != "" {
+					remove(r.NFSDir, e.Name(), owner)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *BootConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Once the cache holds every BootConfig, remove what deleted ones left.
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		if !mgr.GetCache().WaitForCacheSync(ctx) {
+			return nil // stopping
+		}
+		if err := r.removeOrphans(ctx); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to remove files of deleted BootConfigs")
+		}
+		return nil
+	})); err != nil {
+		return err
+	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&isobootgithubiov1alpha1.BootConfig{}).
+		// Only spec changes (and creates and deletes): the controller's own
+		// status writes must not trigger another reconcile at once.
+		For(&isobootgithubiov1alpha1.BootConfig{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&isobootgithubiov1alpha1.BootArtifact{}, handler.EnqueueRequestsFromMapFunc(
 			r.findBootConfigsForArtifact,
 		)).

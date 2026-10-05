@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -28,6 +30,7 @@ import (
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/controller"
 	"github.com/isoboot/isoboot/internal/httpd"
+	"github.com/isoboot/isoboot/internal/kernelargs"
 )
 
 var macRegexp = regexp.MustCompile(`^([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$`)
@@ -50,9 +53,12 @@ func main() {
 	utilruntime.Must(clientgoscheme.AddToScheme(sch))
 	utilruntime.Must(isobootgithubiov1alpha1.AddToScheme(sch))
 
+	ns := *namespace
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:  sch,
 		Metrics: metricsserver.Options{BindAddress: "0"},
+		// Only the namespace httpd serves: its RBAC is a namespaced Role.
+		Cache: cacheOptions(ns),
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				DisableFor: []client.Object{
@@ -91,7 +97,6 @@ func main() {
 	}
 
 	c := mgr.GetClient()
-	ns := *namespace
 	proxyPort := os.Getenv("PROXY_PORT")
 
 	handler := conditionalBootHandler(func(reqCtx context.Context, mac string) (*httpd.BootDirective, error) {
@@ -156,10 +161,16 @@ func main() {
 	}
 }
 
+// cacheOptions limits the manager's cache to namespace.
+func cacheOptions(namespace string) cache.Options {
+	return cache.Options{DefaultNamespaces: map[string]cache.Config{namespace: {}}}
+}
+
 func conditionalBootHandler(
 	getDirective bootDirectiveFunc, proxyPort string,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		mac := r.URL.Query().Get("mac")
 		if mac == "" {
 			http.Error(w, "missing required parameter: mac", http.StatusBadRequest)
@@ -172,6 +183,13 @@ func conditionalBootHandler(
 
 		directive, err := getDirective(r.Context(), mac)
 		if err != nil {
+			if errors.Is(err, httpd.ErrBootConfigNotReady) {
+				// 404 like "no pending provision": the machine boots its
+				// local disk.
+				slog.Info("not booting the installer", "mac", mac, "reason", err)
+				http.Error(w, "boot config not ready", http.StatusNotFound)
+				return
+			}
 			if httpd.IsDuplicateError(err) {
 				slog.Error("duplicate match", "mac", mac, "error", err)
 				http.Error(w, err.Error(), http.StatusConflict)
@@ -209,8 +227,8 @@ func conditionalBootHandler(
 				}
 				nfsRoot = addr.String() + ":" + directive.NFSExport
 			}
-			rendered, err := httpd.RenderKernelArgs(
-				directive.KernelArgs, httpd.KernelArgsData{
+			rendered, err := kernelargs.Render(
+				directive.KernelArgs, kernelargs.Data{
 					ProvisionAutomationBaseURL: baseURL,
 					ProxyURL:                   proxyURLFor(nodeIP, proxyPort),
 					UpdatePhaseURL:             statusURL,
@@ -249,9 +267,12 @@ func resolveHost(r *http.Request) string {
 		host = r.Host
 	}
 	if port := r.Header.Get("X-Forwarded-Port"); port != "" {
-		h, _, _ := net.SplitHostPort(host)
-		if h != "" {
+		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
+		} else {
+			// No port. nginx sends an IPv6 $host in brackets, which
+			// JoinHostPort would add again.
+			host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
 		}
 		host = net.JoinHostPort(host, port)
 	}
@@ -279,6 +300,9 @@ var nameRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 
 func automationFileHandler(render renderAutomationFunc, proxyPort string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Rendered files carry Secrets: no cache (squid's included) may keep
+		// them on disk.
+		w.Header().Set("Cache-Control", "no-store")
 		provisionName := r.PathValue("provisionName")
 		fileName := r.PathValue("fileName")
 
@@ -298,6 +322,8 @@ func automationFileHandler(render renderAutomationFunc, proxyPort string) http.H
 		body, err := render(r.Context(), provisionName, fileName, statusURL, proxyURL)
 		if err != nil {
 			if httpd.IsAutomationNotFound(err) {
+				slog.Info("automation file not served",
+					"provision", provisionName, "file", fileName, "reason", err)
 				http.Error(w, "not found", http.StatusNotFound)
 				return
 			}

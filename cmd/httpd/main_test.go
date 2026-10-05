@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -57,6 +59,9 @@ func TestConditionalBoot_StatusCodes(t *testing.T) {
 		{"no match", noMatchDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusNotFound},
 		{"duplicate", duplicateDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusConflict},
 		{"internal error", errorDirective(), "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusInternalServerError},
+		{"boot config not ready", func(_ context.Context, _ string) (*httpd.BootDirective, error) {
+			return nil, fmt.Errorf("%w: %q is %q", httpd.ErrBootConfigNotReady, "ubuntu", "Pending")
+		}, "/conditional-boot?mac=aa-bb-cc-dd-ee-ff", http.StatusNotFound},
 		{"missing mac", fixedDirective(), "/conditional-boot", http.StatusBadRequest},
 		{"empty mac", fixedDirective(), "/conditional-boot?mac=", http.StatusBadRequest},
 		{"invalid mac format", fixedDirective(), "/conditional-boot?mac=not-a-mac", http.StatusBadRequest},
@@ -498,5 +503,79 @@ func TestAutomationFile_NotFound(t *testing.T) {
 
 	if w.Result().StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404, got: %d", w.Result().StatusCode)
+	}
+}
+
+func TestCacheOptions(t *testing.T) {
+	got := slices.Collect(maps.Keys(cacheOptions("isoboot-system").DefaultNamespaces))
+	if !slices.Equal(got, []string{"isoboot-system"}) {
+		t.Errorf("cache namespaces = %v, want only isoboot-system", got)
+	}
+}
+
+// TestNoStore checks that boot scripts and automation files, which can carry
+// secrets, are never stored by squid or any other cache, whatever the answer.
+func TestNoStore(t *testing.T) {
+	automation := func(render renderAutomationFunc) http.Handler {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /automation/{provisionName}/{fileName}", automationFileHandler(render, ""))
+		return mux
+	}
+	rendered := func(_ context.Context, _, _, _, _ string) (string, error) { return "secret", nil }
+	notServed := func(_ context.Context, _, _, _, _ string) (string, error) { return "", httpd.ErrFileNotFound }
+	const bootURL = "/conditional-boot?mac=aa-bb-cc-dd-ee-ff"
+	tests := []struct {
+		name       string
+		handler    http.Handler
+		url        string
+		wantStatus int
+	}{
+		{"boot script", conditionalBootHandler(fixedDirective(), ""), bootURL, http.StatusOK},
+		{"no boot script", conditionalBootHandler(noMatchDirective(), ""), bootURL, http.StatusNotFound},
+		{"bad mac", conditionalBootHandler(fixedDirective(), ""), "/conditional-boot?mac=x", http.StatusBadRequest},
+		{"automation file", automation(rendered), "/automation/my-provision/user-data", http.StatusOK},
+		{"automation file not served", automation(notServed), "/automation/my-provision/user-data", http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tt.handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tt.url, nil))
+			if w.Result().StatusCode != tt.wantStatus {
+				t.Fatalf("expected %d, got: %d", tt.wantStatus, w.Result().StatusCode)
+			}
+			if got := w.Result().Header.Get("Cache-Control"); got != "no-store" {
+				t.Errorf("Cache-Control = %q, want no-store", got)
+			}
+		})
+	}
+}
+
+func TestResolveHost(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string // Host header
+		fwdHost string // X-Forwarded-Host, as nginx sends $host
+		fwdPort string // X-Forwarded-Port
+		want    string
+	}{
+		{"host header only", "10.0.0.1:8080", "", "", "10.0.0.1:8080"},
+		{"forwarded ipv4", "x", "10.0.0.1", "8080", "10.0.0.1:8080"},
+		{"forwarded ipv4 with port", "x", "10.0.0.1:9999", "8080", "10.0.0.1:8080"},
+		{"forwarded hostname", "x", "isoboot.example", "8080", "isoboot.example:8080"},
+		{"forwarded ipv6 in brackets", "x", "[fd00::1]", "8080", "[fd00::1]:8080"},
+		{"forwarded ipv6 with port", "x", "[fd00::1]:9999", "8080", "[fd00::1]:8080"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/conditional-boot", nil)
+			req.Host = tt.host
+			if tt.fwdHost != "" {
+				req.Header.Set("X-Forwarded-Host", tt.fwdHost)
+				req.Header.Set("X-Forwarded-Port", tt.fwdPort)
+			}
+			if got := resolveHost(req); got != tt.want {
+				t.Errorf("resolveHost = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

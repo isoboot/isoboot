@@ -23,6 +23,7 @@ import (
 // MachineSpec defines the desired state of Machine.
 type MachineSpec struct {
 	// mac is the MAC address for this machine (dash-separated, e.g., aa-bb-cc-dd-ee-ff).
+	// Case does not matter: MACs are compared in lower case.
 	// +required
 	// +kubebuilder:validation:Pattern="^([0-9A-Fa-f]{2}-){5}([0-9A-Fa-f]{2})$"
 	MAC string `json:"mac"`

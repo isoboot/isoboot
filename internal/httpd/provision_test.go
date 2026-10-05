@@ -147,6 +147,40 @@ var _ = Describe("PendingProvisionForMAC", func() {
 			"multiple machines with MAC")))
 	})
 
+	It("matches MACs whatever their case", func() {
+		// Admins copy MACs in upper case; iPXE sends them in lower case.
+		m := createMachine("ppm-m7", "AA-00-00-00-00-0A")
+		p := createProvision("ppm-p7", "ppm-m7", "bootconfig-1",
+			isobootgithubiov1alpha1.ProvisionPhasePending)
+		defer func() {
+			Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, m)).To(Succeed())
+		}()
+
+		for _, mac := range []string{"aa-00-00-00-00-0a", "AA-00-00-00-00-0A"} {
+			Eventually(func() *isobootgithubiov1alpha1.Provision {
+				result, _ := PendingProvisionForMAC(ctx, indexedClient, ns, mac)
+				return result
+			}).ShouldNot(BeNil(), mac)
+		}
+	})
+
+	It("returns error when machines share a MAC written in different case", func() {
+		m1 := createMachine("ppm-m8a", "aa-00-00-00-00-0b")
+		m2 := createMachine("ppm-m8b", "AA-00-00-00-00-0B")
+		defer func() {
+			Expect(k8sClient.Delete(ctx, m1)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, m2)).To(Succeed())
+		}()
+
+		Eventually(func() error {
+			_, err := PendingProvisionForMAC(
+				ctx, indexedClient, ns, "aa-00-00-00-00-0b")
+			return err
+		}).Should(MatchError(ContainSubstring(
+			"multiple machines with MAC")))
+	})
+
 	It("returns error when multiple pending provisions", func() {
 		m := createMachine("ppm-m5", "aa-00-00-00-00-05")
 		p1 := createProvision("ppm-p5a", "ppm-m5", "bootconfig-1",

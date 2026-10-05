@@ -273,7 +273,7 @@ func syncDir(path string) error {
 		return err
 	}
 	defer func() { _ = d.Close() }()
-	return d.Sync()
+	return syncFile(d)
 }
 
 func hashFile(path string, useSHA256 bool) (string, error) {

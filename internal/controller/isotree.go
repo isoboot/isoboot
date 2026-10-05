@@ -40,10 +40,16 @@ import (
 // the temporary directories used while (re)extracting. Kubernetes object
 // names never contain "_", so the prefixes below cannot collide between
 // BootConfigs.
+//
+// Temporary names are fixed, not random: errors naming them end up in the
+// BootConfig status, and a message that changed on every attempt would be a
+// new status write each time. One controller replica writes the directory,
+// and a leftover from an interrupted attempt is removed before reuse.
 const (
-	isoTreeMarkerPrefix = ".source_"
-	isoTreeExtractInfix = ".extract_"
-	isoTreeOldInfix     = ".old_"
+	isoTreeMarkerPrefix  = ".source_"
+	isoTreeExtractPrefix = ".extract_"
+	isoTreeOldPrefix     = ".old_"
+	tempFilePrefix       = ".tmp_"
 
 	// maxISOTreeDepth guards against directory loops in a crafted ISO.
 	maxISOTreeDepth = 64
@@ -54,83 +60,90 @@ func isoTreeMarker(nfsDir, name string) string {
 }
 
 // isoSource identifies an ISO file well enough to notice when it changes.
-// It is stored in the marker beside the extracted tree.
-func isoSource(isoPath, expectedHash string) (string, error) {
+// It is stored in the marker beside the extracted tree. It describes the file
+// only: the BootArtifact controller replaces the file by rename, which
+// changes its modification time, while an edit of the artifact's hash text
+// alone (sha256 to sha512, or its case) leaves the file and the tree as they
+// are.
+func isoSource(isoPath string) (string, error) {
 	info, err := os.Stat(isoPath)
 	if err != nil {
 		return "", fmt.Errorf("stat iso %q: %w", isoPath, err)
 	}
-	return fmt.Sprintf("path=%s\nsize=%d\nmtime=%d\nhash=%s\n",
-		isoPath, info.Size(), info.ModTime().UnixNano(), expectedHash), nil
+	return fmt.Sprintf("path=%s\nsize=%d\nmtime=%d\n",
+		isoPath, info.Size(), info.ModTime().UnixNano()), nil
 }
 
 // ensureISOTree makes nfsDir/name hold the whole tree of the ISO at isoPath.
 // It extracts only when the marker does not match source or the tree is
-// missing: re-extracting changes inode numbers, and NFS clients that hold
-// handles into the old tree would get ESTALE. It returns the marker's
-// modification time, which changes exactly when the tree is replaced.
-func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string) (time.Time, error) {
+// missing: replacing the tree breaks the open files of every machine that is
+// installing from it. A new tree replaces the old one only if each of
+// requiredFiles is a regular file in it, so a failed update keeps the old
+// tree and the kernel and initrd copied from it.
+func ensureISOTree(log logr.Logger, isoPath, source, nfsDir, name string, requiredFiles []string) error {
 	if err := os.MkdirAll(nfsDir, 0o755); err != nil {
-		return time.Time{}, fmt.Errorf("creating nfs dir: %w", err)
+		return fmt.Errorf("creating nfs dir: %w", err)
 	}
 	dest := filepath.Join(nfsDir, name)
 	marker := isoTreeMarker(nfsDir, name)
 
 	if b, err := os.ReadFile(marker); err == nil && string(b) == source {
 		if fi, err := os.Lstat(dest); err == nil && fi.IsDir() {
-			mi, err := os.Stat(marker)
-			if err != nil {
-				return time.Time{}, fmt.Errorf("stat marker: %w", err)
-			}
-			return mi.ModTime(), nil
+			return nil
 		}
 	}
 
 	removeStaleISOTemps(nfsDir, name)
-	tmp, err := os.MkdirTemp(nfsDir, isoTreeExtractInfix+name+"_")
-	if err != nil {
-		return time.Time{}, fmt.Errorf("creating temp dir: %w", err)
+	tmp := filepath.Join(nfsDir, isoTreeExtractPrefix+name)
+	if err := os.Mkdir(tmp, 0o700); err != nil {
+		return fmt.Errorf("creating temp dir: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tmp) }() // no-op after the rename
 
 	log.Info("Extracting ISO tree", "iso", isoPath, "dest", dest)
 	start := time.Now()
 	if err := extractISOTree(log, isoPath, tmp); err != nil {
-		return time.Time{}, err
+		return err
 	}
 	if err := os.Chmod(tmp, 0o755); err != nil {
-		return time.Time{}, fmt.Errorf("chmod tree: %w", err)
+		return fmt.Errorf("chmod tree: %w", err)
+	}
+	for _, rel := range requiredFiles {
+		if err := checkTreeFile(tmp, rel); err != nil {
+			return err
+		}
 	}
 
 	// Drop the marker first: if we stop before writing the new one, the next
 	// reconcile extracts again instead of trusting a half-replaced state.
 	if err := os.Remove(marker); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return time.Time{}, fmt.Errorf("removing marker: %w", err)
+		return fmt.Errorf("removing marker: %w", err)
 	}
 	var old string
 	if _, err := os.Lstat(dest); err == nil {
-		old = filepath.Join(nfsDir, isoTreeOldInfix+name+"_"+strings.TrimPrefix(filepath.Base(tmp), isoTreeExtractInfix+name+"_"))
+		old = filepath.Join(nfsDir, isoTreeOldPrefix+name)
 		if err := os.Rename(dest, old); err != nil {
-			return time.Time{}, fmt.Errorf("moving old tree aside: %w", err)
+			return fmt.Errorf("moving old tree aside: %w", err)
 		}
 	}
 	if err := os.Rename(tmp, dest); err != nil {
-		return time.Time{}, fmt.Errorf("renaming tree into place: %w", err)
+		return fmt.Errorf("renaming tree into place: %w", err)
 	}
 	if old != "" {
 		if err := os.RemoveAll(old); err != nil {
 			log.Error(err, "Failed to remove old ISO tree", "path", old)
 		}
 	}
-	if err := writeFileAtomic(marker, []byte(source)); err != nil {
-		return time.Time{}, fmt.Errorf("writing marker: %w", err)
+	// The marker vouches for the tree, so the tree's data (flushed during
+	// extraction) and its rename must be on disk before the marker is.
+	if err := syncDir(nfsDir); err != nil {
+		return fmt.Errorf("flushing nfs dir: %w", err)
 	}
-	mi, err := os.Stat(marker)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("stat marker: %w", err)
+	if err := writeFileAtomic(marker, []byte(source)); err != nil {
+		return fmt.Errorf("writing marker: %w", err)
 	}
 	log.Info("ISO tree extracted", "dest", dest, "seconds", time.Since(start).Seconds())
-	return mi.ModTime(), nil
+	return nil
 }
 
 // removeISOTree deletes the tree, the marker and any leftovers for name.
@@ -145,24 +158,54 @@ func removeISOTree(nfsDir, name string) error {
 	return os.RemoveAll(filepath.Join(nfsDir, name))
 }
 
-// removeStaleISOTemps removes temporary directories left behind for name by
-// an interrupted extraction.
-func removeStaleISOTemps(nfsDir, name string) {
-	entries, err := os.ReadDir(nfsDir)
-	if err != nil {
-		return
+// isoTreeOwner returns the BootConfig name that an entry of the NFS
+// directory belongs to, or "" for an entry the controller does not create.
+func isoTreeOwner(entry string) string {
+	if !strings.HasPrefix(entry, ".") {
+		return entry // a tree
 	}
-	for _, e := range entries {
-		n := e.Name()
-		if strings.HasPrefix(n, isoTreeExtractInfix+name+"_") || strings.HasPrefix(n, isoTreeOldInfix+name+"_") {
-			_ = os.RemoveAll(filepath.Join(nfsDir, n))
+	for _, prefix := range []string{
+		tempFilePrefix + isoTreeMarkerPrefix, isoTreeMarkerPrefix, isoTreeExtractPrefix, isoTreeOldPrefix,
+	} {
+		if name, ok := strings.CutPrefix(entry, prefix); ok && name != "" {
+			return name
 		}
+	}
+	return ""
+}
+
+// removeStaleISOTemps removes what an interrupted extraction left behind for
+// name.
+func removeStaleISOTemps(nfsDir, name string) {
+	for _, leftover := range []string{
+		filepath.Join(nfsDir, isoTreeExtractPrefix+name),
+		filepath.Join(nfsDir, isoTreeOldPrefix+name),
+		tempFileFor(isoTreeMarker(nfsDir, name)),
+	} {
+		_ = os.RemoveAll(leftover)
 	}
 }
 
-// writeFileAtomic writes data to p (mode 0644) through a temporary file.
+// tempFileFor returns the fixed name of the temporary file through which p
+// is written: ".tmp_<name of p>" in the same directory.
+func tempFileFor(p string) string {
+	return filepath.Join(filepath.Dir(p), tempFilePrefix+filepath.Base(p))
+}
+
+// createTempFileFor creates tempFileFor(p) for writing, replacing a leftover
+// from an interrupted attempt.
+func createTempFileFor(p string) (*os.File, error) {
+	tmpPath := tempFileFor(p)
+	if err := os.Remove(tmpPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	return os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+}
+
+// writeFileAtomic writes data to p (mode 0644) through a temporary file and
+// flushes it to disk.
 func writeFileAtomic(p string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(p), ".tmp-*")
+	tmp, err := createTempFileFor(p)
 	if err != nil {
 		return err
 	}
@@ -176,10 +219,17 @@ func writeFileAtomic(p string, data []byte) error {
 		_ = tmp.Close()
 		return err
 	}
+	if err := syncFile(tmp); err != nil {
+		_ = tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, p)
+	if err := os.Rename(tmpPath, p); err != nil {
+		return err
+	}
+	return syncDir(filepath.Dir(p))
 }
 
 // isoSymlink is a Rock Ridge symlink found during extraction.
@@ -222,6 +272,7 @@ func extractISOTree(log logr.Logger, isoPath, dest string) error {
 	if err := x.walk(".", 0); err != nil {
 		return err
 	}
+	linkDirs := map[string]bool{}
 	for _, l := range x.links {
 		if !symlinkStaysInside(l.path, l.target) {
 			log.Info("Skipping ISO symlink that leaves the tree", "path", l.path, "target", l.target)
@@ -229,6 +280,12 @@ func extractISOTree(log logr.Logger, isoPath, dest string) error {
 		}
 		if err := root.Symlink(l.target, l.path); err != nil {
 			return fmt.Errorf("creating symlink %q: %w", l.path, err)
+		}
+		linkDirs[path.Dir(l.path)] = true
+	}
+	for dir := range linkDirs {
+		if err := x.syncDir(dir); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -288,6 +345,19 @@ func (x *isoTreeExtractor) walk(dir string, depth int) error {
 			x.log.Info("Skipping special file in ISO", "path", rel, "mode", mode.String())
 		}
 	}
+	return x.syncDir(dir)
+}
+
+// syncDir flushes the entries of dir, inside the tree, to disk.
+func (x *isoTreeExtractor) syncDir(dir string) error {
+	d, err := x.root.Open(dir)
+	if err != nil {
+		return fmt.Errorf("opening directory %q: %w", dir, err)
+	}
+	defer func() { _ = d.Close() }()
+	if err := syncFile(d); err != nil {
+		return fmt.Errorf("flushing directory %q: %w", dir, err)
+	}
 	return nil
 }
 
@@ -318,11 +388,20 @@ func (x *isoTreeExtractor) copyFile(rel string, size int64) error {
 		_ = dst.Close()
 		return fmt.Errorf("chmod %q: %w", rel, err)
 	}
+	// Flush every file, not only large ones: the marker written after
+	// extraction promises a complete tree, even after a power loss.
+	if err := syncFile(dst); err != nil {
+		_ = dst.Close()
+		return fmt.Errorf("flushing %q: %w", rel, err)
+	}
 	if err := dst.Close(); err != nil {
 		return fmt.Errorf("closing %q: %w", rel, err)
 	}
 	return nil
 }
+
+// syncFile flushes f to disk. Tests replace it to see what gets flushed.
+var syncFile = (*os.File).Sync
 
 // syncEvery is how many bytes syncWriter writes between two fsyncs.
 const syncEvery = 32 << 20
@@ -336,8 +415,14 @@ const syncEvery = 32 << 20
 // Every large file the controller writes goes through it.
 // It has no ReadFrom, so io.CopyBuffer uses the caller's buffer.
 type syncWriter struct {
-	f       *os.File
+	f       writeSyncer
 	pending int64
+}
+
+// writeSyncer is the part of *os.File that syncWriter uses.
+type writeSyncer interface {
+	io.Writer
+	Sync() error
 }
 
 func (w *syncWriter) Write(p []byte) (int, error) {
@@ -398,7 +483,7 @@ func copyFromTree(treeDir, rel, dst string) error {
 		return fmt.Errorf("%q in iso is not a regular file", rel)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".extract-*")
+	tmp, err := createTempFileFor(dst)
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
@@ -413,11 +498,32 @@ func copyFromTree(treeDir, rel, dst string) error {
 	if err := tmp.Chmod(0o444); err != nil {
 		return fmt.Errorf("setting permissions: %w", err)
 	}
+	if err := syncFile(tmp); err != nil {
+		return fmt.Errorf("flushing temp file: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing temp file: %w", err)
 	}
 	if err := os.Rename(tmpPath, dst); err != nil {
 		return fmt.Errorf("renaming temp file: %w", err)
+	}
+	return syncDir(filepath.Dir(dst))
+}
+
+// checkTreeFile returns an error unless rel is a regular file inside treeDir
+// (following symlinks only within the tree).
+func checkTreeFile(treeDir, rel string) error {
+	root, err := os.OpenRoot(treeDir)
+	if err != nil {
+		return fmt.Errorf("opening tree: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	fi, err := root.Stat(strings.TrimPrefix(rel, "/"))
+	if err != nil {
+		return fmt.Errorf("%q in iso: %w", rel, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("%q in iso is not a regular file", rel)
 	}
 	return nil
 }

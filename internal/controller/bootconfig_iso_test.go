@@ -28,9 +28,14 @@ import (
 	"github.com/diskfs/go-diskfs/disk"
 	"github.com/diskfs/go-diskfs/filesystem"
 	"github.com/diskfs/go-diskfs/filesystem/iso9660"
+	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
@@ -294,6 +299,31 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		}
 	})
 
+	It("does not re-extract when only the artifact's hash text changes", func() {
+		defer readyISOArtifact("iso-hash", ubuntuLike, ubuntuLinks)()
+		defer makeISOConfig("iso-bc-hash", "iso-hash", "casper/vmlinuz", "casper/initrd")()
+
+		_, err := doReconcile("iso-bc-hash")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-hash").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+		tree := filepath.Join(nfsDir, "iso-bc-hash")
+		before, err := os.Stat(tree)
+		Expect(err).NotTo(HaveOccurred())
+
+		// The same file, its hash now written in upper case. The artifact's
+		// status is still Ready from before the edit.
+		var artifact isobootgithubiov1alpha1.BootArtifact
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "iso-hash", Namespace: "default"}, &artifact)).To(Succeed())
+		artifact.Spec.SHA256 = new(strings.ToUpper(validSHA256))
+		Expect(k8sClient.Update(ctx, &artifact)).To(Succeed())
+
+		_, err = doReconcile("iso-bc-hash")
+		Expect(err).NotTo(HaveOccurred())
+		after, err := os.Stat(tree)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.SameFile(before, after)).To(BeTrue(), "the unchanged ISO must not be extracted again")
+	})
+
 	It("re-extracts tree, kernel and initrd when the ISO changes", func() {
 		defer readyISOArtifact("iso-chg", ubuntuLike, ubuntuLinks)()
 		defer makeISOConfig("iso-bc-chg", "iso-chg", "casper/vmlinuz", "casper/initrd")()
@@ -333,11 +363,325 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(nfsEntries()).To(ConsistOf("iso-bc-chg", ".source_iso-bc-chg"))
 	})
 
+	It("keeps the old tree, kernel and initrd when the new ISO lacks the kernel", func() {
+		defer readyISOArtifact("iso-nokernel", ubuntuLike, ubuntuLinks)()
+		defer makeISOConfig("iso-bc-nokernel", "iso-nokernel", "casper/vmlinuz", "casper/initrd")()
+
+		_, err := doReconcile("iso-bc-nokernel")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-nokernel").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		// A point release that renamed the kernel.
+		Expect(writeTestISO(isoPathFor("iso-nokernel"), map[string]string{
+			"casper/hwe-vmlinuz":                    "KERNEL-V2",
+			"casper/initrd":                         "INITRD-V2",
+			"casper/ubuntu-server-minimal.squashfs": "SQUASHFS-V2",
+		}, nil)).To(Succeed())
+		later := time.Now().Add(time.Minute)
+		Expect(os.Chtimes(isoPathFor("iso-nokernel"), later, later)).To(Succeed())
+
+		_, _ = doReconcile("iso-bc-nokernel")
+		status := getStatus("iso-bc-nokernel")
+		Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+		Expect(status.Message).To(ContainSubstring("casper/vmlinuz"))
+
+		// Tree, kernel and initrd all still come from the first build.
+		squashfs, err := os.ReadFile(filepath.Join(nfsDir, "iso-bc-nokernel", "casper", "ubuntu-server-minimal.squashfs"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(squashfs)).To(Equal("SQUASHFS"))
+		kernel, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-nokernel", "vmlinuz"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(kernel)).To(Equal("KERNEL-BYTES"))
+		initrd, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-nokernel", "initrd"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(initrd)).To(Equal("INITRD-BYTES"))
+		Expect(nfsEntries()).To(ConsistOf("iso-bc-nokernel", ".source_iso-bc-nokernel"))
+	})
+
+	It("does not extract an ISO again right after its extraction failed", func() {
+		// Count extractions through the log the reconciler is given.
+		extractions := 0
+		ctx = logf.IntoContext(ctx, funcr.New(func(_, args string) {
+			if strings.Contains(args, `"Extracting ISO tree"`) {
+				extractions++
+			}
+		}, funcr.Options{}))
+		// A name extraction rejects, so every attempt fails the same way.
+		defer readyISOArtifact("iso-fail", map[string]string{`casper/a\b`: "x", "casper/vmlinuz": "K", "casper/initrd": "I"}, nil)()
+		defer makeISOConfig("iso-bc-fail", "iso-fail", "casper/vmlinuz", "casper/initrd")()
+
+		results := make([]reconcile.Result, 0, 3)
+		for range 3 {
+			result, err := doReconcile("iso-bc-fail")
+			Expect(err).NotTo(HaveOccurred())
+			results = append(results, result)
+		}
+		Expect(extractions).To(Equal(1))
+		status := getStatus("iso-bc-fail")
+		Expect(status.Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+		Expect(status.Message).To(ContainSubstring("unsafe name"))
+		for _, r := range results {
+			Expect(r.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(r.RequeueAfter).To(BeNumerically("<=", 10*time.Second))
+		}
+
+		// A new ISO file is tried at once.
+		Expect(writeTestISO(isoPathFor("iso-fail"), contents, nil)).To(Succeed())
+		later := time.Now().Add(time.Minute)
+		Expect(os.Chtimes(isoPathFor("iso-fail"), later, later)).To(Succeed())
+		_, err := doReconcile("iso-bc-fail")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(extractions).To(Equal(2))
+		Expect(getStatus("iso-bc-fail").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+	})
+
+	It("waits twice as long after each failed extraction of the same ISO", func() {
+		reconciler.now = func() time.Time { return time.Unix(1_000_000, 0) }
+		defer readyISOArtifact("iso-fail2", map[string]string{`casper/a\b`: "x"}, nil)()
+		defer makeISOConfig("iso-bc-fail2", "iso-fail2", "casper/vmlinuz", "casper/initrd")()
+
+		delays := make([]time.Duration, 0, 3)
+		for range 3 {
+			result, err := doReconcile("iso-bc-fail2")
+			Expect(err).NotTo(HaveOccurred())
+			delays = append(delays, result.RequeueAfter)
+			// Let the backoff pass, so the next reconcile extracts again.
+			current := reconciler.now()
+			reconciler.now = func() time.Time { return current.Add(result.RequeueAfter) }
+		}
+		Expect(delays).To(Equal([]time.Duration{10 * time.Second, 20 * time.Second, 40 * time.Second}))
+	})
+
+	// readyNetbootPair creates Ready kernel and initrd artifacts with their
+	// files on disk.
+	readyNetbootPair := func(kernel, initrd string) func() {
+		for name, file := range map[string]string{kernel: "vmlinuz", initrd: "initrd.img"} {
+			a := &isobootgithubiov1alpha1.BootArtifact{
+				Name: name, Namespace: "default",
+				Spec: isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/" + file, SHA256: new(validSHA256)},
+			}
+			ExpectWithOffset(1, k8sClient.Create(ctx, a)).To(Succeed())
+			a.Status.Phase = isobootgithubiov1alpha1.BootArtifactPhaseReady
+			ExpectWithOffset(1, k8sClient.Status().Update(ctx, a)).To(Succeed())
+			dir := filepath.Join(dataDir, "artifacts", name)
+			ExpectWithOffset(1, os.MkdirAll(dir, 0o755)).To(Succeed())
+			ExpectWithOffset(1, os.WriteFile(filepath.Join(dir, file), []byte("NETBOOT"), 0o644)).To(Succeed())
+		}
+		return func() {
+			for _, name := range []string{kernel, initrd} {
+				_ = k8sClient.Delete(ctx, &isobootgithubiov1alpha1.BootArtifact{Name: name, Namespace: "default"})
+			}
+		}
+	}
+	switchMode := func(name string, netboot *isobootgithubiov1alpha1.BootConfigNetbootSpec, iso *isobootgithubiov1alpha1.BootConfigISOSpec) {
+		var bc isobootgithubiov1alpha1.BootConfig
+		ExpectWithOffset(1, k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, &bc)).To(Succeed())
+		bc.Spec.Netboot, bc.Spec.ISO = netboot, iso
+		ExpectWithOffset(1, k8sClient.Update(ctx, &bc)).To(Succeed())
+	}
+
+	It("switches a BootConfig from netboot to iso mode", func() {
+		defer readyNetbootPair("sw1-kernel", "sw1-initrd")()
+		defer readyISOArtifact("iso-sw1", contents, nil)()
+		bc := &isobootgithubiov1alpha1.BootConfig{
+			Name: "iso-bc-sw1", Namespace: "default",
+			Spec: isobootgithubiov1alpha1.BootConfigSpec{
+				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "sw1-kernel", InitrdRef: "sw1-initrd"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, bc) }()
+		_, err := doReconcile("iso-bc-sw1")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-sw1").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		switchMode("iso-bc-sw1", nil, &isobootgithubiov1alpha1.BootConfigISOSpec{
+			ArtifactRef: "iso-sw1", KernelPath: "casper/vmlinuz", InitrdPath: "casper/initrd",
+		})
+		_, err = doReconcile("iso-bc-sw1")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-sw1")).To(Equal(isobootgithubiov1alpha1.BootConfigStatus{Phase: isobootgithubiov1alpha1.BootConfigPhaseReady}))
+		initrd, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-sw1", "initrd"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(initrd)).To(Equal("INITRD-BYTES"))
+		entries, err := os.ReadDir(filepath.Join(dataDir, "boot", "iso-bc-sw1"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(entries).To(HaveLen(2))
+	})
+
+	It("switches a BootConfig from iso to netboot mode", func() {
+		defer readyNetbootPair("sw2-kernel", "sw2-initrd")()
+		defer readyISOArtifact("iso-sw2", contents, nil)()
+		defer makeISOConfig("iso-bc-sw2", "iso-sw2", "casper/vmlinuz", "casper/initrd")()
+		_, err := doReconcile("iso-bc-sw2")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-sw2").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		switchMode("iso-bc-sw2", &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "sw2-kernel", InitrdRef: "sw2-initrd"}, nil)
+		_, err = doReconcile("iso-bc-sw2")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-sw2")).To(Equal(isobootgithubiov1alpha1.BootConfigStatus{Phase: isobootgithubiov1alpha1.BootConfigPhaseReady}))
+		for _, p := range []string{"kernel/vmlinuz", "initrd/initrd.img"} {
+			got, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-sw2", p))
+			Expect(err).NotTo(HaveOccurred(), p)
+			Expect(string(got)).To(Equal("NETBOOT"), p)
+		}
+		entries, err := os.ReadDir(filepath.Join(dataDir, "boot", "iso-bc-sw2"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(entries).To(HaveLen(2))
+		Expect(nfsEntries()).To(BeEmpty())
+	})
+
+	It("extracts for a BootConfig with the longest allowed name", func() {
+		name := strings.Repeat("a", 200)
+		defer readyISOArtifact("iso-long", contents, nil)()
+		defer makeISOConfig(name, "iso-long", "casper/vmlinuz", "casper/initrd")()
+		_, err := doReconcile(name)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus(name)).To(Equal(isobootgithubiov1alpha1.BootConfigStatus{Phase: isobootgithubiov1alpha1.BootConfigPhaseReady}))
+	})
+
+	It("rejects a BootConfig name longer than 200 characters", func() {
+		bc := &isobootgithubiov1alpha1.BootConfig{
+			Name: strings.Repeat("a", 201), Namespace: "default",
+			Spec: isobootgithubiov1alpha1.BootConfigSpec{
+				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{ArtifactRef: "x", KernelPath: "k", InitrdPath: "i"},
+			},
+		}
+		err := k8sClient.Create(ctx, bc)
+		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "%v", err)
+		Expect(err.Error()).To(ContainSubstring("200 characters"))
+	})
+
+	It("leaves alone BootConfigs outside its namespace", func() {
+		// Trees and boot directories are named after the BootConfig only, so
+		// a same-named BootConfig in another namespace must not touch them.
+		for _, ns := range []string{"zz-a", "zz-b"} {
+			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, &corev1.Namespace{Name: ns}))).To(Succeed())
+		}
+		reconciler.Namespace = "zz-a"
+		createIn := func(ns, kernel string, spec isobootgithubiov1alpha1.BootConfigSpec) *isobootgithubiov1alpha1.BootConfig {
+			if spec.ISO != nil {
+				a := &isobootgithubiov1alpha1.BootArtifact{
+					Name: "ns-iso", Namespace: ns,
+					Spec: isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/" + ns + ".iso", SHA256: new(validSHA256)},
+				}
+				Expect(k8sClient.Create(ctx, a)).To(Succeed())
+				DeferCleanup(func() { _ = k8sClient.Delete(ctx, a) })
+				a.Status.Phase = isobootgithubiov1alpha1.BootArtifactPhaseReady
+				Expect(k8sClient.Status().Update(ctx, a)).To(Succeed())
+				isoPath := filepath.Join(dataDir, "artifacts", "ns-iso", ns+".iso")
+				Expect(os.MkdirAll(filepath.Dir(isoPath), 0o755)).To(Succeed())
+				Expect(writeTestISO(isoPath, map[string]string{"casper/vmlinuz": kernel, "casper/initrd": "I"}, nil)).To(Succeed())
+			}
+			bc := &isobootgithubiov1alpha1.BootConfig{Name: "ub", Namespace: ns, Spec: spec}
+			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, bc) })
+			return bc
+		}
+		reconcileIn := func(ns string) {
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{Name: "ub", Namespace: ns})
+			Expect(err).NotTo(HaveOccurred())
+		}
+		isoSpec := isobootgithubiov1alpha1.BootConfigSpec{ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
+			ArtifactRef: "ns-iso", KernelPath: "casper/vmlinuz", InitrdPath: "casper/initrd",
+		}}
+		kernelPath := filepath.Join(dataDir, "boot", "ub", "vmlinuz")
+		expectZzATree := func() {
+			kernel, err := os.ReadFile(kernelPath)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			ExpectWithOffset(1, string(kernel)).To(Equal("KA"))
+			_, err = os.Stat(filepath.Join(nfsDir, "ub", "casper", "vmlinuz"))
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		}
+
+		createIn("zz-a", "KA", isoSpec)
+		reconcileIn("zz-a")
+		expectZzATree()
+
+		// A broken netboot BootConfig of the same name.
+		netboot := createIn("zz-b", "", isobootgithubiov1alpha1.BootConfigSpec{
+			Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "nope", InitrdRef: "nope"},
+		})
+		reconcileIn("zz-b")
+		expectZzATree()
+		Expect(k8sClient.Delete(ctx, netboot)).To(Succeed())
+
+		// An ISO BootConfig of the same name on another ISO, then deleted.
+		other := createIn("zz-b", "KB", isoSpec)
+		reconcileIn("zz-b")
+		expectZzATree()
+		Expect(k8sClient.Delete(ctx, other)).To(Succeed())
+		reconcileIn("zz-b")
+		expectZzATree()
+	})
+
+	It("removes the files of BootConfigs deleted while it was not running", func() {
+		reconciler.Namespace = "default"
+		defer readyISOArtifact("iso-live", contents, nil)()
+		defer makeISOConfig("iso-bc-live", "iso-live", "casper/vmlinuz", "casper/initrd")()
+		_, err := doReconcile("iso-bc-live")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-live").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		// Left behind by a BootConfig "gone" that no longer exists.
+		Expect(os.MkdirAll(filepath.Join(nfsDir, "gone", "casper"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(nfsDir, ".extract_gone"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(nfsDir, ".old_gone"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(nfsDir, ".source_gone"), nil, 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(nfsDir, ".tmp_.source_gone"), nil, 0o644)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(dataDir, "boot", "gone"), 0o755)).To(Succeed())
+		// Not the controller's: kept. dnsmasq writes boot.ipxe, the script
+		// every machine chains first, beside the boot directories.
+		Expect(os.WriteFile(filepath.Join(nfsDir, ".unknown"), nil, 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dataDir, "boot", "boot.ipxe"), []byte("#!ipxe"), 0o644)).To(Succeed())
+
+		Expect(reconciler.removeOrphans(ctx)).To(Succeed())
+
+		Expect(nfsEntries()).To(ConsistOf("iso-bc-live", ".source_iso-bc-live", ".unknown"))
+		bootEntries, err := os.ReadDir(filepath.Join(dataDir, "boot"))
+		Expect(err).NotTo(HaveOccurred())
+		bootNames := make([]string, 0, len(bootEntries))
+		for _, e := range bootEntries {
+			bootNames = append(bootNames, e.Name())
+		}
+		Expect(bootNames).To(ConsistOf("iso-bc-live", "boot.ipxe"))
+		_, err = os.Stat(filepath.Join(nfsDir, "iso-bc-live", "casper", "vmlinuz"))
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("writes the same status message when the same failure repeats", func() {
+		if os.Geteuid() == 0 {
+			Skip("root ignores directory permissions")
+		}
+		defer readyISOArtifact("iso-ro", contents, nil)()
+		defer makeISOConfig("iso-bc-ro", "iso-ro", "casper/vmlinuz", "casper/initrd")()
+		// The kernel copy cannot be created in a read-only boot directory.
+		bootDir := filepath.Join(dataDir, "boot", "iso-bc-ro")
+		Expect(os.MkdirAll(bootDir, 0o755)).To(Succeed())
+		Expect(os.Chmod(bootDir, 0o555)).To(Succeed())
+
+		_, _ = doReconcile("iso-bc-ro")
+		var first isobootgithubiov1alpha1.BootConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "iso-bc-ro", Namespace: "default"}, &first)).To(Succeed())
+		Expect(first.Status.Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+
+		// A message that differs on every attempt (a random temporary
+		// name) would be a new status write, and a new reconcile, each time.
+		_, _ = doReconcile("iso-bc-ro")
+		var second isobootgithubiov1alpha1.BootConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "iso-bc-ro", Namespace: "default"}, &second)).To(Succeed())
+		Expect(second.Status.Message).To(Equal(first.Status.Message))
+		Expect(second.ResourceVersion).To(Equal(first.ResourceVersion))
+	})
+
 	It("cleans up stale temporary directories and the old ISO symlink", func() {
 		defer readyISOArtifact("iso-stale", contents, nil)()
 		defer makeISOConfig("iso-bc-stale", "iso-stale", "casper/vmlinuz", "casper/initrd")()
 
-		Expect(os.MkdirAll(filepath.Join(nfsDir, ".extract_iso-bc-stale_123", "x"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(nfsDir, ".extract_iso-bc-stale", "x"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(nfsDir, ".old_iso-bc-stale", "x"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(nfsDir, ".tmp_.source_iso-bc-stale"), nil, 0o600)).To(Succeed())
 		bootDir := filepath.Join(dataDir, "boot", "iso-bc-stale")
 		Expect(os.MkdirAll(bootDir, 0o755)).To(Succeed())
 		Expect(os.Symlink("../../artifacts/iso-stale/test.iso", filepath.Join(bootDir, "test.iso"))).To(Succeed())
@@ -422,13 +766,33 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(getStatus("iso-bc-trav").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
 	})
 
-	It("is Error when the kernel path escapes through a symlink", func() {
-		// Even if such a link were created, os.Root refuses to follow it out.
-		defer readyISOArtifact("iso-travlink", contents, map[string]string{"evil": "../../.."})()
-		defer makeISOConfig("iso-bc-travlink", "iso-travlink", "evil/etc/passwd", "casper/initrd")()
+	It("does not copy a file from outside the tree through a symlink in it", func() {
+		defer readyISOArtifact("iso-travlink", contents, nil)()
+		defer makeISOConfig("iso-bc-travlink", "iso-travlink", "casper/vmlinuz", "casper/initrd")()
 		_, err := doReconcile("iso-bc-travlink")
 		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-travlink").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		// Extraction never creates a link that leaves the tree, so plant one
+		// in the extracted tree directly. The marker still matches, so the
+		// tree is not extracted again, and only os.Root stands between the
+		// kernel path and the file outside.
+		Expect(os.WriteFile(filepath.Join(dataDir, "outside"), []byte("OUTSIDE"), 0o644)).To(Succeed())
+		Expect(os.Symlink("../..", filepath.Join(nfsDir, "iso-bc-travlink", "evil"))).To(Succeed())
+		_, err = os.Stat(filepath.Join(nfsDir, "iso-bc-travlink", "evil", "outside"))
+		Expect(err).NotTo(HaveOccurred(), "the planted link must reach the file")
+
+		var bc isobootgithubiov1alpha1.BootConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "iso-bc-travlink", Namespace: "default"}, &bc)).To(Succeed())
+		bc.Spec.ISO.KernelPath = "evil/outside"
+		Expect(k8sClient.Update(ctx, &bc)).To(Succeed())
+
+		_, err = doReconcile("iso-bc-travlink")
+		Expect(err).NotTo(HaveOccurred())
 		Expect(getStatus("iso-bc-travlink").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseError))
+		kernel, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-travlink", "vmlinuz"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(kernel)).To(Equal("KERNEL-BYTES"))
 	})
 })
 
@@ -478,13 +842,80 @@ var _ = Describe("ISO tree helpers", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(strings.Contains(err.Error(), "creating")).To(BeTrue())
 	})
+
+	// recordSyncs makes syncFile record the name of every file or directory
+	// it flushes, for the rest of the spec.
+	recordSyncs := func() *[]string {
+		synced := []string{}
+		previous := syncFile
+		DeferCleanup(func() { syncFile = previous })
+		syncFile = func(f *os.File) error {
+			synced = append(synced, filepath.Clean(f.Name()))
+			return previous(f)
+		}
+		return &synced
+	}
+
+	It("flushes every extracted file and directory to disk", func() {
+		synced := recordSyncs()
+		dir := GinkgoT().TempDir()
+		isoPath := filepath.Join(dir, "t.iso")
+		files := map[string]string{"dists/x/Release": "r"}
+		for i := range 40 {
+			files[fmt.Sprintf("pool/f%02d", i)] = strings.Repeat("x", 1<<10)
+		}
+		Expect(writeTestISO(isoPath, files, nil)).To(Succeed())
+		dest := filepath.Join(dir, "dest")
+		Expect(os.Mkdir(dest, 0o755)).To(Succeed())
+
+		Expect(extractISOTree(GinkgoLogr, isoPath, dest)).To(Succeed())
+
+		want := make([]string, 0, 4+len(files))
+		want = append(want, dest, filepath.Join(dest, "pool"), filepath.Join(dest, "dists"), filepath.Join(dest, "dists", "x"))
+		for p := range files {
+			want = append(want, filepath.Join(dest, p))
+		}
+		Expect(*synced).To(ContainElements(want))
+	})
+
+	It("flushes the renamed tree and the marker to disk", func() {
+		synced := recordSyncs()
+		dir := GinkgoT().TempDir()
+		isoPath := filepath.Join(dir, "t.iso")
+		Expect(writeTestISO(isoPath, map[string]string{"a": "x"}, nil)).To(Succeed())
+		nfs := filepath.Join(dir, "nfs")
+
+		Expect(ensureISOTree(GinkgoLogr, isoPath, "source", nfs, "t", []string{"a"})).To(Succeed())
+
+		// The marker vouches for the tree, so it is written only after the
+		// tree's renames are on disk, and is itself made durable.
+		Expect(len(*synced)).To(BeNumerically(">=", 3))
+		last := (*synced)[len(*synced)-3:]
+		Expect(last[0]).To(Equal(nfs), "nfs dir after the tree rename")
+		Expect(filepath.Dir(last[1])).To(Equal(nfs), "the marker's temporary file")
+		Expect(last[2]).To(Equal(nfs), "nfs dir after the marker rename")
+	})
 })
+
+// countingFile is a writeSyncer that counts its bytes and Sync calls.
+type countingFile struct {
+	written int
+	syncs   int
+}
+
+func (f *countingFile) Write(p []byte) (int, error) {
+	f.written += len(p)
+	return len(p), nil
+}
+
+func (f *countingFile) Sync() error {
+	f.syncs++
+	return nil
+}
 
 var _ = Describe("syncWriter", func() {
 	It("writes everything and syncs every syncEvery bytes", func() {
-		f, err := os.Create(filepath.Join(GinkgoT().TempDir(), "out"))
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = f.Close() }()
+		f := &countingFile{}
 		w := &syncWriter{f: f}
 		chunk := make([]byte, 1<<20)
 		total := 0
@@ -493,9 +924,20 @@ var _ = Describe("syncWriter", func() {
 			Expect(err).NotTo(HaveOccurred())
 			total += n
 		}
+		Expect(f.written).To(Equal(total))
+		Expect(f.syncs).To(Equal(1))
 		Expect(w.pending).To(Equal(int64(total - syncEvery)))
-		fi, err := f.Stat()
-		Expect(err).NotTo(HaveOccurred())
-		Expect(fi.Size()).To(Equal(int64(total)))
+	})
+})
+
+var _ = Describe("extraction backoff", func() {
+	It("never waits longer than extractionRetryMax", func() {
+		r := &BootConfigReconciler{now: func() time.Time { return time.Unix(1_000_000, 0) }}
+		key := types.NamespacedName{Namespace: "default", Name: "bc"}
+		var delay time.Duration
+		for range 20 {
+			delay = r.recordExtractionFailure(key, "same iso", "failed")
+		}
+		Expect(delay).To(Equal(extractionRetryMax))
 	})
 })

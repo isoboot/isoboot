@@ -30,6 +30,11 @@ var _ = Describe("BootDirectiveForMAC", func() {
 
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
+	setPhase := func(bc *isobootgithubiov1alpha1.BootConfig, phase isobootgithubiov1alpha1.BootConfigPhase) {
+		bc.Status.Phase = phase
+		ExpectWithOffset(1, k8sClient.Status().Update(ctx, bc)).To(Succeed())
+	}
+
 	createBootConfig := func(
 		name, kernelRef, initrdRef, kernelArgs string,
 	) *isobootgithubiov1alpha1.BootConfig {
@@ -44,6 +49,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+		setPhase(bc, isobootgithubiov1alpha1.BootConfigPhaseReady)
 		return bc
 	}
 
@@ -142,6 +148,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+		setPhase(bc, isobootgithubiov1alpha1.BootConfigPhaseReady)
 		p := createProvision("bd-p4", "bd-m4", "bd-bc3",
 			isobootgithubiov1alpha1.ProvisionPhasePending)
 		defer func() {
@@ -164,6 +171,51 @@ var _ = Describe("BootDirectiveForMAC", func() {
 		Expect(result.ProvisionName).To(Equal("bd-p4"))
 	})
 
+	DescribeTable("boots nothing while the BootConfig is not Ready",
+		func(suffix string, phase isobootgithubiov1alpha1.BootConfigPhase) {
+			mac := "bb-00-00-00-01-" + suffix
+			m := createMachine("bd-nr-m"+suffix, mac)
+			bc := &isobootgithubiov1alpha1.BootConfig{
+				Name: "bd-nr-bc" + suffix, Namespace: ns,
+				Spec: isobootgithubiov1alpha1.BootConfigSpec{
+					ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
+						ArtifactRef: "does-not-exist", KernelPath: "casper/vmlinuz", InitrdPath: "casper/initrd",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+			if phase != "" {
+				setPhase(bc, phase)
+			}
+			p := createProvision("bd-nr-p"+suffix, "bd-nr-m"+suffix, bc.Name,
+				isobootgithubiov1alpha1.ProvisionPhasePending)
+			defer func() {
+				Expect(k8sClient.Delete(ctx, p)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, bc)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, m)).To(Succeed())
+			}()
+
+			Eventually(func() error {
+				_, err := BootDirectiveForMAC(ctx, indexedClient, ns, mac)
+				return err
+			}).Should(MatchError(ErrBootConfigNotReady))
+
+			// Ready again: the machine boots the installer.
+			setPhase(bc, isobootgithubiov1alpha1.BootConfigPhaseReady)
+			var directive *BootDirective
+			Eventually(func() error {
+				var err error
+				directive, err = BootDirectiveForMAC(ctx, indexedClient, ns, mac)
+				return err
+			}).Should(Succeed())
+			Expect(directive).NotTo(BeNil())
+			Expect(directive.NFSExport).To(Equal("/" + bc.Name))
+		},
+		Entry("Pending", "01", isobootgithubiov1alpha1.BootConfigPhasePending),
+		Entry("Error", "02", isobootgithubiov1alpha1.BootConfigPhaseError),
+		Entry("not reconciled yet", "03", isobootgithubiov1alpha1.BootConfigPhase("")),
+	)
+
 	It("returns error when boot config not found", func() {
 		m := createMachine("bd-m2", "bb-00-00-00-00-03")
 		p := createProvision("bd-p2", "bd-m2", "nonexistent-bc",
@@ -178,96 +230,6 @@ var _ = Describe("BootDirectiveForMAC", func() {
 				ctx, indexedClient, ns, "bb-00-00-00-00-03")
 			return err
 		}).Should(MatchError(ContainSubstring("getting boot config")))
-	})
-})
-
-var _ = Describe("RenderKernelArgs", func() {
-	data := KernelArgsData{
-		ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
-	}
-
-	It("passes through plain string unchanged", func() {
-		result, err := RenderKernelArgs("console=ttyS0 ip=dhcp", data)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal("console=ttyS0 ip=dhcp"))
-	})
-
-	It("renders ProvisionAutomationBaseURL", func() {
-		result, err := RenderKernelArgs(
-			"ip=dhcp inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg", data)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal(
-			"ip=dhcp inst.ks=http://10.0.0.1:8080/dynamic/automation/my-provision/ks.cfg"))
-	})
-
-	It("renders ProxyURL", func() {
-		result, err := RenderKernelArgs(
-			"ip=dhcp inst.proxy={{.ProxyURL}} inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg",
-			KernelArgsData{
-				ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
-				ProxyURL:                   "http://10.0.0.1:3128",
-			})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal(
-			"ip=dhcp inst.proxy=http://10.0.0.1:3128 inst.ks=http://10.0.0.1:8080/dynamic/automation/my-provision/ks.cfg"))
-	})
-
-	It("omits ProxyURL block when empty", func() {
-		result, err := RenderKernelArgs(
-			"ip=dhcp {{if .ProxyURL}}inst.proxy={{.ProxyURL}} {{end}}inst.repo=https://example.com",
-			KernelArgsData{
-				ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
-			})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal("ip=dhcp inst.repo=https://example.com"))
-	})
-
-	It("returns empty string for empty input", func() {
-		result, err := RenderKernelArgs("", data)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(BeEmpty())
-	})
-
-	It("returns error for invalid template syntax", func() {
-		_, err := RenderKernelArgs("{{.Foo", data)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("parsing kernel args template"))
-	})
-
-	It("returns error for unknown variable", func() {
-		_, err := RenderKernelArgs("{{.UnknownVar}}", data)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("executing kernel args template"))
-	})
-
-	It("renders UpdatePhaseURL and ProvisionName", func() {
-		result, err := RenderKernelArgs(
-			"ip=dhcp inst.ks={{.ProvisionAutomationBaseURL}}/ks.cfg inst.status={{.UpdatePhaseURL}} inst.provname={{.ProvisionName}}",
-			KernelArgsData{
-				ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
-				UpdatePhaseURL:             "http://10.0.0.1:8080/dynamic/status",
-				ProvisionName:              "my-provision",
-			})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(ContainSubstring("inst.status=http://10.0.0.1:8080/dynamic/status"))
-		Expect(result).To(ContainSubstring("inst.provname=my-provision"))
-	})
-
-	It("renders NFSRoot for ISO-mode autoinstall", func() {
-		result, err := RenderKernelArgs(
-			"ip=dhcp netboot=nfs nfsroot={{.NFSRoot}} fsck.mode=skip autoinstall ds=nocloud;s={{.ProvisionAutomationBaseURL}}/ ---",
-			KernelArgsData{
-				ProvisionAutomationBaseURL: "http://10.0.0.1:8080/dynamic/automation/my-provision",
-				NFSRoot:                    "10.0.0.1:/ubuntu-26.04",
-			})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal(
-			"ip=dhcp netboot=nfs nfsroot=10.0.0.1:/ubuntu-26.04 fsck.mode=skip autoinstall ds=nocloud;s=http://10.0.0.1:8080/dynamic/automation/my-provision/ ---"))
-	})
-
-	It("no longer knows ISOURL", func() {
-		_, err := RenderKernelArgs("url={{.ISOURL}}", data)
-		Expect(err).To(HaveOccurred())
 	})
 })
 

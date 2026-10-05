@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -34,7 +35,8 @@ const ProvisionPhaseField = "status.phase"
 const ProvisionMachineRefField = "spec.machineRef"
 
 // MachineSpecMACField is the field path used to index Machine
-// resources by spec.mac.
+// resources by spec.mac, in lower case: the CRD accepts either case, and
+// iPXE sends lower case.
 const MachineSpecMACField = "spec.mac"
 
 // +kubebuilder:rbac:groups=isoboot.github.io,resources=provisions,verbs=get;list;watch
@@ -76,6 +78,6 @@ func SetupIndexers(ctx context.Context, mgr manager.Manager) error {
 			if m.Spec.MAC == "" {
 				return nil
 			}
-			return []string{m.Spec.MAC}
+			return []string{strings.ToLower(m.Spec.MAC)}
 		})
 }
