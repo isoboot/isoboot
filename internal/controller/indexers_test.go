@@ -21,7 +21,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,10 +62,8 @@ var _ = Describe("Provision status.phase indexer", func() {
 		name string, phase isobootgithubiov1alpha1.ProvisionPhase,
 	) *isobootgithubiov1alpha1.Provision {
 		p := &isobootgithubiov1alpha1.Provision{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: "default",
-			},
+			Name:      name,
+			Namespace: "default",
 			Spec: isobootgithubiov1alpha1.ProvisionSpec{
 				MachineRef:             "machine-1",
 				BootConfigRef:          "bootconfig-1",
@@ -170,10 +167,8 @@ var _ = Describe("Provision spec.machineRef indexer", func() {
 		name, machineRef string,
 	) *isobootgithubiov1alpha1.Provision {
 		p := &isobootgithubiov1alpha1.Provision{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: "default",
-			},
+			Name:      name,
+			Namespace: "default",
 			Spec: isobootgithubiov1alpha1.ProvisionSpec{
 				MachineRef:             machineRef,
 				BootConfigRef:          "bootconfig-1",
@@ -267,10 +262,8 @@ var _ = Describe("Machine spec.mac indexer", func() {
 
 	machine := func(name, mac string) *isobootgithubiov1alpha1.Machine {
 		m := &isobootgithubiov1alpha1.Machine{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: "default",
-			},
+			Name:      name,
+			Namespace: "default",
 			Spec: isobootgithubiov1alpha1.MachineSpec{
 				MAC: mac,
 			},

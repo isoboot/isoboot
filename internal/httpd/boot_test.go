@@ -21,7 +21,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
@@ -35,7 +34,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 		name, kernelRef, initrdRef, kernelArgs string,
 	) *isobootgithubiov1alpha1.BootConfig {
 		bc := &isobootgithubiov1alpha1.BootConfig{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Name: name, Namespace: ns,
 			Spec: isobootgithubiov1alpha1.BootConfigSpec{
 				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{
 					KernelRef: kernelRef,
@@ -52,7 +51,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 		name, artifactURL string,
 	) *isobootgithubiov1alpha1.BootArtifact {
 		a := &isobootgithubiov1alpha1.BootArtifact{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Name: name, Namespace: ns,
 			Spec: isobootgithubiov1alpha1.BootArtifactSpec{
 				URL:    artifactURL,
 				SHA256: &sha256,
@@ -132,7 +131,7 @@ var _ = Describe("BootDirectiveForMAC", func() {
 	It("returns ISO-mode directive with kernel args", func() {
 		m := createMachine("bd-m4", "bb-00-00-00-00-05")
 		bc := &isobootgithubiov1alpha1.BootConfig{
-			ObjectMeta: metav1.ObjectMeta{Name: "bd-bc3", Namespace: ns},
+			Name: "bd-bc3", Namespace: ns,
 			Spec: isobootgithubiov1alpha1.BootConfigSpec{
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{
 					ArtifactRef: "bd-iso-1",

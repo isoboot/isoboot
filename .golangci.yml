@@ -45,6 +45,11 @@ linters:
           - dupl
           - lll
         path: internal/*
+      # Repeated fixture strings keep tests readable. golangci-lint before
+      # v2.13 did not run goconst on tests; keep that.
+      - linters:
+          - goconst
+        path: _test\.go
     paths:
       - third_party$
       - builtin$

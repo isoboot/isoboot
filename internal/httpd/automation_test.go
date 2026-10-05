@@ -20,7 +20,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
@@ -32,7 +31,7 @@ var _ = Describe("RenderAutomationFile", func() {
 		name string, files map[string]string,
 	) *isobootgithubiov1alpha1.ProvisionAutomation {
 		pa := &isobootgithubiov1alpha1.ProvisionAutomation{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Name: name, Namespace: ns,
 			Spec: isobootgithubiov1alpha1.ProvisionAutomationSpec{
 				Files: files,
 			},
@@ -46,7 +45,7 @@ var _ = Describe("RenderAutomationFile", func() {
 		configMaps, secrets []string,
 	) *isobootgithubiov1alpha1.Provision {
 		p := &isobootgithubiov1alpha1.Provision{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Name: name, Namespace: ns,
 			Spec: isobootgithubiov1alpha1.ProvisionSpec{
 				MachineRef:             machineRef,
 				BootConfigRef:          bootConfigRef,
@@ -61,8 +60,8 @@ var _ = Describe("RenderAutomationFile", func() {
 
 	createConfigMap := func(name string, data map[string]string) *corev1.ConfigMap {
 		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Data:       data,
+			Name: name, Namespace: ns,
+			Data: data,
 		}
 		ExpectWithOffset(1, k8sClient.Create(ctx, cm)).To(Succeed())
 		return cm
@@ -70,8 +69,8 @@ var _ = Describe("RenderAutomationFile", func() {
 
 	createSecret := func(name string, data map[string][]byte) *corev1.Secret {
 		s := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Data:       data,
+			Name: name, Namespace: ns,
+			Data: data,
 		}
 		ExpectWithOffset(1, k8sClient.Create(ctx, s)).To(Succeed())
 		return s

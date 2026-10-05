@@ -26,8 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
@@ -37,8 +35,8 @@ var _ = Describe("BootConfig Controller", func() {
 
 		newConfig := func(name string, spec isobootgithubiov1alpha1.BootConfigSpec) *isobootgithubiov1alpha1.BootConfig {
 			return &isobootgithubiov1alpha1.BootConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-				Spec:       spec,
+				Name: name, Namespace: "default",
+				Spec: spec,
 			}
 		}
 
@@ -124,7 +122,7 @@ var _ = Describe("BootConfig Controller", func() {
 
 		doReconcile := func(name string) (reconcile.Result, error) {
 			return reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: name, Namespace: "default"},
+				Name: name, Namespace: "default",
 			})
 		}
 
@@ -136,8 +134,8 @@ var _ = Describe("BootConfig Controller", func() {
 
 		createArtifact := func(name string, phase isobootgithubiov1alpha1.BootArtifactPhase, url string) {
 			a := &isobootgithubiov1alpha1.BootArtifact{
-				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: url, SHA256: new(validSHA256)},
+				Name: name, Namespace: "default",
+				Spec: isobootgithubiov1alpha1.BootArtifactSpec{URL: url, SHA256: new(validSHA256)},
 			}
 			ExpectWithOffset(1, k8sClient.Create(ctx, a)).To(Succeed())
 			a.Status.Phase = phase
@@ -160,7 +158,7 @@ var _ = Describe("BootConfig Controller", func() {
 
 		createBootConfig := func(name, kernelRef, initrdRef string) {
 			bc := &isobootgithubiov1alpha1.BootConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+				Name: name, Namespace: "default",
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
 					Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: kernelRef, InitrdRef: initrdRef},
 				},
@@ -365,7 +363,7 @@ var _ = Describe("BootConfig Controller", func() {
 
 			// Create BootConfig with firmware
 			bc := &isobootgithubiov1alpha1.BootConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},
+				Name: bcName, Namespace: "default",
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
 					Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: kernelName, InitrdRef: initrdName, FirmwareRef: firmwareName},
 				},
@@ -407,7 +405,7 @@ var _ = Describe("BootConfig Controller", func() {
 			defer cleanup()
 
 			bc := &isobootgithubiov1alpha1.BootConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},
+				Name: bcName, Namespace: "default",
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
 					Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: kernelName, InitrdRef: initrdName, FirmwareRef: firmwareName},
 				},
@@ -452,7 +450,7 @@ var _ = Describe("BootConfig Controller", func() {
 			defer deleteArtifact(firmwareName)
 
 			bc := &isobootgithubiov1alpha1.BootConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: bcName, Namespace: "default"},
+				Name: bcName, Namespace: "default",
 				Spec: isobootgithubiov1alpha1.BootConfigSpec{
 					Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: kernelName, InitrdRef: initrdName, FirmwareRef: firmwareName},
 				},

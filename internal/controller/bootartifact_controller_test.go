@@ -32,8 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 )
 
@@ -67,8 +65,8 @@ var _ = Describe("BootArtifact Controller", func() {
 
 		newArtifact := func(name string, spec isobootgithubiov1alpha1.BootArtifactSpec) *isobootgithubiov1alpha1.BootArtifact {
 			return &isobootgithubiov1alpha1.BootArtifact{
-				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-				Spec:       spec,
+				Name: name, Namespace: "default",
+				Spec: spec,
 			}
 		}
 
@@ -119,7 +117,7 @@ var _ = Describe("BootArtifact Controller", func() {
 
 		doReconcile := func(name string) (reconcile.Result, error) {
 			return reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: name, Namespace: "default"},
+				Name: name, Namespace: "default",
 			})
 		}
 
@@ -131,8 +129,8 @@ var _ = Describe("BootArtifact Controller", func() {
 
 		createArtifact := func(name, url, sha string) {
 			resource := &isobootgithubiov1alpha1.BootArtifact{
-				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: url, SHA256: new(sha)},
+				Name: name, Namespace: "default",
+				Spec: isobootgithubiov1alpha1.BootArtifactSpec{URL: url, SHA256: new(sha)},
 			}
 			ExpectWithOffset(1, k8sClient.Create(ctx, resource)).To(Succeed())
 		}
@@ -181,8 +179,8 @@ var _ = Describe("BootArtifact Controller", func() {
 
 			name := "dl-sha512"
 			resource := &isobootgithubiov1alpha1.BootArtifact{
-				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-				Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: serverURL + "/vmlinuz", SHA512: new(sha512Hex(content))},
+				Name: name, Namespace: "default",
+				Spec: isobootgithubiov1alpha1.BootArtifactSpec{URL: serverURL + "/vmlinuz", SHA512: new(sha512Hex(content))},
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			defer deleteArtifact(name)

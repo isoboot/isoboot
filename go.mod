@@ -1,10 +1,11 @@
 module github.com/isoboot/isoboot
 
-go 1.26
+go 1.27
 
 require (
 	github.com/diskfs/go-diskfs v1.9.4
 	github.com/go-git/go-billy/v5 v5.9.2
+	github.com/go-logr/logr v1.4.3
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/willscott/go-nfs v0.0.5-0.20260920152406-c092ae79c64e
@@ -32,7 +33,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect

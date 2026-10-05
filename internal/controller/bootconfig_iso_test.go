@@ -30,7 +30,6 @@ import (
 	"github.com/diskfs/go-diskfs/filesystem/iso9660"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -99,7 +98,7 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 
 	doReconcile := func(name string) (reconcile.Result, error) {
 		return reconciler.Reconcile(ctx, reconcile.Request{
-			NamespacedName: types.NamespacedName{Name: name, Namespace: "default"},
+			Name: name, Namespace: "default",
 		})
 	}
 	getStatus := func(name string) isobootgithubiov1alpha1.BootConfigStatus {
@@ -110,8 +109,8 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 
 	makeISOArtifact := func(name string, phase isobootgithubiov1alpha1.BootArtifactPhase) func() {
 		a := &isobootgithubiov1alpha1.BootArtifact{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-			Spec:       isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/test.iso", SHA256: new(validSHA256)},
+			Name: name, Namespace: "default",
+			Spec: isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/test.iso", SHA256: new(validSHA256)},
 		}
 		ExpectWithOffset(1, k8sClient.Create(ctx, a)).To(Succeed())
 		a.Status.Phase = phase
@@ -138,7 +137,7 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 
 	makeISOConfig := func(name, artifactRef, kernelPath, initrdPath string) func() {
 		bc := &isobootgithubiov1alpha1.BootConfig{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			Name: name, Namespace: "default",
 			Spec: isobootgithubiov1alpha1.BootConfigSpec{
 				ISO: &isobootgithubiov1alpha1.BootConfigISOSpec{ArtifactRef: artifactRef, KernelPath: kernelPath, InitrdPath: initrdPath},
 			},
