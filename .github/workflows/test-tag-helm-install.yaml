@@ -1,17 +1,21 @@
 name: Tag Release & E2E Test
 
+# build pushes the images under the version tag only; test installs them
+# with the chart from this commit and PXE-boots a VM; only then does publish
+# push the chart and, for a final release, move the latest tags. A failed
+# test leaves version-tagged images but no chart and no latest.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release (e.g. 0.0.1-rc1)"
+        description: "Version to release (e.g. 0.0.1-rc1); runs from main only"
         required: true
 
+# Read-only by default; build and publish may push packages.
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: tag-release-${{ github.ref }}
@@ -26,13 +30,21 @@ env:
   INITRD_SHA256: "ba5d8f6e40467b0c25590b0abeca6008b36093b696d649bfa53c7e8edc3fc37d"
 
 jobs:
-  release-and-test:
-    name: Release & E2E DHCP + k3s + Rocky 10.2
-    # isc-dhcp-client may be removed from future ubuntu-latest — accepted risk.
+  build:
+    name: Build & push images (version tag)
+    # A release comes from a v* tag, or by hand from main.
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
 
     - name: Read Alpine version
       run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
@@ -43,75 +55,75 @@ jobs:
         INPUT_VERSION: ${{ inputs.version }}
       run: |
         if [ -n "$INPUT_VERSION" ]; then
-          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          version=$INPUT_VERSION
         else
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          version=${GITHUB_REF_NAME#v}
         fi
+        [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "FAIL: '$version' is not a version"; exit 1; }
+        echo "version=$version" >> "$GITHUB_OUTPUT"
 
-    # ── Build & push to GHCR ────────────────────────────────────────
     - name: Log in to GHCR
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
+      uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Build and push multi-arch isoboot image (manager, httpd, nfsd)
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
       with:
         context: .
         platforms: linux/amd64,linux/arm64
         push: true
-        tags: |
-          ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
-          ${{ !contains(steps.version.outputs.version, '-') && format('{0}:latest', env.IMAGE) || '' }}
+        tags: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
     - name: Build and push dnsmasq image
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
       with:
         context: .
         file: Dockerfile.dnsmasq
         platforms: linux/amd64,linux/arm64
         push: true
         build-args: ALPINE_VERSION=${{ env.ALPINE_VERSION }}
-        tags: |
-          ${{ env.IMAGE }}-dnsmasq:${{ steps.version.outputs.version }}
-          ${{ !contains(steps.version.outputs.version, '-') && format('{0}-dnsmasq:latest', env.IMAGE) || '' }}
+        tags: ${{ env.IMAGE }}-dnsmasq:${{ steps.version.outputs.version }}
         cache-from: type=gha,scope=dnsmasq
         cache-to: type=gha,mode=max,scope=dnsmasq
 
     - name: Build and push squid image
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
       with:
         context: .
         file: Dockerfile.squid
         platforms: linux/amd64,linux/arm64
         push: true
         build-args: ALPINE_VERSION=${{ env.ALPINE_VERSION }}
-        tags: |
-          ${{ env.IMAGE }}-squid:${{ steps.version.outputs.version }}
-          ${{ !contains(steps.version.outputs.version, '-') && format('{0}-squid:latest', env.IMAGE) || '' }}
+        tags: ${{ env.IMAGE }}-squid:${{ steps.version.outputs.version }}
         cache-from: type=gha,scope=squid
         cache-to: type=gha,mode=max,scope=squid
 
-    - uses: azure/setup-helm@v4
+  test:
+    name: E2E DHCP + k3s + Rocky 10.2
+    needs: build
+    # isc-dhcp-client may be removed from future ubuntu-latest — accepted risk.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
 
-    - name: Package and push Helm chart
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        sed -i "s/^version:.*/version: ${VERSION}/" charts/isoboot/Chart.yaml
-        sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/isoboot/Chart.yaml
-        helm package charts/isoboot --destination /tmp/charts
-        helm push /tmp/charts/isoboot-${VERSION}.tgz oci://${REGISTRY}/isoboot/charts
+    - name: Read Alpine version
+      run: echo "ALPINE_VERSION=$(cat .alpine-version)" >> "$GITHUB_ENV"
 
     # ── PXE network: ns1=DHCP server, host=k3s node, ns3=wget client ──
     - name: Install network tools
@@ -178,9 +190,12 @@ jobs:
         sudo mkdir -p /data/isoboot
         sudo chown 65532:65532 /data/isoboot
 
+    # The k3s the provision E2E pins (K3S_VERSION in test/e2e/provision/lib.sh).
     - name: Install k3s
       run: |
-        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" INSTALL_K3S_CHANNEL="stable" sh -
+        K3S_VERSION=$(sed -n 's/^K3S_VERSION="\(.*\)"$/\1/p' test/e2e/provision/lib.sh)
+        [ -n "$K3S_VERSION" ] || { echo "FAIL: no K3S_VERSION in test/e2e/provision/lib.sh"; exit 1; }
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" INSTALL_K3S_VERSION="$K3S_VERSION" sh -
         sudo chmod 644 /etc/rancher/k3s/k3s.yaml
         echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$GITHUB_ENV"
         export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
@@ -213,18 +228,35 @@ jobs:
         sudo ip netns exec ns1 ping -c 3 "$PXE_IP"
         echo "PXE network OK: ns1(.1) <-> host($PXE_IP)"
 
-    # ── Deploy isoboot from GHCR ─────────────────────────────────────
+    # ── Deploy isoboot: the images pushed by build, the chart as publish will push it ──
     - name: Get k3s node name
       id: node
       run: echo "name=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')" >> "$GITHUB_OUTPUT"
 
-    - name: Helm install from GHCR
+    # nfsd needs TCP 111 (port mapper) and 2049 on the host; stop the
+    # runner's own rpcbind if it has one.
+    - name: Free TCP 111 and 2049 for nfsd
+      run: |
+        nfs_ports_busy() { sudo ss -Htlnp '( sport = :111 or sport = :2049 )' | grep .; }
+        if nfs_ports_busy >/dev/null; then
+          sudo systemctl disable --now rpcbind.socket rpcbind.service 2>/dev/null || true
+        fi
+        if nfs_ports_busy; then
+          echo "FAIL: something listens on TCP 111 or 2049 (above); nfsd needs both"
+          exit 1
+        fi
+
+    - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+      with:
+        version: v3.22.0
+
+    - name: Helm install
       env:
-        VERSION: ${{ steps.version.outputs.version }}
+        VERSION: ${{ needs.build.outputs.version }}
         NODE_NAME: ${{ steps.node.outputs.name }}
       run: |
-        helm install isoboot oci://${REGISTRY}/isoboot/charts/isoboot \
-          --version "${VERSION}" \
+        helm package charts/isoboot --version "${VERSION}" --app-version "${VERSION}" --destination /tmp/charts
+        helm install isoboot "/tmp/charts/isoboot-${VERSION}.tgz" \
           --namespace isoboot-system \
           --create-namespace \
           --set nodeName="${NODE_NAME}" \
@@ -253,10 +285,12 @@ jobs:
     - name: Wait for iPXE BootArtifact Ready
       run: ./test/e2e/wait-for-resource.sh -n isoboot-system bootartifact isoboot-ipxe
 
-    - name: Wait for dnsmasq pod ready
+    - name: Wait for dnsmasq, nfsd and squid pods ready
       run: |
-        kubectl -n isoboot-system wait --for=condition=Ready \
-          pod -l app.kubernetes.io/component=dnsmasq --timeout=180s
+        for component in dnsmasq nfsd squid; do
+          kubectl -n isoboot-system wait --for=condition=Ready \
+            pod -l app.kubernetes.io/component=$component --timeout=180s
+        done
         kubectl -n isoboot-system get pods
 
     # ── Rocky Linux 10.2 boot artifacts ──────────────────────────────
@@ -543,3 +577,45 @@ jobs:
         docker rm -f dhcp-srv wget-client 2>/dev/null || true
         sudo rm -f /var/run/netns/ns1 /var/run/netns/ns3
         sudo ip link del br-pxe 2>/dev/null || true
+
+  publish:
+    name: Publish chart and latest tags
+    needs: [build, test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        persist-credentials: false
+
+    - name: Log in to GHCR
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+      with:
+        version: v3.22.0
+
+    - name: Package and push Helm chart
+      env:
+        VERSION: ${{ needs.build.outputs.version }}
+      run: |
+        helm package charts/isoboot --version "${VERSION}" --app-version "${VERSION}" --destination /tmp/charts
+        helm push "/tmp/charts/isoboot-${VERSION}.tgz" "oci://${REGISTRY}/isoboot/charts"
+
+    # Point latest at the tested images (same digests, no rebuild); not for
+    # pre-releases (versions with a '-').
+    - name: Tag latest
+      if: ${{ !contains(needs.build.outputs.version, '-') }}
+      env:
+        VERSION: ${{ needs.build.outputs.version }}
+      run: |
+        for image in "${IMAGE}" "${IMAGE}-dnsmasq" "${IMAGE}-squid"; do
+          docker buildx imagetools create --tag "${image}:latest" "${image}:${VERSION}"
+        done
