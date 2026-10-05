@@ -449,6 +449,86 @@ var _ = Describe("BootConfig Controller ISO mode", func() {
 		Expect(delays).To(Equal([]time.Duration{10 * time.Second, 20 * time.Second, 40 * time.Second}))
 	})
 
+	// readyNetbootPair creates Ready kernel and initrd artifacts with their
+	// files on disk.
+	readyNetbootPair := func(kernel, initrd string) func() {
+		for name, file := range map[string]string{kernel: "vmlinuz", initrd: "initrd.img"} {
+			a := &isobootgithubiov1alpha1.BootArtifact{
+				Name: name, Namespace: "default",
+				Spec: isobootgithubiov1alpha1.BootArtifactSpec{URL: "https://example.com/" + file, SHA256: new(validSHA256)},
+			}
+			ExpectWithOffset(1, k8sClient.Create(ctx, a)).To(Succeed())
+			a.Status.Phase = isobootgithubiov1alpha1.BootArtifactPhaseReady
+			ExpectWithOffset(1, k8sClient.Status().Update(ctx, a)).To(Succeed())
+			dir := filepath.Join(dataDir, "artifacts", name)
+			ExpectWithOffset(1, os.MkdirAll(dir, 0o755)).To(Succeed())
+			ExpectWithOffset(1, os.WriteFile(filepath.Join(dir, file), []byte("NETBOOT"), 0o644)).To(Succeed())
+		}
+		return func() {
+			for _, name := range []string{kernel, initrd} {
+				_ = k8sClient.Delete(ctx, &isobootgithubiov1alpha1.BootArtifact{Name: name, Namespace: "default"})
+			}
+		}
+	}
+	switchMode := func(name string, netboot *isobootgithubiov1alpha1.BootConfigNetbootSpec, iso *isobootgithubiov1alpha1.BootConfigISOSpec) {
+		var bc isobootgithubiov1alpha1.BootConfig
+		ExpectWithOffset(1, k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, &bc)).To(Succeed())
+		bc.Spec.Netboot, bc.Spec.ISO = netboot, iso
+		ExpectWithOffset(1, k8sClient.Update(ctx, &bc)).To(Succeed())
+	}
+
+	It("switches a BootConfig from netboot to iso mode", func() {
+		defer readyNetbootPair("sw1-kernel", "sw1-initrd")()
+		defer readyISOArtifact("iso-sw1", contents, nil)()
+		bc := &isobootgithubiov1alpha1.BootConfig{
+			Name: "iso-bc-sw1", Namespace: "default",
+			Spec: isobootgithubiov1alpha1.BootConfigSpec{
+				Netboot: &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "sw1-kernel", InitrdRef: "sw1-initrd"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, bc)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, bc) }()
+		_, err := doReconcile("iso-bc-sw1")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-sw1").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		switchMode("iso-bc-sw1", nil, &isobootgithubiov1alpha1.BootConfigISOSpec{
+			ArtifactRef: "iso-sw1", KernelPath: "casper/vmlinuz", InitrdPath: "casper/initrd",
+		})
+		_, err = doReconcile("iso-bc-sw1")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-sw1")).To(Equal(isobootgithubiov1alpha1.BootConfigStatus{Phase: isobootgithubiov1alpha1.BootConfigPhaseReady}))
+		initrd, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-sw1", "initrd"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(initrd)).To(Equal("INITRD-BYTES"))
+		entries, err := os.ReadDir(filepath.Join(dataDir, "boot", "iso-bc-sw1"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(entries).To(HaveLen(2))
+	})
+
+	It("switches a BootConfig from iso to netboot mode", func() {
+		defer readyNetbootPair("sw2-kernel", "sw2-initrd")()
+		defer readyISOArtifact("iso-sw2", contents, nil)()
+		defer makeISOConfig("iso-bc-sw2", "iso-sw2", "casper/vmlinuz", "casper/initrd")()
+		_, err := doReconcile("iso-bc-sw2")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-sw2").Phase).To(Equal(isobootgithubiov1alpha1.BootConfigPhaseReady))
+
+		switchMode("iso-bc-sw2", &isobootgithubiov1alpha1.BootConfigNetbootSpec{KernelRef: "sw2-kernel", InitrdRef: "sw2-initrd"}, nil)
+		_, err = doReconcile("iso-bc-sw2")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(getStatus("iso-bc-sw2")).To(Equal(isobootgithubiov1alpha1.BootConfigStatus{Phase: isobootgithubiov1alpha1.BootConfigPhaseReady}))
+		for _, p := range []string{"kernel/vmlinuz", "initrd/initrd.img"} {
+			got, err := os.ReadFile(filepath.Join(dataDir, "boot", "iso-bc-sw2", p))
+			Expect(err).NotTo(HaveOccurred(), p)
+			Expect(string(got)).To(Equal("NETBOOT"), p)
+		}
+		entries, err := os.ReadDir(filepath.Join(dataDir, "boot", "iso-bc-sw2"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(entries).To(HaveLen(2))
+		Expect(nfsEntries()).To(BeEmpty())
+	})
+
 	It("writes the same status message when the same failure repeats", func() {
 		if os.Geteuid() == 0 {
 			Skip("root ignores directory permissions")

@@ -220,6 +220,15 @@ func (r *BootConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	kernelDir := filepath.Join(bootDir, "kernel")
 	initrdDir := filepath.Join(bootDir, "initrd")
 
+	// Only the kernel and initrd directories belong here. This also removes
+	// the vmlinuz and initrd files of a BootConfig switched from iso mode.
+	if entries, err := os.ReadDir(bootDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() || (e.Name() != "kernel" && e.Name() != "initrd") {
+				_ = os.RemoveAll(filepath.Join(bootDir, e.Name()))
+			}
+		}
+	}
 	if err := os.MkdirAll(kernelDir, 0o755); err != nil {
 		return r.setError(ctx, &bc, fmt.Sprintf("creating kernel dir: %v", err))
 	}
@@ -309,11 +318,12 @@ func (r *BootConfigReconciler) reconcileISO(ctx context.Context, bc *isobootgith
 	if err := os.MkdirAll(bootDir, 0o755); err != nil {
 		return r.setError(ctx, bc, fmt.Sprintf("creating boot dir: %v", err))
 	}
-	// Only vmlinuz and initrd belong here; this also removes the ISO symlink
-	// that older versions served over HTTP.
+	// Only the vmlinuz and initrd files belong here. This also removes the
+	// ISO symlink that older versions served over HTTP, and the kernel and
+	// initrd directories of a BootConfig switched from netboot mode.
 	if entries, err := os.ReadDir(bootDir); err == nil {
 		for _, e := range entries {
-			if e.Name() != "vmlinuz" && e.Name() != "initrd" {
+			if !e.Type().IsRegular() || (e.Name() != "vmlinuz" && e.Name() != "initrd") {
 				_ = os.RemoveAll(filepath.Join(bootDir, e.Name()))
 			}
 		}
