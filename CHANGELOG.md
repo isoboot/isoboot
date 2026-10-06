@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fix: a failing BootArtifact download waits for its backoff (10 s, doubling
+  up to 320 s) before the next attempt. The controller's own status updates
+  started the next attempt at once, so a 404 was retried several times a
+  second and a wrong hash downloaded the whole file again and again.
 - Documentation in `docs/`: install, provision a machine, Ubuntu, Rocky and
   AlmaLinux, Debian, troubleshooting and the E2E tests, plus a reference for
   every custom resource and template (`docs/README.md`). `make test` creates

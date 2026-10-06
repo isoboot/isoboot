@@ -174,15 +174,13 @@ Phase is also empty until the controller first sees the BootArtifact.
   most 30 minutes, including the body: on a slow link a multi-GB ISO can fail
   with `writing file: ... (Client.Timeout ...)` for this reason, and every
   retry starts again from the first byte.
-- **Retry.** After a failure the controller asks to try again after a wait
-  that doubles: 10 s, 20 s, 40 s, 80 s, 160 s, then 320 s at most. In
-  practice that wait has no effect: the controller's own status updates
-  (`Downloading`, then `Error`) queue the BootArtifact again at once. Against
-  a URL that answers 404, the controller retries two or three times a second,
-  `failureCount` climbs by that much, and the phase flips between
-  `Downloading` and `Error`. Fix the cause (URL, hash, network) soon, or
-  delete the BootArtifact, so the controller does not keep hitting the
-  server. The next attempt picks up the fix.
+- **Retry.** After a failure the controller tries again after a wait that
+  doubles: 10 s, 20 s, 40 s, 80 s, 160 s, then 320 s at most. The wait
+  follows `failureCount`, which is kept in the status, so a controller
+  restart tries once straight away and then waits as long as before. The
+  controller's own status updates (`Downloading`, `Error`) do not start an
+  attempt. A spec change, such as a corrected URL or hash, is tried at once;
+  a fix on the server or the network is picked up by the next attempt.
 - **Already on disk.** When the file is already there (after a controller
   restart, or when you re-create a deleted BootArtifact), the controller hashes
   it. If it matches, the BootArtifact is `Ready` without a download. If it does
@@ -685,7 +683,7 @@ every answer are in [Templates: the status callback](templates.md#the-status-cal
 | Two Machines share a MAC, or a Machine has two Pending Provisions | 409. It boots its local disk. |
 | The Debian firmware archive is missing for a NIC that needs it | The installer cannot fetch its preseed. The Provision stays `Pending`. Use a `firmwareRef` BootConfig such as `debian-13-firmware`. |
 | The Provision names a ConfigMap or Secret that does not exist | The machine still boots the installer, but every install file answers 404, so the installer stops at its first fetch. Create the object; the next fetch uses it. |
-| A BootArtifact's URL is wrong or answers an error, or its hash is wrong | `Error`. The controller retries at once after each failure, not after the backoff (see [BootArtifact lifecycle](#bootartifact-lifecycle)): against a 404, two or three times a second; with a wrong hash, it downloads the whole file again each time. `failureCount` climbs. Fix the spec or delete the BootArtifact. |
+| A BootArtifact's URL is wrong or answers an error, or its hash is wrong | `Error`. The controller tries again after 10 s, then twice as long each time, up to 320 s (see [BootArtifact lifecycle](#bootartifact-lifecycle)); with a wrong hash, each attempt downloads the whole file again. `failureCount` climbs. Fixing the spec retries at once. |
 | You change a BootArtifact's hash | Its file is deleted and downloaded again. BootConfigs using it are `Pending` until it is `Ready`. An ISO is then unpacked again, which breaks installs running from the old tree. |
 | You delete a BootArtifact | Its file stays on disk. BootConfigs using it go to `Error`. |
 | You delete a BootConfig | Its boot directory and NFS tree are removed at once. |
