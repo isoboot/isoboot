@@ -35,6 +35,10 @@ Rocky 10.2, Debian 13 (with and without NIC firmware) and Ubuntu 26.04.1 and
 5. Package downloads during the install can go through the squid cache
    (`{{.ProxyURL}}`).
 
+What an Ubuntu answer file (autoinstall `user-data`) must contain, screen by
+screen with 4K screenshots of every boot, is in
+[docs/ubuntu-autoinstall-journey.md](docs/ubuntu-autoinstall-journey.md).
+
 ## Components
 
 All run on one node (`nodeName`) and keep their data under `dataDir` on that
@@ -218,6 +222,14 @@ squid cache and the RTL8168 QEMU build stay in the VM, so later rows and
 `--reuse` runs do not fetch them again; a reused VM is never deleted. Waits
 for downloads follow their progress, so a slow link only makes a row slower.
 Logs go to `e2e-logs/<time>/<row>/`. See the script's header for all options.
+
+The guest has a 3840x2160 screen. The row saves it as PNG in its logs
+(`screen-final.png`, and `screen-<what>.png` when a wait fails), and a VNC
+server on `127.0.0.1:5900` inside the VM (`E2E_VNC_DISPLAY`, default `:0`)
+shows it live: from your workstation run
+`ssh -J you@host -L 5900:127.0.0.1:5900 ubuntu@<vm-ip>` (`multipass info
+isoboot-e2e-local` shows the address; the VM's `ubuntu` user needs your
+public key), then point a VNC viewer at `localhost:5900`.
 
 `test/e2e/provision/selftest.sh` tests the harness itself (the host guard, the
 checks and the local runner) against stub commands; it needs bash, jq and

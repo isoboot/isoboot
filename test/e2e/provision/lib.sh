@@ -232,11 +232,13 @@ qemu_stop() {
   sudo rm -f "$WORK/qemu.pid" "$WORK/qemu-monitor.sock"
 }
 
+# screendump <name>: save the VM's screen as $LOG_DIR/screen-<name>.png
+# (3840x2160, see qemu_start).
 screendump() {
   qemu_running || return 0
-  qemu_monitor "screendump $LOG_DIR/screen-$1.ppm"
+  qemu_monitor "screendump $LOG_DIR/screen-$1.png -f png"
   sleep 1
-  sudo chmod 644 "$LOG_DIR/screen-$1.ppm" 2>/dev/null || true
+  sudo chmod 644 "$LOG_DIR/screen-$1.png" 2>/dev/null || true
 }
 
 ovmf_code() {
@@ -257,8 +259,14 @@ ovmf_vars() {
 
 # qemu_start <serial-log> <boot-from: pxe|disk>: start the row's VM in the background.
 # The PXE (install) boot uses -no-reboot, so QEMU exits when the installer reboots.
+# The VM has a 4K screen (a standard VGA card whose EDID offers 3840x2160 as
+# its preferred mode; 64 MiB of video memory hold one 4K frame) and no window:
+# screendump saves it, and a VNC server on 127.0.0.1 shows it live, display
+# E2E_VNC_DISPLAY (default :0, TCP port 5900 + display number; reach it
+# through an SSH tunnel).
 qemu_start() {
   local serial=$1 boot=$2 qemu nic_dev disk_dev extra=()
+  local vnc_display=${E2E_VNC_DISPLAY:-:0}
   case $(row nic) in
     rtl8168)
       qemu=/usr/local/bin/qemu-system-x86_64
@@ -288,12 +296,13 @@ qemu_start() {
     -netdev "tap,id=pxe0,ifname=$TAP,script=no,downscript=no" \
     -device "$nic_dev" \
     "${extra[@]}" \
-    -display none \
+    -vga none -device VGA,xres=3840,yres=2160,edid=on,vgamem_mb=64 \
+    -display none -vnc "127.0.0.1$vnc_display" \
     -serial "file:$serial" \
     -monitor "unix:$WORK/qemu-monitor.sock,server,nowait" \
     -daemonize -pidfile "$WORK/qemu.pid"
   sudo chmod 644 "$serial"
-  log "QEMU started ($(row nic) NIC, $(row ram_mb) MB, boot from $boot, serial $serial)"
+  log "QEMU started ($(row nic) NIC, $(row ram_mb) MB, boot from $boot, serial $serial, VNC 127.0.0.1$vnc_display)"
 }
 
 # sshd_auth_methods <user@host> [ssh options...]: the login methods sshd
