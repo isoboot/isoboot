@@ -34,8 +34,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	isobootgithubiov1alpha1 "github.com/isoboot/isoboot/api/v1alpha1"
 	"github.com/isoboot/isoboot/internal/urlutil"
@@ -247,7 +249,7 @@ func (r *BootArtifactReconciler) setFailure(ctx context.Context, artifact *isobo
 		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
 	}
 
-	// Exponential backoff: 10s, 20s, 40s, ... capped at ~5-6 minutes
+	// Exponential backoff: 10s, 20s, 40s, ... capped at 320s
 	backoff := time.Duration(1<<min(artifact.Status.FailureCount, 6)) * 5 * time.Second
 	return ctrl.Result{RequeueAfter: backoff}, nil
 }
@@ -302,7 +304,10 @@ func (r *BootArtifactReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.HTTPClient = &http.Client{Timeout: 30 * time.Minute}
 	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&isobootgithubiov1alpha1.BootArtifact{}).
+		// Only spec changes (and creates and deletes): the controller's own
+		// status writes (Downloading, Error) must not start the next attempt
+		// at once, or a failing download skips setFailure's backoff.
+		For(&isobootgithubiov1alpha1.BootArtifact{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named("bootartifact").
 		Complete(r)
 }

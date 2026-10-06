@@ -66,7 +66,7 @@ kubectl -n isoboot-system get bootconfig ubuntu-26.04 -o jsonpath='{.status.mess
 |---|---|
 | BootArtifact `Downloading` | The download is running. The controller downloads one file at a time. |
 | BootArtifact `Error`, `hash mismatch: expected ... got ...` | The file is not the one the hash names. Fix `url` or the hash. |
-| BootArtifact `Error`, `download failed: ...` | The controller retries at once, again and again, until you fix the cause ([BootArtifact lifecycle](../reference/custom-resources.md#bootartifact-lifecycle)). A download must finish within 30 minutes, so a multi-GB ISO needs a fast enough link. |
+| BootArtifact `Error`, `download failed: ...` | The controller tries again after 10 s, then twice as long each time, up to 320 s, until the cause is fixed ([BootArtifact lifecycle](../reference/custom-resources.md#bootartifact-lifecycle)); a corrected URL or hash is tried at once. A download must finish within 30 minutes, so a multi-GB ISO needs a fast enough link. |
 | BootConfig `Pending`, `waiting for iso artifact "ubuntu-26.04-iso" to be Ready` | Normal while the ISO downloads. |
 | BootConfig `Error`, `extracting iso tree: ...` | Unpacking failed (for example, a full disk). Retried after 10 s, doubling up to 30 minutes. |
 | BootConfig `Error`, `iso mode needs the controller's --nfs-dir` | The chart was installed with `nfsd.enabled=false`. Ubuntu needs nfsd. |

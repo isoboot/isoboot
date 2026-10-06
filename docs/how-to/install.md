@@ -198,7 +198,7 @@ Optional:
 | `squid.blockedDestinationCIDRs` | `10.42.0.0/16`, `10.43.0.0/16` | Destinations squid refuses, so PXE clients cannot reach in-cluster services through it. The defaults are k3s's pod and service networks; on another distribution, set your cluster's. |
 | `squid.cacheSizeMB` | `8000` | Disk cache size, under `<dataDir>/squid/cache`. |
 | `squid.maxObjectSize` | `"1024 MB"` | Largest file squid caches. |
-| `squid.cacheMemMB` | `0` | Squid's memory cache (`cache_mem`), in MB. |
+| `squid.cacheMemMB` | `0` | Squid's memory cache (`cache_mem`), in MB. `0` turns it off, and cached objects are served from the disk cache. Squid's own default is 256 MB; raise `squid.resources` with it. |
 | `squid.log.access` | `false` | `true` writes squid's access log to `<dataDir>/squid/logs/access.log`. |
 | `nfsd.enabled` | `true` | `false` removes nfsd. Ubuntu BootConfigs (ISO mode) then go to `Error`; Debian, AlmaLinux and Rocky do not use nfsd. With it off, TCP 111 and 2049 stay free. |
 | `nfsd.port` | `2049` | The NFS and MOUNT port. The port mapper always listens on TCP 111: the installer's NFS client asks only there. |
