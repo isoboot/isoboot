@@ -35,6 +35,10 @@ Rocky 10.2, Debian 13 (with and without NIC firmware) and Ubuntu 26.04.1 and
 5. Package downloads during the install can go through the squid cache
    (`{{.ProxyURL}}`).
 
+What an Ubuntu answer file (autoinstall `user-data`) must contain, screen by
+screen with 4K screenshots of every boot, is in
+[docs/ubuntu-autoinstall-journey.md](docs/ubuntu-autoinstall-journey.md).
+
 ## Components
 
 All run on one node (`nodeName`) and keep their data under `dataDir` on that
