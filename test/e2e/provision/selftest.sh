@@ -408,7 +408,7 @@ rows_case() {
   "$here/check-rows.sh" "$dir/rows.json" "$dir/examples"
 }
 ubuntu='(.[] | select(.id == "ubuntu-26.04"))'
-expect pass "rows: the real rows.json passes" "6 rows .* are consistent" "$here/check-rows.sh"
+expect pass "rows: the real rows.json passes" "$(jq length "$here/rows.json") rows .* are consistent" "$here/check-rows.sh"
 expect fail "rows: an NFS row without \"nfs\" fails" 'ubuntu-26.04: a row with iso_artifact boots over NFS and needs "nfs": true' \
   rows_case "$ubuntu |= del(.nfs)"
 expect fail "rows: \"nfs\": \"yes\" fails" '"nfs" must be true or false' \

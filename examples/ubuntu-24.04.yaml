@@ -1,0 +1,26 @@
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootArtifact
+metadata:
+  name: ubuntu-24.04-iso
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  url: https://releases.ubuntu.com/24.04/ubuntu-24.04.5-live-server-amd64.iso
+  sha256: "97f3d7ffb032c3eb3b23d2c8be9cc76e60c2c1f2c0146ba5ba9fe01cafae0fd8"
+---
+# Ubuntu 24.04 LTS, installed over NFS exactly like ubuntu-26.04.yaml (see the
+# notes there). This uses the ISO's default (GA) kernel. For hardware that
+# needs a newer kernel, use the HWE pair from the same ISO instead:
+# kernelPath: casper/hwe-vmlinuz and initrdPath: casper/hwe-initrd.
+apiVersion: isoboot.github.io/v1alpha1
+kind: BootConfig
+metadata:
+  name: ubuntu-24.04
+  labels:
+    app.kubernetes.io/name: isoboot
+spec:
+  iso:
+    artifactRef: ubuntu-24.04-iso
+    kernelPath: casper/vmlinuz
+    initrdPath: casper/initrd
+  kernelArgs: "console=ttyS0,115200 ip=dhcp netboot=nfs nfsroot={{.NFSRoot}} fsck.mode=skip autoinstall ds=nocloud;s={{.ProvisionAutomationBaseURL}}/ ---"

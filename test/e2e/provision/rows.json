@@ -74,6 +74,24 @@
     "verify_rtl_firmware": true
   },
   {
+    "id": "ubuntu-24.04",
+    "name": "Ubuntu 24.04.5 (NFS)",
+    "manifests": ["ubuntu-24.04"],
+    "bootconfig": "ubuntu-24.04",
+    "iso_artifact": "ubuntu-24.04-iso",
+    "kernel_path": "vmlinuz",
+    "initrd_path": "initrd",
+    "automation": {"user-data": "user-data", "meta-data": "meta-data"},
+    "hostname": "ubuntu2404",
+    "os_id": "ubuntu",
+    "version_id": "24.04",
+    "mac": "02-00-00-ab-cd-0a",
+    "nic": "virtio",
+    "ram_mb": 2048,
+    "expect": "complete",
+    "nfs": true
+  },
+  {
     "id": "ubuntu-26.04",
     "name": "Ubuntu 26.04.1 (NFS)",
     "manifests": ["ubuntu-26.04"],

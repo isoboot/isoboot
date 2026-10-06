@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Ubuntu 24.04.5 LTS (installed over NFS, 2 GiB) to the examples and the
+  provision E2E matrix.
 - **BREAKING**: Restructure `BootConfig` spec into two mutually-exclusive
   sections, `netboot` and `iso`, and hoist kernel args to a shared top-level
   `kernelArgs`. Migration: `spec.kernel.ref` → `spec.netboot.kernelRef`,
