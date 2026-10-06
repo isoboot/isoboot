@@ -704,8 +704,8 @@ updates. The table shows the boots that ran through.)
 
 The same minimal file installed Ubuntu 24.04.5 LTS too (BootConfig
 `ubuntu-24.04` with the 24.04.5 ISO, the same kernel arguments, from
-`examples/ubuntu-24.04.yaml` on branch `add-ubuntu-24.04`, not on `main`
-yet; 6 minutes 3 seconds to the reboot). On both, logged in
+[`examples/ubuntu-24.04.yaml`](../examples/ubuntu-24.04.yaml); 6 minutes
+3 seconds to the reboot). On both, logged in
 as `ubuntu` on the console and over SSH:
 
 | | Ubuntu 24.04.5 LTS | Ubuntu 26.04.1 LTS |
