@@ -12,6 +12,7 @@
 ## Project Guide
 
 - `AGENTS.md` has the layout, the generated files and the conventions; `README.md` explains the system.
+- User docs live in `docs/` (index: `docs/README.md`). `make test` creates every isoboot object, ConfigMap and Secret in their `yaml` blocks against the CRDs and checks their relative links (`test/docs/`); mark a deliberately partial block with `<!-- docs-test: skip (why) -->`.
 
 ## E2E Tests
 

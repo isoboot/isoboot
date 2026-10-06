@@ -22,6 +22,8 @@ and E2E rules, which apply to every agent.
 | `test/e2e/provision/` | Provision E2E: real installs in QEMU/KVM; rows in `rows.json` |
 | `test/qemu/` | QEMU build with the emulated RTL8168 NIC for the Debian firmware rows |
 | `hack/e2e-local.sh` | Runs the provision E2E in a throwaway multipass VM |
+| `docs/` | User documentation: how-to guides and reference (index: `docs/README.md`) |
+| `test/docs/` | Keeps `docs/` honest: its YAML objects are created against the CRDs, its links must resolve (`make test`) |
 
 ## Generated files: never edit by hand
 

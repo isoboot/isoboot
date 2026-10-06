@@ -9,8 +9,12 @@ installer its kernel, initrd and install files, and tracks each install from
 disk.
 
 Tested end to end on every pull request labelled `e2e`: AlmaLinux 10.2,
-Rocky 10.2, Debian 13 (with and without NIC firmware) and Ubuntu 24.04.5,
-26.04.1 and 26.10 (installed over NFS with 2 GiB of RAM).
+Rocky 10.2, Debian 13 with NIC firmware (and a check that it does not
+install without it) and Ubuntu 24.04.5, 26.04.1 and 26.10 (installed over
+NFS with 2 GiB of RAM).
+
+The documentation is in [docs/](docs/README.md): how to install isoboot
+and provision a machine, and a reference for every resource and template.
 
 ## How a machine is installed
 
@@ -62,32 +66,18 @@ images (`isoboot-dnsmasq`, `isoboot-squid`).
 All are namespaced, in the group `isoboot.github.io/v1alpha1`, and must be
 created in the namespace the chart is installed in.
 
-- **BootArtifact**: one file to download (`url`) with its `sha256` or
-  `sha512`. Phases `Downloading`, `Ready`, `Error`. Stored at
-  `<dataDir>/nginx/static/artifacts/<name>/<file>`.
-- **BootConfig**: what a machine boots, with `kernelArgs` (a Go template;
-  an invalid template sets the BootConfig to `Error`).
-  - `spec.netboot`: `kernelRef`, `initrdRef` and optional `firmwareRef`
-    (BootArtifact names). The boot directory is
-    `<dataDir>/nginx/static/boot/<name>/kernel/<file>` and `initrd/<file>`;
-    with firmware, the initrd is the initrd and the firmware archive
-    concatenated (how Debian's installer finds non-free firmware).
-  - `spec.iso`: `artifactRef` (an ISO BootArtifact), `kernelPath` and
-    `initrdPath` inside the ISO. The tree is unpacked to
-    `<dataDir>/nfs/<name>/` and exported as `/<name>`; `vmlinuz` and `initrd`
-    are copied to `<dataDir>/nginx/static/boot/<name>/`.
-- **Machine**: a `mac`, hyphen-separated (for example `02-00-00-ab-cd-01`;
-  compared without regard to case).
-- **ProvisionAutomation**: `files`, a map of file name to template.
-- **Provision**: one install: `machineRef`, `bootConfigRef`,
-  `provisionAutomationRef`, and optional `configMaps` and `secrets` whose keys
-  the templates read (`{{ index .ConfigMaps "key" }}`). Phases `Pending`,
-  `InProgress`, `Complete` (and `Failed`, `ConfigError`, `WaitingForBootSource`).
+| Kind | What it is |
+|---|---|
+| BootArtifact | One file to download (`url`) with its `sha256` or `sha512`: a kernel, an initrd, a firmware archive or an ISO. |
+| BootConfig | What a machine boots: `spec.netboot` (kernel, initrd, optional firmware) or `spec.iso` (an ISO, unpacked and exported over NFS), and `kernelArgs`, a Go template. |
+| Machine | A machine, by the `mac` it PXE-boots with (hyphen-separated). |
+| ProvisionAutomation | `files`: the install files (kickstart, preseed, autoinstall), as Go templates. |
+| Provision | One install: a Machine, a BootConfig, a ProvisionAutomation, and the ConfigMaps and Secrets the templates read. Phase `Pending`, then `InProgress`, then `Complete`. |
 
-Template variables: kernel arguments get `{{.ProvisionAutomationBaseURL}}`,
-`{{.ProvisionName}}`, `{{.UpdatePhaseURL}}`, `{{.ProxyURL}}` and, in ISO mode,
-`{{.NFSRoot}}`; install files get `{{.ProvisionName}}`, `{{.UpdatePhaseURL}}`,
-`{{.ProxyURL}}`, `.ConfigMaps` and `.Secrets`.
+Every field, phase and message is in
+[docs/reference/custom-resources.md](docs/reference/custom-resources.md), and
+the template variables and functions in
+[docs/reference/templates.md](docs/reference/templates.md).
 
 `examples/` has a tested BootConfig with its BootArtifacts for each
 supported release, and `test/e2e/provision/automation/` has tested install
@@ -95,19 +85,9 @@ files (kickstart, preseed, autoinstall user-data).
 
 ## Installing
 
-On the node that will serve PXE:
-
-- The node must be on the machines' network (the PXE subnet), with a DHCP
-  server there that is not isoboot.
-- Nothing else may listen on UDP 67, 69 and 4011, or TCP 111, 2049, 3128
-  and 8080. Stop and disable `rpcbind` and any kernel NFS server, for example
-  `sudo systemctl disable --now rpcbind.socket rpcbind.service nfs-server`.
-- Create the data directory, owned by UID 65532:
-  `sudo mkdir -p /data/isoboot && sudo chown 65532:65532 /data/isoboot`.
-  Leave room for the downloads and, for each ISO-mode BootConfig, a full copy
-  of the unpacked ISO.
-
-Then install the chart. `nodeName` and `dnsmasq.subnet` are required:
+On one node on the machines' network, with a DHCP server there that is not
+isoboot, free ports (UDP 67, 69, 4011; TCP 111, 2049, 3128, 8080) and a data
+directory owned by UID 65532:
 
 ```bash
 helm install isoboot oci://ghcr.io/isoboot/charts/isoboot --version <version> \
@@ -115,21 +95,20 @@ helm install isoboot oci://ghcr.io/isoboot/charts/isoboot --version <version> \
   --set nodeName=<node> --set dnsmasq.subnet=192.168.1.0/24
 ```
 
-The CRDs are in the chart's `crds/` directory: Helm installs them first and
-never upgrades or deletes them. On upgrade, apply `charts/isoboot/crds/` with
-kubectl first. See `charts/isoboot/values.yaml` for every value.
-
-Then apply an example and create the Machine, ProvisionAutomation and
-Provision in the same namespace. `test/e2e/provision/apply-row.sh` does
-exactly that for the E2E and is a working reference.
+[Install isoboot](docs/how-to/install.md) has the requirements, the values,
+health checks, upgrades and uninstalling;
+[Provision a machine](docs/how-to/provision-a-machine.md) installs a first
+machine.
 
 ## Security defaults
 
 - The controller manager and httpd see only the release namespace
   (`--namespace`), with a Role and RoleBinding there instead of cluster-wide
   rights.
-- nginx (`/static/`, `/dynamic/`) and squid accept requests only from the PXE
-  subnet (`dnsmasq.subnet`) and localhost.
+- nginx (`/static/`, `/dynamic/`) accepts requests only from the PXE subnet
+  (`dnsmasq.subnet`), localhost and the node's own addresses (installers'
+  requests relayed by squid come from the node). squid accepts requests only
+  from the PXE subnet and localhost.
 - nfsd accepts NFS, MOUNT and port-mapper connections only from
   `nfsd.allowedCIDRs` (default: the PXE subnet). Everything it exports is
   read-only. It allows 8 NFS connections per client address (512 in all) and
@@ -166,7 +145,7 @@ exactly that for the E2E and is a working reference.
 ## Development
 
 ```bash
-make test      # unit tests (envtest)
+make test      # unit tests (envtest), and the objects and links in docs/
 make lint      # golangci-lint
 make manifests # regenerate CRDs and RBAC from the Go types; also copies the
                # CRDs to charts/isoboot/crds/
@@ -190,50 +169,11 @@ make manifests # regenerate CRDs and RBAC from the Go types; also copies the
 
 `test/e2e/provision/` installs a real OS end to end on one host: k3s, the
 chart, a site DHCP server on a bridge, and a UEFI QEMU/KVM guest that
-PXE-boots, installs, reboots from its disk and is checked over SSH (key
-login only, hostname, injected host keys, OS version, machine-id). The rows
-are listed once, in `test/e2e/provision/rows.json`; `check-rows.sh` validates
-that file and what it refers to. The negative Debian row boots a Realtek
-RTL8168 NIC without its firmware and must stay `Pending` without ever fetching
-its preseed. The Ubuntu rows also check the guest's kernel command line and
-nfsd's mount log. Every row fails if an isoboot pod restarted.
-
-`run.sh <row>` runs every phase (`host-setup`, `k3s`, `network`, `images`,
-`helm-install`, `apply-row`, `boot-install`, `verify`, `collect-logs`);
-`run.sh <row> <phase>` runs one, which is what CI does per step. The scripts
-change the host for real (they uninstall k3s, delete `/data/isoboot`, add a
-bridge and iptables rules), so they refuse to run unless `GITHUB_ACTIONS=true`,
-the host has the marker `/etc/isoboot-e2e-vm`, or `E2E_ALLOW_THIS_HOST=1` is
-set, and they always use k3s's own kubeconfig.
-
-To run them locally, on an x86-64 Linux host with KVM, nested
-virtualisation and multipass:
-
-```bash
-hack/e2e-local.sh                           # every row, in a new VM, deleted afterwards
-hack/e2e-local.sh --row ubuntu-26.04 --keep # keep the VM and the row's state for debugging
-hack/e2e-local.sh --reuse --row debian-13-firmware
-```
-
-It creates the multipass VM `isoboot-e2e-local` (4 CPUs, 12G, 60G) and marks
-it as disposable, copies the checkout in (uncommitted changes included),
-builds the images inside it and runs the rows one at a time. Downloads, the
-squid cache and the RTL8168 QEMU build stay in the VM, so later rows and
-`--reuse` runs do not fetch them again; a reused VM is never deleted. Waits
-for downloads follow their progress, so a slow link only makes a row slower.
-Logs go to `e2e-logs/<time>/<row>/`. See the script's header for all options.
-
-The guest has a 3840x2160 screen. The row saves it as PNG in its logs
-(`screen-final.png`, and `screen-<what>.png` when a wait fails), and a VNC
-server on `127.0.0.1:5900` inside the VM (`E2E_VNC_DISPLAY`, default `:0`)
-shows it live: from your workstation run
-`ssh -J you@host -L 5900:127.0.0.1:5900 ubuntu@<vm-ip>` (`multipass info
-isoboot-e2e-local` shows the address; the VM's `ubuntu` user needs your
-public key), then point a VNC viewer at `localhost:5900`.
-
-`test/e2e/provision/selftest.sh` tests the harness itself (the host guard, the
-checks and the local runner) against stub commands; it needs bash, jq and
-docker but no KVM.
+PXE-boots, installs, reboots from its disk and is checked over SSH. The rows
+are listed once, in `test/e2e/provision/rows.json`. The scripts change the
+host for real, so they refuse to run outside CI or a throwaway VM; run them
+locally with `hack/e2e-local.sh`. How to run them, watch the guest and read
+the logs is in [Run the E2E tests](docs/how-to/run-the-e2e-tests.md).
 
 ## License
 
