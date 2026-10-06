@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Documentation in `docs/`: install, provision a machine, Ubuntu, Rocky and
+  AlmaLinux, Debian, troubleshooting and the E2E tests, plus a reference for
+  every custom resource and template (`docs/README.md`). `make test` creates
+  every object in the docs' YAML against the CRDs and checks their links
+  (`test/docs/`). The README now links there instead of repeating it.
 - Add Ubuntu 24.04.5 LTS (installed over NFS, 2 GiB) to the examples and the
   provision E2E matrix.
 - **BREAKING**: Restructure `BootConfig` spec into two mutually-exclusive
@@ -20,17 +25,16 @@
   ISO mode only)
 - Add the `{{.ProxyURL}}` variable to install-file (automation) templates
 - Add the `nfsd` component: a read-only NFSv3 server with a TCP port mapper,
-  image `ghcr.io/isoboot/isoboot-nfsd`, Helm values `nfsd.*` (enabled by
-  default; needs TCP 111 and 2049 free on the node)
-- Add Ubuntu 26.04.1 and 26.10 (beta) live-server autoinstall examples over NFS;
-  drop the Ubuntu 24.04 example
+  Helm values `nfsd.*` (enabled by default; needs TCP 111 and 2049 free on
+  the node)
+- Add Ubuntu 26.04.1 and 26.10 (beta) live-server autoinstall examples over NFS
 - Drop the AlmaLinux 9.8 and Rocky 9.8 examples (examples mirror the E2E matrix)
 - Pin the Debian 13 netboot installer to the dated 13.7 build
   (`20250803+deb13u7`) instead of `current`; firmware bundle 13.7.0
 - Provision E2E: steps moved into `test/e2e/provision/` scripts shared with the
   new local runner `hack/e2e-local.sh`; rows in `rows.json`; matrix is
   AlmaLinux 10.2, Rocky 10.2, Debian 13.7 (with and without firmware), Ubuntu
-  26.04.1 and 26.10 over NFS at 2 GiB; the guest reboots by itself after the
+  24.04.5, 26.04.1 and 26.10 over NFS at 2 GiB; the guest reboots by itself after the
   install instead of being powered off; the RTL8168 QEMU is built only for the
   Debian rows
 - **BREAKING**: The chart's CRDs move from `templates/crds.yaml` to `crds/`,

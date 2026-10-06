@@ -37,11 +37,14 @@ type ProvisionSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	ProvisionAutomationRef string `json:"provisionAutomationRef"`
 
-	// configMaps is an optional list of ConfigMap names to mount during provisioning.
+	// configMaps is an optional list of ConfigMap names. httpd merges their data
+	// into .ConfigMaps for the install-file templates; a later ConfigMap wins
+	// for the same key. Nothing is mounted.
 	// +optional
 	ConfigMaps []string `json:"configMaps,omitempty"`
 
-	// secrets is an optional list of Secret names to mount during provisioning.
+	// secrets is an optional list of Secret names. httpd merges their decoded
+	// data into .Secrets for the install-file templates, in the same way.
 	// +optional
 	Secrets []string `json:"secrets,omitempty"`
 }
@@ -74,7 +77,7 @@ type ProvisionStatus struct {
 	// +optional
 	LastUpdated *metav1.Time `json:"lastUpdated,omitempty"`
 
-	// ip is the IP address assigned to the machine during provisioning.
+	// ip is reserved. Nothing sets it.
 	// +optional
 	IP string `json:"ip,omitempty"`
 }
