@@ -56,8 +56,11 @@ because of the answer file. Two boots without an answer file show it:
   [![Preseed locale: French language screen](ubuntu-autoinstall-journey/preseed1-locale-fr-thumb.png)](ubuntu-autoinstall-journey/preseed1-locale-fr.png) <sub>[text at 100%](ubuntu-autoinstall-journey/preseed1-locale-fr-crop.png)</sub>
 
 - **`keyboard-configuration/layoutcode=fr`** (a debconf `question=value`
-  pair), no answer file: casper sets the console keyboard (*Setting up
-  console keyboard... done*). The language screen is shown as before; after
+  pair), no answer file: casper's `19keyboard` reads it and writes
+  `XKBLAYOUT="fr"` to the live system's `/etc/default/keyboard`, and
+  `24preseed` sets the debconf question (read in both scripts' source; the
+  boot message *Setting up console keyboard... done* is printed on every
+  boot, with or without the argument). The language screen is shown as before; after
   <kbd>Enter</kbd> on *English* the keyboard screen still offers
   *English (US)*. subiquity suggests the layout that goes with the chosen
   language and falls back to the live system's `/etc/default/keyboard` only
@@ -160,6 +163,8 @@ autoinstall:
     - snaps
   locale: en_US.UTF-8
 ```
+
+What removes the language screen is that `locale` is not in the list; the `locale:` line only writes down the answer, which is also the default (steps 4 and 5 answer the network and proxy screens by taking them off the list alone, and the final file drops `locale`, `keyboard` and `source` for that reason).
 
 **Outcome:** The language screen is gone. The installer stops on **Keyboard configuration**: Layout *English (US)*, Variant *English (US)*. No installer-update screen came first: it is shown only when a newer installer is available.
 
@@ -321,7 +326,7 @@ autoinstall:
 
 Removed: `- storage`
 
-**Outcome:** Stops on **Profile configuration** (your name, server name, user name, password). No *Confirm destructive action* dialog: with `storage` answered, the installer does not ask.
+**Outcome:** Stops on **Profile configuration** (your name, server name, user name, password). No *Confirm destructive action* dialog here: on an interactive storage screen it follows that screen, but with `storage` answered in the file the installer asks it later, on its progress screen (step 12).
 
 [![Step 6: profile screen](ubuntu-autoinstall-journey/step06-profile-thumb.png)](ubuntu-autoinstall-journey/step06-profile.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step06-profile-crop.png)</sub>
 
@@ -671,12 +676,14 @@ updates. The table shows the boots that ran through.)
 | 11 | `ssh:` | The same: `install-server: true` then belongs to `identity`, which allows no such key. | <a href="ubuntu-autoinstall-journey/ablate-11.png"><img src="ubuntu-autoinstall-journey/ablate-11-thumb.png" width="240" alt="ablate-11"></a> <sub><a href="ubuntu-autoinstall-journey/ablate-11-crop.png">text at 100%</a></sub> |
 | 12 | `install-server: true` | The install **finishes** (8 minutes) but without an SSH server: an empty `ssh:` means the default, no server. `systemctl is-enabled ssh.socket`: `not-found`; port 22 refuses connections. | <a href="ubuntu-autoinstall-journey/ablate-12.png"><img src="ubuntu-autoinstall-journey/ablate-12-thumb.png" width="240" alt="ablate-12"></a> <sub><a href="ubuntu-autoinstall-journey/ablate-12-crop.png">text at 100%</a></sub> |
 | 4-6 | the whole `storage:` entry | The install **finishes** (11 minutes), but with the default layout, LVM: `vda3` `LVM2_member` with `ubuntu--vg-ubuntu--lv` as `/` (10 GiB of the 17.3 GiB volume group), plus a separate 1.8 GiB `/boot`. Needed for "whole disk, no LVM". | <a href="ubuntu-autoinstall-journey/ablate-storage.png"><img src="ubuntu-autoinstall-journey/ablate-storage-thumb.png" width="240" alt="ablate-storage"></a> <sub><a href="ubuntu-autoinstall-journey/ablate-storage-crop.png">text at 100%</a></sub> |
-| 11-12 | the whole `ssh:` entry | The install **finishes** (12 minutes), whole disk without LVM, user `ubuntu` logs in on the console, but there is no SSH server: `systemctl is-enabled ssh.socket` says `not-found` and port 22 refuses connections; `lsblk` shows the same layout as the minimal file (<a href="ubuntu-autoinstall-journey/ablate-ssh-lsblk.png"><img src="ubuntu-autoinstall-journey/ablate-ssh-lsblk-thumb.png" width="160" alt="lsblk"></a>). Needed for the SSH requirement. | <a href="ubuntu-autoinstall-journey/ablate-ssh-socket.png"><img src="ubuntu-autoinstall-journey/ablate-ssh-socket-thumb.png" width="240" alt="ablate-ssh-socket"></a> <sub><a href="ubuntu-autoinstall-journey/ablate-ssh-socket-crop.png">text at 100%</a></sub> |
+| 11-12 | the whole `ssh:` entry | The install **finishes** (12 minutes), whole disk without LVM, user `ubuntu` logs in on the console, but there is no SSH server: `systemctl is-enabled ssh.socket` says `not-found` and port 22 refuses connections; `lsblk` shows the same layout as the minimal file (<a href="ubuntu-autoinstall-journey/ablate-ssh-lsblk.png"><img src="ubuntu-autoinstall-journey/ablate-ssh-lsblk-thumb.png" width="160" alt="lsblk"></a> <sub><a href="ubuntu-autoinstall-journey/ablate-ssh-lsblk-crop.png">text at 100%</a></sub>). Needed for the SSH requirement. | <a href="ubuntu-autoinstall-journey/ablate-ssh-socket.png"><img src="ubuntu-autoinstall-journey/ablate-ssh-socket-thumb.png" width="240" alt="ablate-ssh-socket"></a> <sub><a href="ubuntu-autoinstall-journey/ablate-ssh-socket-crop.png">text at 100%</a></sub> |
 
 ## systemctl get-default: 24.04 and 26.04
 
 The same minimal file installed Ubuntu 24.04.5 LTS too (BootConfig
-`ubuntu-24.04`, its own ISO; 6 minutes 3 seconds to the reboot). On both, logged in
+`ubuntu-24.04` with the 24.04.5 ISO, the same kernel arguments, from
+`examples/ubuntu-24.04.yaml` on branch `add-ubuntu-24.04`, not on `main`
+yet; 6 minutes 3 seconds to the reboot). On both, logged in
 as `ubuntu` on the console and over SSH:
 
 | | Ubuntu 24.04.5 LTS | Ubuntu 26.04.1 LTS |
@@ -702,12 +709,15 @@ is the unit systemd starts at boot; `multi-user.target` means "everything
 for a multi-user system with network and services, text logins only", and
 `graphical.target` is `multi-user.target` **plus** a graphical login
 (`display-manager.service`). On these servers no display manager is
-installed, so reaching `graphical.target` adds nothing: the machine boots to
-the same text console as with `multi-user.target`, and both targets are
-active. Nothing in the server install sets `default.target`, so systemd's
-own default, `graphical.target`, stands. `sudo systemctl set-default
-multi-user.target` would make the name match what the server does; it
-changes nothing else.
+installed, so reaching `graphical.target` adds no graphical login: the
+machine boots to the same text console as with `multi-user.target`, and both
+targets are active. The only extra unit it starts is `udisks2.service`,
+which is wanted by `graphical.target` on both releases (`systemctl
+list-dependencies graphical.target`). Nothing in the server install sets
+`default.target`, so systemd's own default, `graphical.target`, stands.
+`sudo systemctl set-default multi-user.target` would make the name match
+what the server does; the only other change is that `udisks2.service` is no
+longer started at boot.
 
 ## The 4K screen
 
@@ -765,7 +775,8 @@ for 3 minutes (a question or an error; `--stable-minutes` changes that, and
 `--minutes` pass. It keeps
 `final.png`, `serial.log`, `kernel-args.txt`, the served files and this
 boot's nginx requests in the output directory. `--bootconfig ubuntu-24.04`
-picks another release.
+picks another release (apply that BootConfig first; see
+[above](#systemctl-get-default-2404-and-2604)).
 
 To watch a boot live, tunnel the VNC port (it listens on 127.0.0.1 only;
 `E2E_VNC_DISPLAY=:1` moves it to 5901):
@@ -775,6 +786,10 @@ To watch a boot live, tunnel the VNC port (it listens on 127.0.0.1 only;
 ssh -J you@host -L 5900:127.0.0.1:5900 ubuntu@<e2e-vm-ip>
 # then point a VNC viewer at localhost:5900
 ```
+
+`multipass info isoboot-e2e-local` on the host shows the VM's address, and
+the VM's `ubuntu` user needs your public key in `~/.ssh/authorized_keys`
+(multipass only installs its own).
 
 ## What surprised us
 
