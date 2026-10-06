@@ -177,6 +177,8 @@ type_text() {
       *) fail "type_text: no key for '$c'" ;;
     esac
     qemu_monitor "sendkey $k"
+    # Keys sent back to back sometimes leave Shift held down.
+    sleep 0.05
   done
 }
 
