@@ -53,7 +53,8 @@ because of the answer file. Two boots without an answer file show it:
   screen is still shown, now in French and with *Français* highlighted. The
   preseed preselects; it does not answer.
 
-  [![Preseed locale: French language screen](ubuntu-autoinstall-journey/preseed1-locale-fr-thumb.png)](ubuntu-autoinstall-journey/preseed1-locale-fr.png) <sub>[text at 100%](ubuntu-autoinstall-journey/preseed1-locale-fr-crop.png)</sub>
+  <a href="ubuntu-autoinstall-journey/preseed1-locale-fr.png"><img src="ubuntu-autoinstall-journey/preseed1-locale-fr-thumb.png" width="480" alt="Preseed locale: French language screen"></a><br>
+  <sub>Preseed locale: French language screen · <a href="ubuntu-autoinstall-journey/preseed1-locale-fr.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/preseed1-locale-fr-crop.png">text at 100%</a></sub>
 
 - **`keyboard-configuration/layoutcode=fr`** (a debconf `question=value`
   pair), no answer file: casper's `19keyboard` reads it and writes
@@ -66,8 +67,11 @@ because of the answer file. Two boots without an answer file show it:
   language and falls back to the live system's `/etc/default/keyboard` only
   for languages without a suggestion.
 
-  [![Preseed keyboard: language screen](ubuntu-autoinstall-journey/preseed2-language-thumb.png)](ubuntu-autoinstall-journey/preseed2-language.png) <sub>[text at 100%](ubuntu-autoinstall-journey/preseed2-language-crop.png)</sub>
-  [![Preseed keyboard: keyboard screen still English (US)](ubuntu-autoinstall-journey/preseed2-keyboard-thumb.png)](ubuntu-autoinstall-journey/preseed2-keyboard.png) <sub>[text at 100%](ubuntu-autoinstall-journey/preseed2-keyboard-crop.png)</sub>
+  <a href="ubuntu-autoinstall-journey/preseed2-language.png"><img src="ubuntu-autoinstall-journey/preseed2-language-thumb.png" width="480" alt="Preseed keyboard: language screen"></a><br>
+  <sub>Preseed keyboard: language screen · <a href="ubuntu-autoinstall-journey/preseed2-language.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/preseed2-language-crop.png">text at 100%</a></sub>
+
+  <a href="ubuntu-autoinstall-journey/preseed2-keyboard.png"><img src="ubuntu-autoinstall-journey/preseed2-keyboard-thumb.png" width="480" alt="Preseed keyboard: keyboard screen still English (US)"></a><br>
+  <sub>Preseed keyboard: keyboard screen still English (US) · <a href="ubuntu-autoinstall-journey/preseed2-keyboard.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/preseed2-keyboard-crop.png">text at 100%</a></sub>
 
 Neither boot removed a screen. The rest of this page is about the answer
 file.
@@ -138,7 +142,8 @@ nothing is served.
 console shows its own first screen at the same time: *Continue in rich mode*
 / *Continue in basic mode* / *View SSH instructions*.)
 
-[![Step 0: language screen](ubuntu-autoinstall-journey/step00-language-thumb.png)](ubuntu-autoinstall-journey/step00-language.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step00-language-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step00-language.png"><img src="ubuntu-autoinstall-journey/step00-language-thumb.png" width="480" alt="Step 0: language screen"></a><br>
+<sub>Step 0: language screen · <a href="ubuntu-autoinstall-journey/step00-language.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step00-language-crop.png">text at 100%</a></sub>
 
 ### Step 1: answer the language screen
 
@@ -168,7 +173,8 @@ What removes the language screen is that `locale` is not in the list; the `local
 
 **Outcome:** The language screen is gone. The installer stops on **Keyboard configuration**: Layout *English (US)*, Variant *English (US)*. No installer-update screen came first: it is shown only when a newer installer is available.
 
-[![Step 1: keyboard screen](ubuntu-autoinstall-journey/step01-keyboard-thumb.png)](ubuntu-autoinstall-journey/step01-keyboard.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step01-keyboard-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step01-keyboard.png"><img src="ubuntu-autoinstall-journey/step01-keyboard-thumb.png" width="480" alt="Step 1: keyboard screen"></a><br>
+<sub>Step 1: keyboard screen · <a href="ubuntu-autoinstall-journey/step01-keyboard.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step01-keyboard-crop.png">text at 100%</a></sub>
 
 ### Step 2: answer the keyboard screen
 
@@ -199,7 +205,8 @@ Removed: `- keyboard`
 
 **Outcome:** Stops on **Choose the type of installation**: `(X) Ubuntu Server` and `[X] Search for third-party drivers`, both selected by default.
 
-[![Step 2: installation type screen](ubuntu-autoinstall-journey/step02-source-thumb.png)](ubuntu-autoinstall-journey/step02-source.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step02-source-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step02-source.png"><img src="ubuntu-autoinstall-journey/step02-source-thumb.png" width="480" alt="Step 2: installation type screen"></a><br>
+<sub>Step 2: installation type screen · <a href="ubuntu-autoinstall-journey/step02-source.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step02-source-crop.png">text at 100%</a></sub>
 
 ### Step 3: answer the installation type screen
 
@@ -232,7 +239,8 @@ Removed: `- source`
 
 **Outcome:** Stops on **Network configuration**: `ens3` with DHCPv4 `192.168.101.125/24`.
 
-[![Step 3: network screen](ubuntu-autoinstall-journey/step03-network-thumb.png)](ubuntu-autoinstall-journey/step03-network.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step03-network-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step03-network.png"><img src="ubuntu-autoinstall-journey/step03-network-thumb.png" width="480" alt="Step 3: network screen"></a><br>
+<sub>Step 3: network screen · <a href="ubuntu-autoinstall-journey/step03-network.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step03-network-crop.png">text at 100%</a></sub>
 
 ### Step 4: accept the network screen
 
@@ -264,7 +272,8 @@ Removed: `- network`
 
 **Outcome:** Stops on **Proxy configuration** with an empty proxy address.
 
-[![Step 4: proxy screen](ubuntu-autoinstall-journey/step04-proxy-thumb.png)](ubuntu-autoinstall-journey/step04-proxy.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step04-proxy-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step04-proxy.png"><img src="ubuntu-autoinstall-journey/step04-proxy-thumb.png" width="480" alt="Step 4: proxy screen"></a><br>
+<sub>Step 4: proxy screen · <a href="ubuntu-autoinstall-journey/step04-proxy.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step04-proxy-crop.png">text at 100%</a></sub>
 
 ### Step 5: accept the proxy screen
 
@@ -295,7 +304,8 @@ Removed: `- proxy`
 
 **Outcome:** The next screen should be the archive mirror (`apt` is still listed), but the installer skips it: a short *Checking for installer update...*, then **Guided storage configuration**: `(X) Use an entire disk` (`/dev/vda`, 20 GiB) and `[X] Set up this disk as an LVM group`. Why the mirror screen never shows is explained at step 9.
 
-[![Step 5: storage screen](ubuntu-autoinstall-journey/step05-storage-thumb.png)](ubuntu-autoinstall-journey/step05-storage.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step05-storage-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step05-storage.png"><img src="ubuntu-autoinstall-journey/step05-storage-thumb.png" width="480" alt="Step 5: storage screen"></a><br>
+<sub>Step 5: storage screen · <a href="ubuntu-autoinstall-journey/step05-storage.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step05-storage-crop.png">text at 100%</a></sub>
 
 ### Step 6: answer the storage screen (whole disk, no LVM)
 
@@ -328,7 +338,8 @@ Removed: `- storage`
 
 **Outcome:** Stops on **Profile configuration** (your name, server name, user name, password). No *Confirm destructive action* dialog here: on an interactive storage screen it follows that screen, but with `storage` answered in the file the installer asks it later, on its progress screen (step 12).
 
-[![Step 6: profile screen](ubuntu-autoinstall-journey/step06-profile-thumb.png)](ubuntu-autoinstall-journey/step06-profile.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step06-profile-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step06-profile.png"><img src="ubuntu-autoinstall-journey/step06-profile-thumb.png" width="480" alt="Step 6: profile screen"></a><br>
+<sub>Step 6: profile screen · <a href="ubuntu-autoinstall-journey/step06-profile.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step06-profile-crop.png">text at 100%</a></sub>
 
 ### Step 7: answer the profile screen
 
@@ -364,7 +375,8 @@ Removed: `- identity`
 
 **Outcome:** Stops on **Upgrade to Ubuntu Pro**: `( ) Enable Ubuntu Pro`, `(X) Skip for now`.
 
-[![Step 7: Ubuntu Pro screen](ubuntu-autoinstall-journey/step07-ubuntu-pro-thumb.png)](ubuntu-autoinstall-journey/step07-ubuntu-pro.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step07-ubuntu-pro-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step07-ubuntu-pro.png"><img src="ubuntu-autoinstall-journey/step07-ubuntu-pro-thumb.png" width="480" alt="Step 7: Ubuntu Pro screen"></a><br>
+<sub>Step 7: Ubuntu Pro screen · <a href="ubuntu-autoinstall-journey/step07-ubuntu-pro.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step07-ubuntu-pro-crop.png">text at 100%</a></sub>
 
 ### Step 8: accept the Ubuntu Pro screen
 
@@ -399,7 +411,8 @@ Removed: `- ubuntu-pro`
 
 **Outcome:** Stops on **SSH configuration**: `[ ] Install OpenSSH server` (not ticked), `[X] Allow password authentication over SSH` (greyed out until the server is ticked), no keys.
 
-[![Step 8: SSH screen](ubuntu-autoinstall-journey/step08-ssh-thumb.png)](ubuntu-autoinstall-journey/step08-ssh.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step08-ssh-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step08-ssh.png"><img src="ubuntu-autoinstall-journey/step08-ssh-thumb.png" width="480" alt="Step 8: SSH screen"></a><br>
+<sub>Step 8: SSH screen · <a href="ubuntu-autoinstall-journey/step08-ssh.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step08-ssh-crop.png">text at 100%</a></sub>
 
 ### Step 9: answer the SSH screen
 
@@ -435,7 +448,8 @@ Removed: `- ssh`
 
 **Outcome:** Stops on **Third-party drivers**: *Looking for applicable third-party drivers available locally or online...*, a spinner that does not end (watched for 13 minutes). The installer's logs (read through its shell, <kbd>F2</kbd>) show why. The install has not started: it still waits for the mirror (`apt`) answer, because the mirror screen was skipped at step 5. While it builds that screen, the installer's front end asks whether there is a network; `network` is no longer listed, so the back end answers that request with "skip this screen" and the mirror screen is skipped, but the back end still counts `apt` as unanswered. The driver search waits for the archive setup, and that never comes. So the mirror screen cannot be reached in this mode, and its default is taken next.
 
-[![Step 9: drivers screen waiting](ubuntu-autoinstall-journey/step09-drivers-waiting-thumb.png)](ubuntu-autoinstall-journey/step09-drivers-waiting.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step09-drivers-waiting-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step09-drivers-waiting.png"><img src="ubuntu-autoinstall-journey/step09-drivers-waiting-thumb.png" width="480" alt="Step 9: drivers screen waiting"></a><br>
+<sub>Step 9: drivers screen waiting · <a href="ubuntu-autoinstall-journey/step09-drivers-waiting.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step09-drivers-waiting-crop.png">text at 100%</a></sub>
 
 ### Step 10: accept the mirror (never shown)
 
@@ -470,7 +484,8 @@ Removed: `- apt`
 
 **Outcome:** The same spinner, for a second reason (again watched for 13 minutes). Now every install section is set (the log says the mirror is configured and nothing is left to wait for), but the driver search still waits for the archive setup, which runs only after the user confirms the install (*Confirm destructive action*). In an interactive session that question comes on the progress screen, after the Drivers and Snaps screens, so the Drivers screen waits for a question that comes after it.
 
-[![Step 10: drivers screen still waiting](ubuntu-autoinstall-journey/step10-drivers-waiting-thumb.png)](ubuntu-autoinstall-journey/step10-drivers-waiting.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step10-drivers-waiting-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step10-drivers-waiting.png"><img src="ubuntu-autoinstall-journey/step10-drivers-waiting-thumb.png" width="480" alt="Step 10: drivers screen still waiting"></a><br>
+<sub>Step 10: drivers screen still waiting · <a href="ubuntu-autoinstall-journey/step10-drivers-waiting.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step10-drivers-waiting-crop.png">text at 100%</a></sub>
 
 ### Step 11: accept the drivers screen (never shown)
 
@@ -504,7 +519,8 @@ Removed: `- drivers`
 
 **Outcome:** Stops on **Featured server snaps**: microk8s, nextcloud, ..., lxd, none ticked.
 
-[![Step 11: snaps screen](ubuntu-autoinstall-journey/step11-snaps-thumb.png)](ubuntu-autoinstall-journey/step11-snaps.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step11-snaps-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step11-snaps.png"><img src="ubuntu-autoinstall-journey/step11-snaps-thumb.png" width="480" alt="Step 11: snaps screen"></a><br>
+<sub>Step 11: snaps screen · <a href="ubuntu-autoinstall-journey/step11-snaps.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step11-snaps-crop.png">text at 100%</a></sub>
 
 ### Step 12: accept the snaps screen
 
@@ -537,7 +553,8 @@ Removed: `- snaps`
 
 **Outcome:** The installer moves to its progress screen, **Installing system**, with the dialog **Confirm destructive action** (*Selecting Continue below will begin the installation process and result in the loss of data on the disks selected to be formatted.*) and `[ No ]` focused, so here <kbd>Enter</kbd> would *not* continue. No entry in the file answers this dialog while the install is interactive.
 
-[![Step 12: confirm destructive action](ubuntu-autoinstall-journey/step12-confirm-thumb.png)](ubuntu-autoinstall-journey/step12-confirm.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step12-confirm-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step12-confirm.png"><img src="ubuntu-autoinstall-journey/step12-confirm-thumb.png" width="480" alt="Step 12: confirm destructive action"></a><br>
+<sub>Step 12: confirm destructive action · <a href="ubuntu-autoinstall-journey/step12-confirm.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step12-confirm-crop.png">text at 100%</a></sub>
 
 ### Step 13: no screens left: drop interactive-sections
 
@@ -568,7 +585,8 @@ Removed: `interactive-sections:`, `- refresh-installer`
 
 **Outcome:** **The install runs to the end with no question**: 7 minutes 45 seconds from power-on until the installer reboots (*reboot: Restarting system*; QEMU exits because it runs with `-no-reboot`). The last screenshot is the unattended progress log on the console: installing openssh-server, then security updates.
 
-[![Step 13: install finished](ubuntu-autoinstall-journey/step13-done-thumb.png)](ubuntu-autoinstall-journey/step13-done.png) <sub>[text at 100%](ubuntu-autoinstall-journey/step13-done-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/step13-done.png"><img src="ubuntu-autoinstall-journey/step13-done-thumb.png" width="480" alt="Step 13: install finished"></a><br>
+<sub>Step 13: install finished · <a href="ubuntu-autoinstall-journey/step13-done.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/step13-done-crop.png">text at 100%</a></sub>
 
 ## The "Continue with autoinstall?" question
 
@@ -586,7 +604,8 @@ Add 'autoinstall' to your kernel command line to avoid this
 Continue with autoinstall? (yes|no)
 ```
 
-[![Continue with autoinstall? (yes|no)](ubuntu-autoinstall-journey/confirm-no-autoinstall-arg-thumb.png)](ubuntu-autoinstall-journey/confirm-no-autoinstall-arg.png) <sub>[text at 100%](ubuntu-autoinstall-journey/confirm-no-autoinstall-arg-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/confirm-no-autoinstall-arg.png"><img src="ubuntu-autoinstall-journey/confirm-no-autoinstall-arg-thumb.png" width="480" alt="Continue with autoinstall? (yes|no)"></a><br>
+<sub>Continue with autoinstall? (yes|no) · <a href="ubuntu-autoinstall-journey/confirm-no-autoinstall-arg.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/confirm-no-autoinstall-arg-crop.png">text at 100%</a></sub>
 
 It is the unattended form of step 12's *Confirm destructive action*. The
 answer is the kernel argument `autoinstall`, which isoboot's Ubuntu examples
@@ -646,8 +665,11 @@ and the user `ubuntu` logs in with `ubuntu|123` on the console and over SSH
 (the server offers `publickey,password`; the login used password
 authentication only):
 
-[![26.04 login prompt](ubuntu-autoinstall-journey/login2604-1-prompt-thumb.png)](ubuntu-autoinstall-journey/login2604-1-prompt.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2604-1-prompt-crop.png)</sub>
-[![26.04 logged in](ubuntu-autoinstall-journey/login2604-2-shell-thumb.png)](ubuntu-autoinstall-journey/login2604-2-shell.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2604-2-shell-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/login2604-1-prompt.png"><img src="ubuntu-autoinstall-journey/login2604-1-prompt-thumb.png" width="480" alt="26.04 login prompt"></a><br>
+<sub>26.04 login prompt · <a href="ubuntu-autoinstall-journey/login2604-1-prompt.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2604-1-prompt-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/login2604-2-shell.png"><img src="ubuntu-autoinstall-journey/login2604-2-shell-thumb.png" width="480" alt="26.04 logged in"></a><br>
+<sub>26.04 logged in · <a href="ubuntu-autoinstall-journey/login2604-2-shell.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2604-2-shell-crop.png">text at 100%</a></sub>
 
 ## Every line is needed: ablation
 
@@ -697,12 +719,23 @@ as `ubuntu` on the console and over SSH:
 | `/usr/lib/systemd/system/default.target` (systemd's default) | `-> graphical.target` | `-> graphical.target` |
 | snaps after install | none | `core24`, `snapd`, `hwctl` |
 
-[![24.04 systemctl get-default](ubuntu-autoinstall-journey/login2404-3-get-default-thumb.png)](ubuntu-autoinstall-journey/login2404-3-get-default.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2404-3-get-default-crop.png)</sub>
-[![26.04 systemctl get-default](ubuntu-autoinstall-journey/login2604-3-get-default-thumb.png)](ubuntu-autoinstall-journey/login2604-3-get-default.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2604-3-get-default-crop.png)</sub>
-[![24.04 /etc/os-release](ubuntu-autoinstall-journey/login2404-4-os-release-thumb.png)](ubuntu-autoinstall-journey/login2404-4-os-release.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2404-4-os-release-crop.png)</sub>
-[![26.04 /etc/os-release](ubuntu-autoinstall-journey/login2604-4-os-release-thumb.png)](ubuntu-autoinstall-journey/login2604-4-os-release.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2604-4-os-release-crop.png)</sub>
-[![24.04 login prompt](ubuntu-autoinstall-journey/login2404-1-prompt-thumb.png)](ubuntu-autoinstall-journey/login2404-1-prompt.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2404-1-prompt-crop.png)</sub>
-[![24.04 logged in](ubuntu-autoinstall-journey/login2404-2-shell-thumb.png)](ubuntu-autoinstall-journey/login2404-2-shell.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2404-2-shell-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/login2404-3-get-default.png"><img src="ubuntu-autoinstall-journey/login2404-3-get-default-thumb.png" width="480" alt="24.04 systemctl get-default"></a><br>
+<sub>24.04 systemctl get-default · <a href="ubuntu-autoinstall-journey/login2404-3-get-default.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2404-3-get-default-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/login2604-3-get-default.png"><img src="ubuntu-autoinstall-journey/login2604-3-get-default-thumb.png" width="480" alt="26.04 systemctl get-default"></a><br>
+<sub>26.04 systemctl get-default · <a href="ubuntu-autoinstall-journey/login2604-3-get-default.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2604-3-get-default-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/login2404-4-os-release.png"><img src="ubuntu-autoinstall-journey/login2404-4-os-release-thumb.png" width="480" alt="24.04 /etc/os-release"></a><br>
+<sub>24.04 /etc/os-release · <a href="ubuntu-autoinstall-journey/login2404-4-os-release.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2404-4-os-release-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/login2604-4-os-release.png"><img src="ubuntu-autoinstall-journey/login2604-4-os-release-thumb.png" width="480" alt="26.04 /etc/os-release"></a><br>
+<sub>26.04 /etc/os-release · <a href="ubuntu-autoinstall-journey/login2604-4-os-release.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2604-4-os-release-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/login2404-1-prompt.png"><img src="ubuntu-autoinstall-journey/login2404-1-prompt-thumb.png" width="480" alt="24.04 login prompt"></a><br>
+<sub>24.04 login prompt · <a href="ubuntu-autoinstall-journey/login2404-1-prompt.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2404-1-prompt-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/login2404-2-shell.png"><img src="ubuntu-autoinstall-journey/login2404-2-shell-thumb.png" width="480" alt="24.04 logged in"></a><br>
+<sub>24.04 logged in · <a href="ubuntu-autoinstall-journey/login2404-2-shell.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2404-2-shell-crop.png">text at 100%</a></sub>
 
 So both answer `graphical.target`, and neither is a GUI. `default.target`
 is the unit systemd starts at boot; `multi-user.target` means "everything
@@ -737,8 +770,11 @@ Every screenshot here is a 3840x2160 PNG from QEMU's `screendump ... -f png`,
 and the installed system reports `3840,2160` in
 `/sys/class/graphics/fb0/virtual_size` (24.04.5 the same):
 
-[![26.04 fb0 virtual_size](ubuntu-autoinstall-journey/login2604-5-fb-size-thumb.png)](ubuntu-autoinstall-journey/login2604-5-fb-size.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2604-5-fb-size-crop.png)</sub>
-[![24.04 fb0 virtual_size](ubuntu-autoinstall-journey/login2404-5-fb-size-thumb.png)](ubuntu-autoinstall-journey/login2404-5-fb-size.png) <sub>[text at 100%](ubuntu-autoinstall-journey/login2404-5-fb-size-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/login2604-5-fb-size.png"><img src="ubuntu-autoinstall-journey/login2604-5-fb-size-thumb.png" width="480" alt="26.04 fb0 virtual_size"></a><br>
+<sub>26.04 fb0 virtual_size · <a href="ubuntu-autoinstall-journey/login2604-5-fb-size.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2604-5-fb-size-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/login2404-5-fb-size.png"><img src="ubuntu-autoinstall-journey/login2404-5-fb-size-thumb.png" width="480" alt="24.04 fb0 virtual_size"></a><br>
+<sub>24.04 fb0 virtual_size · <a href="ubuntu-autoinstall-journey/login2404-5-fb-size.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/login2404-5-fb-size-crop.png">text at 100%</a></sub>
 
 Only firmware and iPXE screens are smaller (1280x800); none is shown here.
 
@@ -837,10 +873,17 @@ A first attempt built the file from the top, one line per boot, without
 | `+   version: 1` | *An error occurred. Press enter to start a shell*; the serial log says *neither identity nor user-data provided*. An answer file makes the install unattended, and the user has no default. |
 | `+   identity:` (empty) | The same error: an empty `identity` is no user. |
 
-[![Top-down: #cloud-config only](ubuntu-autoinstall-journey/topdown01-cloud-config-thumb.png)](ubuntu-autoinstall-journey/topdown01-cloud-config.png) <sub>[text at 100%](ubuntu-autoinstall-journey/topdown01-cloud-config-crop.png)</sub>
-[![Top-down: autoinstall:](ubuntu-autoinstall-journey/topdown02-autoinstall-thumb.png)](ubuntu-autoinstall-journey/topdown02-autoinstall.png) <sub>[text at 100%](ubuntu-autoinstall-journey/topdown02-autoinstall-crop.png)</sub>
-[![Top-down: version: 1](ubuntu-autoinstall-journey/topdown03-version-thumb.png)](ubuntu-autoinstall-journey/topdown03-version.png) <sub>[text at 100%](ubuntu-autoinstall-journey/topdown03-version-crop.png)</sub>
-[![Top-down: identity:](ubuntu-autoinstall-journey/topdown04-identity-thumb.png)](ubuntu-autoinstall-journey/topdown04-identity.png) <sub>[text at 100%](ubuntu-autoinstall-journey/topdown04-identity-crop.png)</sub>
+<a href="ubuntu-autoinstall-journey/topdown01-cloud-config.png"><img src="ubuntu-autoinstall-journey/topdown01-cloud-config-thumb.png" width="480" alt="Top-down: #cloud-config only"></a><br>
+<sub>Top-down: #cloud-config only · <a href="ubuntu-autoinstall-journey/topdown01-cloud-config.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/topdown01-cloud-config-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/topdown02-autoinstall.png"><img src="ubuntu-autoinstall-journey/topdown02-autoinstall-thumb.png" width="480" alt="Top-down: autoinstall:"></a><br>
+<sub>Top-down: autoinstall: · <a href="ubuntu-autoinstall-journey/topdown02-autoinstall.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/topdown02-autoinstall-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/topdown03-version.png"><img src="ubuntu-autoinstall-journey/topdown03-version-thumb.png" width="480" alt="Top-down: version: 1"></a><br>
+<sub>Top-down: version: 1 · <a href="ubuntu-autoinstall-journey/topdown03-version.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/topdown03-version-crop.png">text at 100%</a></sub>
+
+<a href="ubuntu-autoinstall-journey/topdown04-identity.png"><img src="ubuntu-autoinstall-journey/topdown04-identity-thumb.png" width="480" alt="Top-down: identity:"></a><br>
+<sub>Top-down: identity: · <a href="ubuntu-autoinstall-journey/topdown04-identity.png">full 3840×2160</a> · <a href="ubuntu-autoinstall-journey/topdown04-identity-crop.png">text at 100%</a></sub>
 
 This is why the journey above starts with `interactive-sections`: without
 it, the first entry of an answer file already turns every other screen off,
