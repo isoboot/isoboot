@@ -78,7 +78,8 @@ type BootConfigSpec struct {
 	// kernelArgs is the kernel boot arguments template string, applied in both
 	// modes. May contain Go template variables interpolated at provision time:
 	// ProvisionAutomationBaseURL, ProxyURL, UpdatePhaseURL, ProvisionName and,
-	// in iso mode, NFSRoot ("<IPv4>:/<bootconfig-name>", for casper's nfsroot=).
+	// for iso mode, NFSRoot ("<IPv4>:/<bootconfig-name>", for casper's nfsroot=;
+	// it renders empty in netboot mode).
 	// It must render to a single line. The controller renders it with sample
 	// values and sets the BootConfig to Error when it cannot.
 	// +optional

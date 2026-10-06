@@ -57,8 +57,10 @@ spec:
                 minLength: 1
                 type: string
               configMaps:
-                description: configMaps is an optional list of ConfigMap names to
-                  mount during provisioning.
+                description: |-
+                  configMaps is an optional list of ConfigMap names. httpd merges their data
+                  into .ConfigMaps for the install-file templates; a later ConfigMap wins
+                  for the same key. Nothing is mounted.
                 items:
                   type: string
                 type: array
@@ -73,8 +75,9 @@ spec:
                 minLength: 1
                 type: string
               secrets:
-                description: secrets is an optional list of Secret names to mount
-                  during provisioning.
+                description: |-
+                  secrets is an optional list of Secret names. httpd merges their decoded
+                  data into .Secrets for the install-file templates, in the same way.
                 items:
                   type: string
                 type: array
@@ -87,7 +90,7 @@ spec:
             description: status defines the observed state of Provision
             properties:
               ip:
-                description: ip is the IP address assigned to the machine during provisioning.
+                description: ip is reserved. Nothing sets it.
                 type: string
               lastUpdated:
                 description: lastUpdated is the timestamp of the last status update.
