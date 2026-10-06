@@ -711,13 +711,13 @@ for a multi-user system with network and services, text logins only", and
 (`display-manager.service`). On these servers no display manager is
 installed, so reaching `graphical.target` adds no graphical login: the
 machine boots to the same text console as with `multi-user.target`, and both
-targets are active. The only extra unit it starts is `udisks2.service`,
-which is wanted by `graphical.target` on both releases (`systemctl
+targets are active. The one running service it adds is `udisks2.service`,
+which `graphical.target` wants on both releases (`systemctl
 list-dependencies graphical.target`). Nothing in the server install sets
 `default.target`, so systemd's own default, `graphical.target`, stands.
 `sudo systemctl set-default multi-user.target` would make the name match
-what the server does; the only other change is that `udisks2.service` is no
-longer started at boot.
+what the server does; the visible difference is that `udisks2.service` is
+then no longer started at boot.
 
 ## The 4K screen
 
