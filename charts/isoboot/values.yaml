@@ -70,7 +70,9 @@ squid:
   - 10.42.0.0/16
   - 10.43.0.0/16
   maxObjectSize: "1024 MB"
-  # 0 uses squid's compiled-in default (typically 256 MB).
+  # Squid's memory cache (cache_mem) in MB. 0 turns it off, so cached
+  # objects are served from the disk cache (cacheSizeMB); squid's own default
+  # is 256 MB, which needs a higher memory limit than resources below.
   cacheMemMB: 0
   cacheSizeMB: 8000
   log:
